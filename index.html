@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Inventario Comunicaciones Enterprise</title>
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#4f46e5">
+    <link rel="apple-touch-icon" href="icons/icon-192.png">
+    
+    <!-- Librerías Externas -->
+    <script src="https://unpkg.com/html5-qrcode"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    
+    <!-- Choices.js (Buscador Inteligente) -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/choices.js/public/assets/styles/choices.min.css" />
+    <script src="https://cdn.jsdelivr.net/npm/choices.js/public/assets/scripts/choices.min.js"></script>
+
+    <style>
+        :root { 
+            --primary: #4f46e5; --primary-dark: #4338ca; --success: #10b981; 
+            --danger: #ef4444; --bg: #f3f4f6; --card: #ffffff; 
+            --text: #1f2937; --border: #e5e7eb;
+        }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); margin: 0; padding: 0; color: var(--text); -webkit-tap-highlight-color: transparent; }
+        
+        /* Navbar & Tabs */
+        .navbar { background: var(--primary); color: white; padding: 15px; text-align: center; position: sticky; top: 0; z-index: 50; display: flex; justify-content: space-between; align-items: center;}
+        .navbar h2 { margin: 0; font-size: 18px; font-weight: 900; letter-spacing: -0.5px;}
+        .user-info { font-size: 12px; opacity: 0.9; }
+        
+        .tab-bar { display: flex; background: white; border-bottom: 1px solid var(--border); }
+        .tab { flex: 1; text-align: center; padding: 12px 0; font-weight: 700; color: #6b7280; border-bottom: 3px solid transparent; cursor: pointer; transition: 0.2s;}
+        .tab.active { color: var(--primary); border-bottom: 3px solid var(--primary); }
+        
+        .container { padding: 15px; max-width: 600px; margin: 0 auto; }
+        .card { background: var(--card); border-radius: 20px; padding: 18px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); margin-bottom: 15px; }
+        
+        label { display: block; font-weight: 700; margin-bottom: 6px; font-size: 13px; margin-top: 10px; color: #4b5563;}
+        input[type="text"], input[type="number"], select { width: 100%; padding: 12px; border-radius: 10px; border: 2px solid var(--border); font-size: 15px; box-sizing: border-box; background: #fafafa; font-family: inherit;}
+        input:focus, select:focus { border-color: var(--primary); outline: none; background: #fff; }
+        
+        button { width: 100%; padding: 14px; border-radius: 12px; border: none; font-weight: 700; font-size: 15px; cursor: pointer; margin-top: 12px; color: white; display: flex; justify-content: center; align-items: center; gap: 8px; transition: transform 0.1s;}
+        button:active { transform: scale(0.98); }
+        button:disabled { opacity: 0.6; cursor: not-allowed; }
+        
+        .btn-primary { background-color: var(--primary); }
+        .btn-success { background-color: var(--success); }
+        .btn-danger { background-color: var(--danger); }
+        .btn-secondary { background: transparent; border: 2px solid var(--border); color: #6b7280; }
+        .btn-logout { background: transparent; color: white; border: 1px solid rgba(255,255,255,0.3); padding: 6px 12px; font-size: 12px; margin: 0; width: auto;}
+        
+        /* Secciones */
+        .section { display: none; }
+        .section.active { display: block; }
+        
+        /* Login */
+        #login-screen { position: fixed; top:0; left:0; width:100%; height:100%; background: white; z-index: 100; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 20px; box-sizing: border-box;}
+        #login-screen h1 { color: var(--primary); font-size: 28px; font-weight: 900; text-align: center; margin-bottom: 5px;}
+        #login-screen p { color: #6b7280; text-align: center; margin-bottom: 30px;}
+        .google-btn { background: #4285F4; color: white; padding: 12px 20px; font-size: 16px; border-radius: 8px; display: inline-flex; align-items: center; gap: 10px; width: auto; box-shadow: 0 4px 10px rgba(66, 133, 244, 0.3);}
+        
+        /* Buscador / Scanner */
+        .search-row { display: flex; gap: 10px; align-items: flex-end; margin-top: 10px;}
+        .search-row > div { flex: 1; margin-top: 0;}
+        .btn-icon { width: 48px; height: 48px; padding: 0; flex-shrink: 0; margin: 0; border-radius: 10px; background: var(--primary); font-size: 20px;}
+        #reader { width: 100%; border-radius: 16px; overflow: hidden; display: none; margin-top: 15px; border: 3px solid var(--primary); }
+        
+        /* Radio Buttons */
+        .radio-group { display: flex; gap: 8px; margin-bottom: 5px; }
+        .radio-btn { flex: 1; text-align: center; padding: 10px; border-radius: 10px; cursor: pointer; font-weight: 700; border: 2px solid var(--border); background: #fafafa; color: #6b7280; font-size: 13px;}
+        .radio-btn input { display: none; }
+        .radio-btn.active-salida { border-color: #ef4444; background: #fee2e2; color: #b91c1c; }
+        .radio-btn.active-entrada { border-color: #10b981; background: #d1fae5; color: #047857; }
+
+        /* Lista Items */
+        .item-row { display: flex; align-items: center; justify-content: space-between; background: #f8fafc; border: 1px solid var(--border); border-radius: 10px; padding: 10px; margin-bottom: 8px; gap: 5px;}
+        .item-info { flex: 1.2; font-weight: 700; font-size: 13px; color: var(--text); word-break: break-all;}
+        .qty-input { width: 45px !important; height: 34px; text-align: center; font-size: 15px; font-weight: 800; border: 2px solid #cbd5e1; border-radius: 8px; padding: 0 !important; margin: 0; background: #fff;}
+        .btn-del { color: var(--danger); background: transparent; border: none; font-size: 16px; padding: 5px; width: auto; margin: 0;}
+        
+        /* Alertas */
+        .alert-box { position: fixed; top: 15px; left: 50%; transform: translateX(-50%); width: 90%; max-width: 450px; padding: 16px 20px; border-radius: 16px; font-weight: 700; font-size: 14px; text-align: center; z-index: 9999; box-shadow: 0 10px 25px rgba(0,0,0,0.2); display: none; }
+        .alert-success { background: #10b981; color: white; }
+        .alert-error { background: #ef4444; color: white; }
+
+        .choices__inner { border-radius: 10px !important; border: 2px solid var(--border) !important; background: #fafafa !important; min-height: 48px !important; display: flex; align-items: center;}
+    </style>
+</head>
+<body>
+    <div id="alert-box" class="alert-box"></div>
+
+    <!-- PANTALLA DE LOGIN -->
+    <div id="login-screen">
+        <i class="fa-solid fa-shield-halved" style="font-size: 48px; color: var(--primary); margin-bottom: 15px;"></i>
+        <h1>Inventario G4S</h1>
+        <p>Control de Comunicaciones</p>
+        <button class="google-btn" id="btn-login">
+            <i class="fa-brands fa-google"></i> Iniciar sesión con Google
+        </button>
+        <p style="font-size: 11px; margin-top: 15px; color: #9ca3af;">Acceso restringido a @g4s.com</p>
+    </div>
+
+    <!-- APLICACIÓN PRINCIPAL -->
+    <div id="app-screen" style="display: none;">
+        <div class="navbar">
+            <div>
+                <h2>📦 G4S Inventario</h2>
+                <div class="user-info" id="user-email">cargando...</div>
+            </div>
+            <button class="btn-logout" id="btn-logout"><i class="fa-solid fa-right-from-bracket"></i> Salir</button>
+        </div>
+
+        <div class="tab-bar">
+            <div class="tab active" onclick="switchTab('registro')">Movimientos</div>
+            <div class="tab" onclick="switchTab('catalogo')">Catálogo</div>
+            <div class="tab" onclick="switchTab('config')">Config</div>
+        </div>
+
+        <div class="container">
+            <!-- TAB REGISTRO -->
+            <div id="tab-registro" class="section active">
+                <div class="card">
+                    <div class="radio-group">
+                        <label class="radio-btn active-salida" id="lbl-salida">
+                            <input type="radio" name="tipoMov" value="Salida" checked onclick="cambiarMovimientoUI('Salida')"> 📤 SALIDA
+                        </label>
+                        <label class="radio-btn" id="lbl-entrada">
+                            <input type="radio" name="tipoMov" value="Entrada" onclick="cambiarMovimientoUI('Entrada')"> 📥 ENTRADA
+                        </label>
+                    </div>
+
+                    <div style="display:flex; gap:10px;">
+                        <div style="flex:1;">
+                            <label id="lbl-cliente">Cliente/Empresa</label>
+                            <input type="text" id="cliente" placeholder="Ej. Banco ABC">
+                        </div>
+                        <div style="flex:1;">
+                            <label>Regional</label>
+                            <select id="regional">
+                                <option value="Bogota">Bogota</option>
+                                <option value="Eje Cafetero">Eje Cafetero</option>
+                                <option value="Noroccidente">Noroccidente</option>
+                                <option value="Sabana">Sabana</option>
+                                <option value="Cordoba">Cordoba</option>
+                                <option value="Costa">Costa</option>
+                                <option value="Suroccidente">Suroccidente</option>
+                                <option value="Santanderes">Santanderes</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div style="display:flex; gap:10px;">
+                        <div style="flex:1;">
+                            <label>Técnico</label>
+                            <select id="tecnico">
+                                <option value="Josue M">Josue</option>
+                                <option value="Nataly P">Nataly</option>
+                                <option value="Juan D">Juan</option>
+                                <option value="Santiago M">Santiago</option>
+                            </select>
+                        </div>
+                        <div style="flex:1;">
+                            <label id="lbl-usuario">Entregado a</label>
+                            <input type="text" id="usuario" placeholder="Ej. Derly">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <label>🔍 Buscar o Escanear Accesorio</label>
+                    <div class="search-row">
+                        <div style="flex:1; width: 100%;">
+                            <select id="smart-search">
+                                <option value="">Cargando catálogo...</option>
+                            </select>
+                        </div>
+                        <button class="btn-icon" id="btn-add-search"><i class="fa-solid fa-plus"></i></button>
+                        <button class="btn-icon" id="btn-camera" style="background:var(--success);"><i class="fa-solid fa-qrcode"></i></button>
+                    </div>
+                    <div id="reader"></div>
+                </div>
+
+                <div class="card">
+                    <h3 style="margin-top:0; font-size: 15px;">🛒 Lista de Accesorios</h3>
+                    <div id="items-list" style="min-height: 50px;">
+                        <p style="text-align:center; color:#9ca3af; font-size:13px;">No hay ítems seleccionados</p>
+                    </div>
+                    <button class="btn-primary" id="btn-submit" disabled><i class="fa-solid fa-cloud-arrow-up"></i> REGISTRAR MOVIMIENTO</button>
+                </div>
+            </div>
+
+            <!-- TAB CATÁLOGO (CRUD) -->
+            <div id="tab-catalogo" class="section">
+                <div class="card">
+                    <h3 style="margin-top:0; color: var(--primary);"><i class="fa-solid fa-folder-plus"></i> Nuevo Accesorio</h3>
+                    <p style="font-size: 12px; color: #6b7280; margin-bottom: 15px;">Agrega un nuevo producto a la base de datos de Excel automáticamente.</p>
+                    
+                    <label>SKU / ID Artículo (Código único)</label>
+                    <input type="text" id="new-sku" placeholder="Ej. FOR-G40, CBL-01">
+                    
+                    <label>Categoría</label>
+                    <select id="new-cat">
+                        <option value="Forro">Forro</option>
+                        <option value="Vidrio Templado">Vidrio Templado</option>
+                        <option value="Cargador">Cargador</option>
+                        <option value="Cable">Cable</option>
+                        <option value="Manos Libres">Manos Libres</option>
+                        <option value="Batería Externa">Batería Externa</option>
+                        <option value="Otro">Otro</option>
+                    </select>
+
+                    <label>Descripción completa</label>
+                    <input type="text" id="new-desc" placeholder="Ej. Forro antigolpes G40">
+
+                    <label>Alerta de Stock Mínimo</label>
+                    <input type="number" id="new-min" value="5" min="1">
+
+                    <button class="btn-success" id="btn-crear-acc"><i class="fa-solid fa-save"></i> CREAR ACCESORIO</button>
+                </div>
+                
+                <div class="card">
+                    <button class="btn-secondary" onclick="window.open('https://lookerstudio.google.com/', '_blank')">
+                        <i class="fa-solid fa-chart-pie"></i> VER DASHBOARD LOOKER
+                    </button>
+                </div>
+            </div>
+
+            <!-- TAB CONFIG -->
+            <div id="tab-config" class="section">
+                <div class="card">
+                    <label><i class="fa-solid fa-link"></i> URL Webhook (Apps Script)</label>
+                    <input type="text" id="apiUrl" placeholder="https://script.google.com/.../exec">
+                    <button class="btn-primary" id="btn-save-url">Guardar Conexión</button>
+                    <hr style="border:0; border-top:1px solid #eee; margin: 20px 0;">
+                    <button class="btn-secondary" id="btn-sync-catalog"><i class="fa-solid fa-rotate"></i> Forzar Sincronización de Catálogo</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- SCRIPT TIPO MÓDULO (Para Firebase) -->
+    <script type="module">
+        // Configuración de Firebase
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.5.2/firebase-app.js";
+        import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.5.2/firebase-auth.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyDeRUFj8s9ew0O0IO0bLy9U_V_-5e7JOks",
+            authDomain: "inventario-comunicaciones.firebaseapp.com",
+            projectId: "inventario-comunicaciones",
+            storageBucket: "inventario-comunicaciones.firebasestorage.app",
+            messagingSenderId: "932171465795",
+            appId: "1:932171465795:web:a761b6582523f90e78c0f6",
+            measurementId: "G-2LRJR9NF4R"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const provider = new GoogleAuthProvider();
+
+        // Variables Globales
+        let choicesInstance = null;
+        let carrito = [];
+        let html5QrcodeScanner = null;
+
+        // Elementos DOM
+        const loginScreen = document.getElementById('login-screen');
+        const appScreen = document.getElementById('app-screen');
+        const userEmailLabel = document.getElementById('user-email');
+        const alertBox = document.getElementById('alert-box');
+
+        // ==========================================
+        // 1. AUTENTICACIÓN
+        // ==========================================
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                // Validación de dominio (g4s.com) o correo personal para pruebas
+                if (user.email.endsWith('@g4s.com') || user.email === 'jmolinaperez72@gmail.com') {
+                    loginScreen.style.display = 'none';
+                    appScreen.style.display = 'block';
+                    userEmailLabel.innerText = user.email;
+                    initApp();
+                } else {
+                    signOut(auth);
+                    mostrarAlerta("❌ Acceso denegado. Utiliza tu correo corporativo @g4s.com", "error");
+                }
+            } else {
+                loginScreen.style.display = 'flex';
+                appScreen.style.display = 'none';
+            }
+        });
+
+        document.getElementById('btn-login').addEventListener('click', () => {
+            signInWithPopup(auth, provider).catch(err => mostrarAlerta("Error al iniciar sesión", "error"));
+        });
+
+        document.getElementById('btn-logout').addEventListener('click', () => { signOut(auth); });
+
+        // ==========================================
+        // 2. INICIALIZACIÓN Y CATÁLOGO
+        // ==========================================
+        function initApp() {
+            let url = localStorage.getItem("inventarioApiUrl");
+            if(url) {
+                document.getElementById('apiUrl').value = url;
+                cargarCatalogo(url);
+            } else {
+                window.switchTab('config');
+                mostrarAlerta("⚠️ Configura la URL de Apps Script primero", "error");
+            }
+        }
+
+        function cargarCatalogo(url) {
+            fetch(url, { method: 'POST', body: JSON.stringify({ action: "obtener_catalogo" }), headers: { 'Content-Type': 'text/plain' }, redirect: 'follow' })
+            .then(res => res.json())
+            .then(data => {
+                if(data.status === "success") {
+                    inicializarBuscador(data.data);
+                }
+            }).catch(e => console.log("Error cargando catálogo", e));
+        }
+
+        function inicializarBuscador(datosCatalogo) {
+            const select = document.getElementById('smart-search');
+            if(choicesInstance) choicesInstance.destroy();
+            
+            const opciones = datosCatalogo.map(item => ({
+                value: item.idArticulo,
+                label: `[${item.stockActual} u.] ${item.idArticulo} - ${item.descripcion}`
+            }));
+
+            choicesInstance = new Choices(select, {
+                searchEnabled: true,
+                itemSelectText: '',
+                choices: [{value: '', label: 'Selecciona o busca un accesorio...', disabled: true}, ...opciones]
+            });
+        }
+
+        // ==========================================
+        // 3. CARRITO Y ESCÁNER
+        // ==========================================
+        document.getElementById('btn-add-search').addEventListener('click', () => {
+            const val = document.getElementById('smart-search').value;
+            if(val) agregarAlCarrito(val);
+        });
+
+        document.getElementById('btn-camera').addEventListener('click', () => {
+            const reader = document.getElementById('reader');
+            if(reader.style.display === "block") {
+                if(html5QrcodeScanner) html5QrcodeScanner.clear();
+                reader.style.display = "none";
+                return;
+            }
+            reader.style.display = "block";
+            html5QrcodeScanner = new Html5QrcodeScanner("reader", { fps: 10, qrbox: {width: 250, height: 250} }, false);
+            html5QrcodeScanner.render(
+                (decodedText) => {
+                    agregarAlCarrito(decodedText);
+                    html5QrcodeScanner.clear();
+                    reader.style.display = "none";
+                    try { navigator.vibrate(200); } catch(e) {}
+                }, 
+                (err) => {}
+            );
+        });
+
+        function agregarAlCarrito(codigo) {
+            let existe = carrito.find(item => item.idArticulo === codigo);
+            if(existe) existe.cantidad += 1;
+            else carrito.push({ idArticulo: codigo, cantidad: 1 });
+            renderizarCarrito();
+            mostrarAlerta("➕ " + codigo + " añadido", "success");
+        }
+
+        window.actualizarCant = function(index, valor) {
+            let nuevaCant = parseInt(valor);
+            carrito[index].cantidad = (isNaN(nuevaCant) || nuevaCant <= 0) ? 1 : nuevaCant;
+            renderizarCarrito();
+        }
+
+        window.eliminarItem = function(index) {
+            carrito.splice(index, 1);
+            renderizarCarrito();
+        }
+
+        function renderizarCarrito() {
+            let list = document.getElementById('items-list');
+            let btnSubmit = document.getElementById('btn-submit');
+            
+            if(carrito.length === 0) {
+                list.innerHTML = '<p style="text-align:center; color:#9ca3af; font-size:13px;">No hay ítems seleccionados</p>';
+                btnSubmit.disabled = true;
+                btnSubmit.innerHTML = '<i class="fa-solid fa-cloud-arrow-up"></i> REGISTRAR MOVIMIENTO';
+            } else {
+                let html = '';
+                carrito.forEach((item, idx) => {
+                    html += `<div class="item-row">
+                        <div class="item-info">🏷️ ${item.idArticulo}</div>
+                        <input type="number" class="qty-input" value="${item.cantidad}" onchange="actualizarCant(${idx}, this.value)">
+                        <button class="btn-del" onclick="eliminarItem(${idx})"><i class="fa-solid fa-trash-can"></i></button>
+                    </div>`;
+                });
+                list.innerHTML = html;
+                btnSubmit.disabled = false;
+                btnSubmit.innerHTML = `<i class="fa-solid fa-paper-plane"></i> REGISTRAR ${carrito.length} TIPO(S)`;
+            }
+        }
+
+        // ==========================================
+        // 4. ENVÍO DE DATOS
+        // ==========================================
+        document.getElementById('btn-submit').addEventListener('click', () => {
+            let url = localStorage.getItem("inventarioApiUrl");
+            let tipoMov = document.querySelector('input[name="tipoMov"]:checked').value;
+            let payload = {
+                action: "registrar_movimiento",
+                tipoMovimiento: tipoMov,
+                cliente: document.getElementById('cliente').value || "N/A",
+                regional: document.getElementById('regional').value,
+                tecnico: document.getElementById('tecnico').value,
+                usuario: document.getElementById('usuario').value || "N/A",
+                items: carrito
+            };
+
+            let btn = document.getElementById('btn-submit');
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Guardando...';
+            btn.disabled = true;
+
+            fetch(url, { method: 'POST', body: JSON.stringify(payload), headers: { 'Content-Type': 'text/plain' }, redirect: 'follow' })
+            .then(res => res.json())
+            .then(res => {
+                if(res.status === "success") {
+                    mostrarAlerta("🎉 Movimiento guardado con éxito", "success");
+                    carrito = []; renderizarCarrito(); document.getElementById('usuario').value = "";
+                    cargarCatalogo(url); // Actualizar stock visual
+                } else {
+                    mostrarAlerta("❌ " + res.message, "error");
+                    btn.innerHTML = 'Reintentar'; btn.disabled = false;
+                }
+            }).catch(e => { mostrarAlerta("❌ Error de red", "error"); btn.disabled = false; });
+        });
+
+        // ==========================================
+        // 5. CRUD (Crear Accesorio)
+        // ==========================================
+        document.getElementById('btn-crear-acc').addEventListener('click', () => {
+            let url = localStorage.getItem("inventarioApiUrl");
+            let payload = {
+                action: "crear_accesorio",
+                idArticulo: document.getElementById('new-sku').value,
+                categoria: document.getElementById('new-cat').value,
+                descripcion: document.getElementById('new-desc').value,
+                stockMinimo: document.getElementById('new-min').value
+            };
+
+            if(!payload.idArticulo || !payload.descripcion) {
+                mostrarAlerta("Llene SKU y Descripción", "error"); return;
+            }
+
+            let btn = document.getElementById('btn-crear-acc');
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Creando...';
+
+            fetch(url, { method: 'POST', body: JSON.stringify(payload), headers: { 'Content-Type': 'text/plain' }, redirect: 'follow' })
+            .then(res => res.json())
+            .then(res => {
+                if(res.status === "success") {
+                    mostrarAlerta("✅ Accesorio creado en Excel", "success");
+                    document.getElementById('new-sku').value = ""; document.getElementById('new-desc').value = "";
+                    cargarCatalogo(url);
+                } else {
+                    mostrarAlerta("❌ " + res.message, "error");
+                }
+                btn.innerHTML = '<i class="fa-solid fa-save"></i> CREAR ACCESORIO';
+            });
+        });
+
+        // ==========================================
+        // UI & UTILS
+        // ==========================================
+        window.switchTab = function(tabName) {
+            document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.getElementById('tab-' + tabName).classList.add('active');
+            event.target.classList.add('active');
+        }
+
+        window.cambiarMovimientoUI = function(tipo) {
+            document.getElementById('lbl-salida').className = 'radio-btn' + (tipo === 'Salida' ? ' active-salida' : '');
+            document.getElementById('lbl-entrada').className = 'radio-btn' + (tipo === 'Entrada' ? ' active-entrada' : '');
+            document.getElementById('lbl-usuario').innerText = tipo === 'Entrada' ? 'Proveedor' : 'Entregado a';
+            document.getElementById('lbl-cliente').innerText = tipo === 'Entrada' ? 'Proyecto/Destino' : 'Cliente/Empresa';
+        }
+
+        document.getElementById('btn-save-url').addEventListener('click', () => {
+            let val = document.getElementById('apiUrl').value;
+            localStorage.setItem("inventarioApiUrl", val);
+            mostrarAlerta("URL Guardada", "success");
+            cargarCatalogo(val);
+        });
+
+        document.getElementById('btn-sync-catalog').addEventListener('click', () => {
+            cargarCatalogo(localStorage.getItem("inventarioApiUrl"));
+            mostrarAlerta("Sincronizando...", "success");
+        });
+
+        function mostrarAlerta(texto, tipo) {
+            alertBox.innerText = texto;
+            alertBox.className = "alert-box alert-" + tipo;
+            alertBox.style.display = "block";
+            setTimeout(() => { alertBox.style.display = "none"; }, 4000);
+        }
+    </script>
+</body>
+</html>
