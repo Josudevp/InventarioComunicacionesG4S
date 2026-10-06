@@ -2,19 +2,22 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>G4S | Inventario Comunicaciones</title>
     <link rel="manifest" href="manifest.json">
-    <meta name="theme-color" content="#000000">
-    <link rel="apple-touch-icon" href="icons/icon-192.png">
+    <meta name="theme-color" content="#111111">
+    <meta name="description" content="Gestión segura del inventario de comunicaciones G4S">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <meta http-equiv="Permissions-Policy" content="camera=(self), microphone=(), geolocation=()">
+    <link rel="apple-touch-icon" href="assets/g4s-logo-.svg">
     
-    <script src="https://unpkg.com/html5-qrcode"></script>
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/choices.js/public/assets/styles/choices.min.css" />
-    <script src="https://cdn.jsdelivr.net/npm/choices.js/public/assets/scripts/choices.min.js"></script>
+    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js" integrity="sha384-c9d8RFSL+u3exBOJ4Yp3HUJXS4znl9f+z66d1y54ig+ea249SpqR+w1wyvXz/lk+" crossorigin="anonymous"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet" integrity="sha384-3B6NwesSXE7YJlcLI9RpRqGf2p/EgVH8BgoKTaUrmKNDkHPStTQ3EyoYjCGXaOTS" crossorigin="anonymous">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/choices.js@11.0.2/public/assets/styles/choices.min.css" integrity="sha384-n0GACcBzAGKp29zpmkTj4eje26AGm3wqHG9TROENrVHXySIkFf8nwmY5IgVr5qen" crossorigin="anonymous" />
+    <script src="https://cdn.jsdelivr.net/npm/choices.js@11.0.2/public/assets/scripts/choices.min.js" integrity="sha384-RW4gs5EBMnvixdJOoWLeT/qJSVHjMQOOwwxMSGVlEzuuuPWm9WVTDYPspqVrYBds" crossorigin="anonymous"></script>
 
     <style>
-        :root { 
+        :root {
             --g4s-red: #ee1c25;
             --g4s-darkred: #cc1520;
             --g4s-black: #000000;
@@ -24,24 +27,29 @@
             --bg: #f3f4f6; 
             --card: #ffffff; 
             --text: #111111; 
-            --border: #e5e7eb;
+            --border: #d9dee7;
+            --muted: #64748b;
+            --focus: #2563eb;
         }
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); margin: 0; padding: 0; color: var(--text); -webkit-tap-highlight-color: transparent; }
+        * { box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: linear-gradient(145deg, #f8fafc 0%, #eef2f7 100%); margin: 0; padding: 0; color: var(--text); -webkit-tap-highlight-color: transparent; min-height: 100vh; }
         
-        .navbar { background: var(--g4s-black); color: white; padding: 15px; text-align: center; position: sticky; top: 0; z-index: 50; display: flex; justify-content: space-between; align-items: center; border-bottom: 4px solid var(--g4s-red);}
+        .navbar { background: var(--g4s-black); color: white; padding: 12px max(15px, calc((100% - 760px) / 2)); text-align: center; position: sticky; top: 0; z-index: 50; display: flex; justify-content: space-between; align-items: center; border-bottom: 4px solid var(--g4s-red); gap: 12px;}
+        .brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
+        .brand-logo { width: 50px; height: 30px; object-fit: contain; border-radius: 5px; background: #fff; }
         .navbar h2 { margin: 0; font-size: 18px; font-weight: 900; letter-spacing: -0.5px; display: flex; align-items: center; gap: 10px;}
         .user-info { font-size: 12px; opacity: 0.8; margin-top: 2px;}
         
         .tab-bar { display: flex; background: white; border-bottom: 1px solid var(--border); box-shadow: 0 2px 5px rgba(0,0,0,0.05);}
-        .tab { flex: 1; text-align: center; padding: 14px 0; font-weight: 800; color: #6b7280; border-bottom: 3px solid transparent; cursor: pointer; transition: 0.2s; font-size: 14px;}
+        .tab { flex: 1; text-align: center; padding: 14px 0; margin: 0; width: auto; font-weight: 800; color: #6b7280; background: #fff; border: 0; border-bottom: 3px solid transparent; border-radius: 0; cursor: pointer; transition: 0.2s; font-size: 14px;}
         .tab.active { color: var(--g4s-red); border-bottom: 3px solid var(--g4s-red); }
         
-        .container { padding: 15px; max-width: 600px; margin: 0 auto; }
-        .card { background: var(--card); border-radius: 16px; padding: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); margin-bottom: 15px; border: 1px solid rgba(0,0,0,0.05); }
+        .container { padding: 20px 15px 40px; max-width: 760px; margin: 0 auto; }
+        .card { background: rgba(255,255,255,.96); border-radius: 16px; padding: 20px; box-shadow: 0 8px 24px rgba(15,23,42,.07); margin-bottom: 15px; border: 1px solid var(--border); }
         
         label { display: block; font-weight: 700; margin-bottom: 6px; font-size: 13px; margin-top: 10px; color: #4b5563;}
-        input[type="text"], input[type="password"], input[type="number"], select { width: 100%; padding: 12px; border-radius: 8px; border: 2px solid var(--border); font-size: 15px; box-sizing: border-box; background: #fafafa; font-family: inherit; transition: 0.2s;}
-        input:focus, select:focus { border-color: var(--g4s-red); outline: none; background: #fff; }
+        input[type="text"], input[type="password"], input[type="number"], select { width: 100%; padding: 12px; border-radius: 8px; border: 2px solid var(--border); font-size: 15px; background: #fafafa; font-family: inherit; transition: 0.2s;}
+        input:focus, select:focus, button:focus-visible { border-color: var(--focus); outline: 3px solid rgba(37,99,235,.2); background: #fff; }
         
         button { width: 100%; padding: 14px; border-radius: 8px; border: none; font-weight: 800; font-size: 15px; cursor: pointer; margin-top: 15px; color: white; display: flex; justify-content: center; align-items: center; gap: 8px; transition: transform 0.1s, filter 0.2s;}
         button:active { transform: scale(0.98); }
@@ -58,11 +66,11 @@
         .section { display: none; }
         .section.active { display: block; }
         
-        #login-screen, #change-pass-screen { position: fixed; top:0; left:0; width:100%; height:100%; background: #f9fafb; z-index: 100; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 20px; box-sizing: border-box;}
+        #login-screen, #change-pass-screen { position: fixed; inset:0; width:100%; min-height:100%; background: radial-gradient(circle at top right, #fff1f2, transparent 42%), #f8fafc; z-index: 100; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 20px; overflow:auto;}
         .login-card { width: 100%; max-width: 400px; background: white; border-radius: 16px; padding: 30px 25px; box-shadow: 0 15px 35px rgba(0,0,0,0.1); border: 1px solid var(--border); text-align:center;}
         .login-card h1 { color: var(--g4s-black); font-size: 24px; font-weight: 900; text-align: center; margin-bottom: 5px; margin-top:0;}
         .login-card p { color: #6b7280; text-align: center; margin-bottom: 25px; font-size: 14px;}
-        .logo-g4s { max-width: 140px; margin: 0 auto 20px auto; display: block; }
+        .logo-g4s { width: 170px; height: auto; margin: 0 auto 20px; display: block; border-radius: 10px; }
         
         .search-row { display: flex; gap: 10px; align-items: flex-end; margin-top: 10px;}
         .search-row > div { flex: 1; margin-top: 0;}
@@ -85,6 +93,14 @@
         .alert-error { background: #ee1c25; color: white; border: 2px solid #b91c1c;}
         
         .choices__inner { border-radius: 8px !important; border: 2px solid var(--border) !important; background: #fafafa !important; min-height: 48px !important; display: flex; align-items: center; text-align:left;}
+        .helper-text { color: var(--muted); font-size: 12px; margin: 8px 0 0; }
+        @media (max-width: 520px) {
+            .navbar h2 { font-size: 15px; }
+            .navbar { padding-left: 12px; padding-right: 12px; }
+            .container { padding-top: 14px; }
+            .card { padding: 16px; }
+            .form-row { flex-direction: column; gap: 0 !important; }
+        }
     </style>
 </head>
 <body>
@@ -93,14 +109,14 @@
     <!-- PANTALLA DE LOGIN -->
     <div id="login-screen">
         <div class="login-card">
-            <img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNTAgMTAwIj48dGV4dCB4PSIxMCIgeT0iNzAiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSI2MCIgZm9udC13ZWlnaHQ9ImJvbGQiIGZpbGw9IiMwMDAiPkc8L3RleHQ+PHRleHQgeD0iNTAiIHk9IjcwIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iNjAiIGZvbnQtd2VpZ2h0PSJib2xkIiBmaWxsPSIjZWUxYzI1Ij40PC90ZXh0Pjx0ZXh0IHg9Ijk1IiB5PSI3MCIgZm9udC1mYW1pbHk9IkFyaWFsIiBmb250LXNpemU9IjYwIiBmb250LXdlaWdodD0iYm9sZCIgZmlsbD0iIzAwMCI+UzwvdGV4dD48L3N2Zz4=" alt="G4S Logo" class="logo-g4s">
+            <img data-logo-image src="assets/g4s-logo-.svg" alt="G4S" class="logo-g4s">
             <h1>Inventario TI</h1>
             <p>Acceso Seguro de Comunicaciones</p>
             
             <label style="text-align:left;">Usuario / Correo</label>
-            <input type="text" id="login-user" placeholder="Ej. jperez">
+            <input type="text" id="login-user" placeholder="Ej. jperez" autocomplete="username" maxlength="100">
             <label style="text-align:left;">Contraseña / PIN</label>
-            <input type="password" id="login-pass" placeholder="****">
+            <input type="password" id="login-pass" placeholder="Contraseña" autocomplete="current-password" maxlength="128">
             
             <button class="btn-primary" id="btn-login" onclick="window.iniciarSesion()"><i class="fa-solid fa-right-to-bracket"></i> INGRESAR</button>
             <button class="btn-link" onclick="window.mostrarPantallaCambioClave()">Cambiar mi contraseña</button>
@@ -113,11 +129,11 @@
             <h2 style="text-align:center; color:var(--g4s-black); margin-top:0;">Cambiar Contraseña</h2>
             
             <label style="text-align:left;">Usuario</label>
-            <input type="text" id="cp-user" placeholder="Tu usuario">
+            <input type="text" id="cp-user" placeholder="Tu usuario" autocomplete="username" maxlength="100">
             <label style="text-align:left;">Contraseña Actual</label>
-            <input type="password" id="cp-old" placeholder="Contraseña actual">
+            <input type="password" id="cp-old" placeholder="Contraseña actual" autocomplete="current-password" maxlength="128">
             <label style="text-align:left;">Nueva Contraseña</label>
-            <input type="password" id="cp-new" placeholder="Mínimo 4 caracteres">
+            <input type="password" id="cp-new" placeholder="Mínimo 8 caracteres" autocomplete="new-password" minlength="8" maxlength="128">
             
             <button class="btn-primary" id="btn-change-pass" onclick="window.cambiarClave()"><i class="fa-solid fa-key"></i> ACTUALIZAR CLAVE</button>
             <button class="btn-link" onclick="window.volverLogin()">Volver a Inicio de Sesión</button>
@@ -128,15 +144,15 @@
     <div id="app-screen" style="display: none;">
         <div class="navbar">
             <div>
-                <h2><i class="fa-solid fa-shield-halved"></i> G4S Inventario</h2>
+                <div class="brand"><img data-logo-image src="assets/g4s-logo-.svg" alt="G4S" class="brand-logo"><h2>Inventario TI</h2></div>
                 <div class="user-info" id="user-email">cargando...</div>
             </div>
             <button class="btn-secondary" style="border-color:rgba(255,255,255,0.3); color:white; padding: 8px 14px; font-size:13px; width:auto; margin:0;" onclick="window.cerrarSesion()"><i class="fa-solid fa-right-from-bracket"></i> Salir</button>
         </div>
 
-        <div class="tab-bar">
-            <div class="tab active" onclick="window.switchTab('registro')">Movimientos</div>
-            <div class="tab" onclick="window.switchTab('catalogo')">Catálogo</div>
+        <div class="tab-bar" role="tablist" aria-label="Secciones del inventario">
+            <button type="button" class="tab active" role="tab" aria-selected="true" aria-controls="tab-registro" onclick="window.switchTab('registro', this)">Movimientos</button>
+            <button type="button" class="tab" role="tab" aria-selected="false" aria-controls="tab-catalogo" onclick="window.switchTab('catalogo', this)">Catálogo</button>
         </div>
 
         <div class="container">
@@ -152,7 +168,7 @@
                         </label>
                     </div>
 
-                    <div style="display:flex; gap:10px;">
+                    <div class="form-row" style="display:flex; gap:10px;">
                         <div style="flex:1;">
                             <label id="lbl-cliente">Cliente/Empresa</label>
                             <input type="text" id="cliente" placeholder="Ej. Banco ABC">
@@ -172,7 +188,7 @@
                         </div>
                     </div>
 
-                    <div style="display:flex; gap:10px;">
+                    <div class="form-row" style="display:flex; gap:10px;">
                         <div style="flex:1;">
                             <label>Técnico</label>
                             <select id="tecnico">
@@ -253,13 +269,39 @@
         // =========================================================================
         // URL FIJA DE APPS SCRIPT
         // =========================================================================
-        const API_URL = "https://script.google.com/macros/s/AKfycbz8QCeI2uHk-tBDyfBRs_SpKT3PjGoNg10TNzuIYWpRsvxBPEjMXrylLtyWikjRI7pY/exec"; 
+        const API_URL = "https://script.google.com/macros/s/AKfycbz8QCeI2uHk-tBDyfBRs_SpKT3PjGoNg10TNzuIYWpRsvxBPEjMXrylLtyWikjRI7pY/exec";
+        // Reemplaza este valor por la ruta local o URL HTTPS de tu imagen de logo.
+        const LOGO_URL = "assets/g4s-logo-.svg";
         
         if ('serviceWorker' in navigator) { navigator.serviceWorker.register('sw.js').then(() => console.log("PWA SW Registrado v11")); }
 
         let choicesInstance = null;
         let carrito = [];
         let html5QrcodeScanner = null;
+
+        document.querySelectorAll('[data-logo-image]').forEach(image => {
+            image.src = LOGO_URL;
+            image.addEventListener('error', () => {
+                image.src = 'assets/g4s-logo.svg';
+            }, { once: true });
+        });
+
+        window.apiHeaders = function() {
+            const headers = { 'Content-Type': 'text/plain;charset=utf-8' };
+            const token = sessionStorage.getItem('g4sSessionToken');
+            if (token) headers.Authorization = `Bearer ${token}`;
+            return headers;
+        };
+        window.apiPayload = function(payload) {
+            const token = sessionStorage.getItem('g4sSessionToken');
+            return token ? { ...payload, token } : payload;
+        };
+
+        window.escapeHtml = function(value) {
+            return String(value).replace(/[&<>"']/g, character => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'
+            }[character]));
+        };
 
         window.mostrarAlerta = function(texto, tipo) { 
             let ab = document.getElementById('alert-box');
@@ -271,7 +313,8 @@
         };
 
         window.onload = function() {
-            let loggedUser = localStorage.getItem("g4sLoggedUser");
+            // Do not persist an authenticated identity beyond the current tab.
+            let loggedUser = sessionStorage.getItem("g4sLoggedUser");
             if (loggedUser) window.mostrarApp(loggedUser);
             else document.getElementById('login-screen').style.display = 'flex';
         };
@@ -290,7 +333,7 @@
         window.iniciarSesion = function() {
             let user = document.getElementById('login-user').value.trim();
             let pass = document.getElementById('login-pass').value.trim();
-            if(!user || !pass) { window.mostrarAlerta("Llena ambos campos", "error"); return; }
+            if(!user || !pass) { window.mostrarAlerta("Completa usuario y contraseña", "error"); return; }
             
             let btn = document.getElementById('btn-login');
             let originalTxt = btn.innerHTML;
@@ -298,10 +341,11 @@
             btn.disabled = true;
 
             // En lugar de fetch CORS directo, usamos un jsonp trick si falla o fetch simple
-            fetch(API_URL, { method: 'POST', body: JSON.stringify({ action: "login", usuario: user, clave: pass }), headers: { 'Content-Type': 'text/plain;charset=utf-8' } })
+            fetch(API_URL, { method: 'POST', body: JSON.stringify({ action: "login", usuario: user, clave: pass }), headers: window.apiHeaders() })
             .then(res => res.json()).then(data => {
                 if(data.status === "success") {
-                    localStorage.setItem("g4sLoggedUser", data.usuario);
+                    sessionStorage.setItem("g4sLoggedUser", data.usuario);
+                    if (data.token) sessionStorage.setItem("g4sSessionToken", data.token);
                     window.mostrarApp(data.usuario);
                 } else {
                     window.mostrarAlerta("❌ Usuario o contraseña incorrectos", "error");
@@ -320,15 +364,15 @@
             let oldP = document.getElementById('cp-old').value.trim();
             let newP = document.getElementById('cp-new').value.trim();
             
-            if(!user || !oldP || !newP) { window.mostrarAlerta("Llena todos los campos", "error"); return; }
-            if(newP.length < 4) { window.mostrarAlerta("La nueva clave debe tener al menos 4 caracteres", "error"); return; }
+            if(!user || !oldP || !newP) { window.mostrarAlerta("Completa todos los campos", "error"); return; }
+            if(newP.length < 8) { window.mostrarAlerta("La nueva clave debe tener al menos 8 caracteres", "error"); return; }
 
             let btn = document.getElementById('btn-change-pass');
             let originalTxt = btn.innerHTML;
             btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Procesando...'; 
             btn.disabled = true;
 
-            fetch(API_URL, { method: 'POST', body: JSON.stringify({ action: "cambiar_clave", usuario: user, claveAntigua: oldP, claveNueva: newP }), headers: { 'Content-Type': 'text/plain;charset=utf-8' } })
+            fetch(API_URL, { method: 'POST', body: JSON.stringify(window.apiPayload({ action: "cambiar_clave", usuario: user, claveAntigua: oldP, claveNueva: newP })), headers: window.apiHeaders() })
             .then(res => res.json()).then(data => {
                 if(data.status === "success") {
                     window.mostrarAlerta("✅ Contraseña actualizada correctamente", "success");
@@ -345,7 +389,19 @@
         }
 
         window.cerrarSesion = function() {
-            localStorage.removeItem("g4sLoggedUser");
+            sessionStorage.removeItem("g4sLoggedUser");
+            sessionStorage.removeItem("g4sSessionToken");
+            carrito = [];
+            if (choicesInstance) {
+                choicesInstance.destroy();
+                choicesInstance = null;
+            }
+            if (html5QrcodeScanner) {
+                html5QrcodeScanner.clear().catch(error => console.warn('No se pudo detener el escáner:', error));
+                html5QrcodeScanner = null;
+            }
+            document.getElementById('items-list').innerHTML = '<p style="text-align:center; color:#9ca3af; font-size:13px; padding: 20px 0;">No hay ítems seleccionados</p>';
+            document.querySelectorAll('#app-screen input[type="text"], #app-screen input[type="number"]').forEach(input => { input.value = ''; });
             document.getElementById('app-screen').style.display = 'none';
             document.getElementById('login-pass').value = '';
             
@@ -365,7 +421,7 @@
         }
 
         window.cargarCatalogo = function() {
-            fetch(API_URL, { method: 'POST', body: JSON.stringify({ action: "obtener_catalogo" }), headers: { 'Content-Type': 'text/plain;charset=utf-8' } })
+            fetch(API_URL, { method: 'POST', body: JSON.stringify(window.apiPayload({ action: "obtener_catalogo" })), headers: window.apiHeaders() })
             .then(res => res.json()).then(data => {
                 if(data.status === "success") window.inicializarBuscador(data.data);
             }).catch(e => console.log("Error catálogo"));
@@ -374,7 +430,13 @@
         window.inicializarBuscador = function(datosCatalogo) {
             const select = document.getElementById('smart-search');
             if(choicesInstance) choicesInstance.destroy();
-            const opciones = datosCatalogo.map(item => ({ value: item.idArticulo, label: `[${item.stockActual} u.] ${item.idArticulo} - ${item.descripcion}` }));
+            if (!Array.isArray(datosCatalogo)) {
+                window.mostrarAlerta("El catálogo recibido no tiene un formato válido", "error");
+                return;
+            }
+            const opciones = datosCatalogo
+                .filter(item => item && item.idArticulo)
+                .map(item => ({ value: String(item.idArticulo), label: `[${Number(item.stockActual) || 0} u.] ${String(item.idArticulo)} - ${String(item.descripcion || 'Sin descripción')}` }));
             choicesInstance = new Choices(select, { searchEnabled: true, itemSelectText: '', choices: [{value: '', label: 'Selecciona o busca un accesorio...', disabled: true}, ...opciones] });
         }
 
@@ -387,6 +449,11 @@
             const reader = document.getElementById('reader');
             if(reader.style.display === "block") { if(html5QrcodeScanner) html5QrcodeScanner.clear(); reader.style.display = "none"; return; }
             reader.style.display = "block";
+            if (typeof Html5QrcodeScanner === 'undefined') {
+                reader.style.display = "none";
+                window.mostrarAlerta("El escáner no está disponible. Usa la búsqueda manual.", "error");
+                return;
+            }
             html5QrcodeScanner = new Html5QrcodeScanner("reader", { fps: 10, qrbox: {width: 250, height: 250} }, false);
             html5QrcodeScanner.render((decodedText) => { window.agregarAlCarrito(decodedText); html5QrcodeScanner.clear(); reader.style.display = "none"; try { navigator.vibrate(200); } catch(e) {} }, (err) => {});
         });
@@ -415,9 +482,9 @@
                 let html = '';
                 carrito.forEach((item, idx) => {
                     html += `<div class="item-row">
-                        <div class="item-info">🏷️ ${item.idArticulo}</div>
-                        <input type="number" class="qty-input" value="${item.cantidad}" onchange="window.actualizarCant(${idx}, this.value)">
-                        <button class="btn-del" onclick="window.eliminarItem(${idx})"><i class="fa-solid fa-trash-can"></i></button>
+                            <div class="item-info">🏷️ ${window.escapeHtml(item.idArticulo)}</div>
+                            <input type="number" min="1" max="9999" class="qty-input" value="${item.cantidad}" onchange="window.actualizarCant(${idx}, this.value)" aria-label="Cantidad de ${window.escapeHtml(item.idArticulo)}">
+                            <button type="button" class="btn-del" onclick="window.eliminarItem(${idx})" aria-label="Eliminar ${window.escapeHtml(item.idArticulo)}"><i class="fa-solid fa-trash-can"></i></button>
                     </div>`;
                 });
                 list.innerHTML = html; btnSubmit.disabled = false; btnSubmit.innerHTML = `<i class="fa-solid fa-paper-plane"></i> REGISTRAR ${carrito.length} TIPO(S)`;
@@ -426,12 +493,18 @@
 
         document.getElementById('btn-submit').addEventListener('click', () => {
             let tipoMov = document.querySelector('input[name="tipoMov"]:checked').value;
-            let payload = { action: "registrar_movimiento", tipoMovimiento: tipoMov, cliente: document.getElementById('cliente').value || "N/A", regional: document.getElementById('regional').value, tecnico: document.getElementById('tecnico').value, usuario: document.getElementById('usuario').value || "N/A", items: carrito };
+            let cliente = document.getElementById('cliente').value.trim();
+            let usuario = document.getElementById('usuario').value.trim();
+            if (!cliente || !usuario || carrito.length === 0) {
+                window.mostrarAlerta("Completa los datos del movimiento y agrega al menos un artículo", "error");
+                return;
+            }
+            let payload = { action: "registrar_movimiento", tipoMovimiento: tipoMov, cliente, regional: document.getElementById('regional').value, tecnico: document.getElementById('tecnico').value, usuario, items: carrito };
             let btn = document.getElementById('btn-submit'); 
             btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Guardando...'; 
             btn.disabled = true;
 
-            fetch(API_URL, { method: 'POST', body: JSON.stringify(payload), headers: { 'Content-Type': 'text/plain;charset=utf-8' } })
+            fetch(API_URL, { method: 'POST', body: JSON.stringify(window.apiPayload(payload)), headers: window.apiHeaders() })
             .then(res => res.json()).then(res => {
                 if(res.status === "success") { 
                     window.mostrarAlerta("🎉 Movimiento guardado con éxito", "success"); 
@@ -459,7 +532,7 @@
             btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Creando...';
             btn.disabled = true;
 
-            fetch(API_URL, { method: 'POST', body: JSON.stringify(payload), headers: { 'Content-Type': 'text/plain;charset=utf-8' } })
+            fetch(API_URL, { method: 'POST', body: JSON.stringify(window.apiPayload(payload)), headers: window.apiHeaders() })
             .then(res => res.json()).then(res => {
                 if(res.status === "success") { 
                     window.mostrarAlerta("✅ Accesorio creado en Excel", "success"); 
@@ -477,12 +550,21 @@
             });
         });
 
-        window.switchTab = function(tabName) {
+        window.switchTab = function(tabName, tabElement) {
             document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
             document.getElementById('tab-' + tabName).classList.add('active'); 
-            event.target.classList.add('active');
+            document.querySelectorAll('.tab').forEach(t => t.setAttribute('aria-selected', String(t === tabElement)));
+            tabElement.classList.add('active');
         }
+
+        document.querySelectorAll('[role="tab"]').forEach(tab => {
+            tab.addEventListener('keydown', event => {
+                if (event.key !== 'Enter' && event.key !== ' ') return;
+                event.preventDefault();
+                tab.click();
+            });
+        });
 
         window.cambiarMovimientoUI = function(tipo) {
             document.getElementById('lbl-salida').className = 'radio-btn' + (tipo === 'Salida' ? ' active-salida' : '');
