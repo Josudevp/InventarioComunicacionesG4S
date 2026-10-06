@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Inventario Comunicaciones</title>
+    <title>G4S | Inventario Comunicaciones</title>
     <link rel="manifest" href="manifest.json">
-    <meta name="theme-color" content="#4f46e5">
+    <meta name="theme-color" content="#000000">
     <link rel="apple-touch-icon" href="icons/icon-192.png">
     
     <script src="https://unpkg.com/html5-qrcode"></script>
@@ -14,66 +14,80 @@
     <script src="https://cdn.jsdelivr.net/npm/choices.js/public/assets/scripts/choices.min.js"></script>
 
     <style>
+        /* BRANDING G4S */
         :root { 
-            --primary: #4f46e5; --primary-dark: #4338ca; --success: #10b981; 
-            --danger: #ef4444; --bg: #f3f4f6; --card: #ffffff; 
-            --text: #1f2937; --border: #e5e7eb;
+            --g4s-red: #ee1c25;
+            --g4s-darkred: #cc1520;
+            --g4s-black: #000000;
+            --g4s-gray: #f3f4f6;
+            --success: #10b981; 
+            --danger: #ee1c25; 
+            --bg: #f3f4f6; 
+            --card: #ffffff; 
+            --text: #111111; 
+            --border: #e5e7eb;
         }
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); margin: 0; padding: 0; color: var(--text); -webkit-tap-highlight-color: transparent; }
         
-        .navbar { background: var(--primary); color: white; padding: 15px; text-align: center; position: sticky; top: 0; z-index: 50; display: flex; justify-content: space-between; align-items: center;}
-        .navbar h2 { margin: 0; font-size: 18px; font-weight: 900; letter-spacing: -0.5px;}
-        .user-info { font-size: 12px; opacity: 0.9; }
+        /* Navbar estilo G4S (Negro con detalles rojos) */
+        .navbar { background: var(--g4s-black); color: white; padding: 15px; text-align: center; position: sticky; top: 0; z-index: 50; display: flex; justify-content: space-between; align-items: center; border-bottom: 4px solid var(--g4s-red);}
+        .navbar h2 { margin: 0; font-size: 18px; font-weight: 900; letter-spacing: -0.5px; display: flex; align-items: center; gap: 10px;}
+        .user-info { font-size: 12px; opacity: 0.8; margin-top: 2px;}
         
-        .tab-bar { display: flex; background: white; border-bottom: 1px solid var(--border); }
-        .tab { flex: 1; text-align: center; padding: 12px 0; font-weight: 700; color: #6b7280; border-bottom: 3px solid transparent; cursor: pointer; transition: 0.2s;}
-        .tab.active { color: var(--primary); border-bottom: 3px solid var(--primary); }
+        .tab-bar { display: flex; background: white; border-bottom: 1px solid var(--border); box-shadow: 0 2px 5px rgba(0,0,0,0.05);}
+        .tab { flex: 1; text-align: center; padding: 14px 0; font-weight: 800; color: #6b7280; border-bottom: 3px solid transparent; cursor: pointer; transition: 0.2s; font-size: 14px;}
+        .tab.active { color: var(--g4s-red); border-bottom: 3px solid var(--g4s-red); }
         
         .container { padding: 15px; max-width: 600px; margin: 0 auto; }
-        .card { background: var(--card); border-radius: 20px; padding: 18px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); margin-bottom: 15px; }
+        .card { background: var(--card); border-radius: 16px; padding: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); margin-bottom: 15px; border: 1px solid rgba(0,0,0,0.05); }
         
         label { display: block; font-weight: 700; margin-bottom: 6px; font-size: 13px; margin-top: 10px; color: #4b5563;}
-        input[type="text"], input[type="password"], input[type="number"], select { width: 100%; padding: 12px; border-radius: 10px; border: 2px solid var(--border); font-size: 15px; box-sizing: border-box; background: #fafafa; font-family: inherit;}
-        input:focus, select:focus { border-color: var(--primary); outline: none; background: #fff; }
+        input[type="text"], input[type="password"], input[type="number"], select { width: 100%; padding: 12px; border-radius: 8px; border: 2px solid var(--border); font-size: 15px; box-sizing: border-box; background: #fafafa; font-family: inherit; transition: 0.2s;}
+        input:focus, select:focus { border-color: var(--g4s-red); outline: none; background: #fff; }
         
-        button { width: 100%; padding: 14px; border-radius: 12px; border: none; font-weight: 700; font-size: 15px; cursor: pointer; margin-top: 12px; color: white; display: flex; justify-content: center; align-items: center; gap: 8px; transition: transform 0.1s;}
+        button { width: 100%; padding: 14px; border-radius: 8px; border: none; font-weight: 800; font-size: 15px; cursor: pointer; margin-top: 15px; color: white; display: flex; justify-content: center; align-items: center; gap: 8px; transition: transform 0.1s, filter 0.2s;}
         button:active { transform: scale(0.98); }
         button:disabled { opacity: 0.6; cursor: not-allowed; }
         
-        .btn-primary { background-color: var(--primary); }
+        .btn-primary { background-color: var(--g4s-red); }
+        .btn-primary:hover { background-color: var(--g4s-darkred); }
+        .btn-black { background-color: var(--g4s-black); }
         .btn-success { background-color: var(--success); }
         .btn-danger { background-color: var(--danger); }
-        .btn-secondary { background: transparent; border: 2px solid var(--border); color: #6b7280; }
-        .btn-link { background: transparent; border: none; color: var(--primary); font-size: 13px; padding: 5px; margin-top: 10px; text-decoration: underline;}
+        .btn-secondary { background: transparent; border: 2px solid var(--border); color: var(--g4s-black); }
+        .btn-link { background: transparent; border: none; color: var(--g4s-red); font-size: 13px; padding: 5px; margin-top: 10px; text-decoration: underline;}
         
         .section { display: none; }
         .section.active { display: block; }
         
-        #login-screen, #change-pass-screen { position: fixed; top:0; left:0; width:100%; height:100%; background: white; z-index: 100; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 20px; box-sizing: border-box;}
-        .login-card { width: 100%; max-width: 400px; background: white; border-radius: 20px; padding: 25px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); border: 1px solid var(--border);}
-        .login-card h1 { color: var(--primary); font-size: 26px; font-weight: 900; text-align: center; margin-bottom: 5px; margin-top:0;}
+        #login-screen, #change-pass-screen { position: fixed; top:0; left:0; width:100%; height:100%; background: #f9fafb; z-index: 100; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 20px; box-sizing: border-box;}
+        .login-card { width: 100%; max-width: 400px; background: white; border-radius: 16px; padding: 30px 25px; box-shadow: 0 15px 35px rgba(0,0,0,0.1); border: 1px solid var(--border);}
+        .login-card h1 { color: var(--g4s-black); font-size: 24px; font-weight: 900; text-align: center; margin-bottom: 5px; margin-top:0;}
         .login-card p { color: #6b7280; text-align: center; margin-bottom: 25px; font-size: 14px;}
+        .logo-g4s { max-width: 140px; margin: 0 auto 20px auto; display: block; }
         
         .search-row { display: flex; gap: 10px; align-items: flex-end; margin-top: 10px;}
         .search-row > div { flex: 1; margin-top: 0;}
-        .btn-icon { width: 48px; height: 48px; padding: 0; flex-shrink: 0; margin: 0; border-radius: 10px; background: var(--primary); font-size: 20px;}
-        #reader { width: 100%; border-radius: 16px; overflow: hidden; display: none; margin-top: 15px; border: 3px solid var(--primary); }
+        .btn-icon { width: 48px; height: 48px; padding: 0; flex-shrink: 0; margin: 0; border-radius: 8px; background: var(--g4s-black); font-size: 20px;}
+        #reader { width: 100%; border-radius: 12px; overflow: hidden; display: none; margin-top: 15px; border: 3px solid var(--g4s-red); }
         
-        .radio-group { display: flex; gap: 8px; margin-bottom: 5px; }
-        .radio-btn { flex: 1; text-align: center; padding: 10px; border-radius: 10px; cursor: pointer; font-weight: 700; border: 2px solid var(--border); background: #fafafa; color: #6b7280; font-size: 13px;}
+        .radio-group { display: flex; gap: 8px; margin-bottom: 10px; }
+        .radio-btn { flex: 1; text-align: center; padding: 12px; border-radius: 8px; cursor: pointer; font-weight: 800; border: 2px solid var(--border); background: #fafafa; color: #6b7280; font-size: 13px; transition: 0.2s;}
         .radio-btn input { display: none; }
-        .radio-btn.active-salida { border-color: #ef4444; background: #fee2e2; color: #b91c1c; }
-        .radio-btn.active-entrada { border-color: #10b981; background: #d1fae5; color: #047857; }
+        .radio-btn.active-salida { border-color: var(--g4s-red); background: #fff0f0; color: var(--g4s-red); }
+        .radio-btn.active-entrada { border-color: var(--g4s-black); background: #f0f0f0; color: var(--g4s-black); }
 
-        .item-row { display: flex; align-items: center; justify-content: space-between; background: #f8fafc; border: 1px solid var(--border); border-radius: 10px; padding: 10px; margin-bottom: 8px; gap: 5px;}
-        .item-info { flex: 1.2; font-weight: 700; font-size: 13px; color: var(--text); word-break: break-all;}
-        .qty-input { width: 45px !important; height: 34px; text-align: center; font-size: 15px; font-weight: 800; border: 2px solid #cbd5e1; border-radius: 8px; padding: 0 !important; margin: 0; background: #fff;}
-        .btn-del { color: var(--danger); background: transparent; border: none; font-size: 16px; padding: 5px; width: auto; margin: 0;}
+        .item-row { display: flex; align-items: center; justify-content: space-between; background: #f9fafb; border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-bottom: 8px; gap: 8px;}
+        .item-info { flex: 1.2; font-weight: 700; font-size: 14px; color: var(--text); word-break: break-all;}
+        .qty-input { width: 50px !important; height: 38px; text-align: center; font-size: 15px; font-weight: 800; border: 2px solid #cbd5e1; border-radius: 6px; padding: 0 !important; margin: 0; background: #fff;}
+        .btn-del { color: var(--danger); background: transparent; border: none; font-size: 18px; padding: 5px; width: auto; margin: 0;}
         
-        .alert-box { position: fixed; top: 15px; left: 50%; transform: translateX(-50%); width: 90%; max-width: 450px; padding: 16px 20px; border-radius: 16px; font-weight: 700; font-size: 14px; text-align: center; z-index: 9999; box-shadow: 0 10px 25px rgba(0,0,0,0.2); display: none; }
-        .alert-success { background: #10b981; color: white; }
-        .alert-error { background: #ef4444; color: white; }
-        .choices__inner { border-radius: 10px !important; border: 2px solid var(--border) !important; background: #fafafa !important; min-height: 48px !important; display: flex; align-items: center;}
+        /* ALERTA CORREGIDA (Z-index altísimo y posición absoluta garantizada) */
+        .alert-box { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); width: 90%; max-width: 400px; padding: 16px 20px; border-radius: 12px; font-weight: 700; font-size: 14px; text-align: center; z-index: 99999; box-shadow: 0 10px 25px rgba(0,0,0,0.3); display: none; }
+        .alert-success { background: #10b981; color: white; border: 2px solid #047857;}
+        .alert-error { background: #ee1c25; color: white; border: 2px solid #b91c1c;}
+        
+        .choices__inner { border-radius: 8px !important; border: 2px solid var(--border) !important; background: #fafafa !important; min-height: 48px !important; display: flex; align-items: center;}
     </style>
 </head>
 <body>
@@ -82,26 +96,24 @@
     <!-- PANTALLA DE LOGIN -->
     <div id="login-screen">
         <div class="login-card">
-            <div style="text-align: center; margin-bottom: 20px;">
-                <i class="fa-solid fa-boxes-stacked" style="font-size: 40px; color: var(--primary);"></i>
-            </div>
-            <h1>G4S Inventario</h1>
-            <p>Acceso Seguro</p>
+            <img src="assets/g4s-logo.png" alt="G4S Logo" class="logo-g4s" onerror="this.src='https://upload.wikimedia.org/wikipedia/commons/thumb/6/66/G4S_logo.svg/512px-G4S_logo.svg.png'">
+            <h1>Inventario TI</h1>
+            <p>Acceso Seguro de Comunicaciones</p>
             
             <label>Usuario / Correo</label>
             <input type="text" id="login-user" placeholder="Ej. jperez">
             <label>Contraseña / PIN</label>
             <input type="password" id="login-pass" placeholder="****">
             
-            <button class="btn-primary" id="btn-login" onclick="iniciarSesion()"><i class="fa-solid fa-right-to-bracket"></i> INGRESAR</button>
-            <button class="btn-link" onclick="mostrarPantallaCambioClave()">Cambiar mi contraseña</button>
+            <button class="btn-primary" id="btn-login" onclick="window.iniciarSesion()"><i class="fa-solid fa-right-to-bracket"></i> INGRESAR</button>
+            <button class="btn-link" onclick="window.mostrarPantallaCambioClave()">Cambiar mi contraseña</button>
         </div>
     </div>
 
     <!-- PANTALLA CAMBIO CONTRASEÑA -->
     <div id="change-pass-screen" style="display:none;">
         <div class="login-card">
-            <h2 style="text-align:center; color:var(--primary); margin-top:0;">Cambiar Contraseña</h2>
+            <h2 style="text-align:center; color:var(--g4s-black); margin-top:0;">Cambiar Contraseña</h2>
             
             <label>Usuario</label>
             <input type="text" id="cp-user" placeholder="Tu usuario">
@@ -110,8 +122,8 @@
             <label>Nueva Contraseña</label>
             <input type="password" id="cp-new" placeholder="Mínimo 4 caracteres">
             
-            <button class="btn-success" id="btn-change-pass" onclick="cambiarClave()"><i class="fa-solid fa-key"></i> ACTUALIZAR CLAVE</button>
-            <button class="btn-link" onclick="volverLogin()">Volver a Inicio de Sesión</button>
+            <button class="btn-primary" id="btn-change-pass" onclick="window.cambiarClave()"><i class="fa-solid fa-key"></i> ACTUALIZAR CLAVE</button>
+            <button class="btn-link" onclick="window.volverLogin()">Volver a Inicio de Sesión</button>
         </div>
     </div>
 
@@ -119,15 +131,15 @@
     <div id="app-screen" style="display: none;">
         <div class="navbar">
             <div>
-                <h2>📦 G4S Inventario</h2>
+                <h2><i class="fa-solid fa-shield-halved"></i> G4S Inventario</h2>
                 <div class="user-info" id="user-email">cargando...</div>
             </div>
-            <button class="btn-secondary" style="border-color:rgba(255,255,255,0.3); color:white; padding: 6px 12px; font-size:12px; width:auto; margin:0;" onclick="cerrarSesion()"><i class="fa-solid fa-right-from-bracket"></i> Salir</button>
+            <button class="btn-secondary" style="border-color:rgba(255,255,255,0.3); color:white; padding: 8px 14px; font-size:13px; width:auto; margin:0;" onclick="window.cerrarSesion()"><i class="fa-solid fa-right-from-bracket"></i> Salir</button>
         </div>
 
         <div class="tab-bar">
-            <div class="tab active" onclick="switchTab('registro')">Movimientos</div>
-            <div class="tab" onclick="switchTab('catalogo')">Catálogo</div>
+            <div class="tab active" onclick="window.switchTab('registro')">Movimientos</div>
+            <div class="tab" onclick="window.switchTab('catalogo')">Catálogo</div>
         </div>
 
         <div class="container">
@@ -136,10 +148,10 @@
                 <div class="card">
                     <div class="radio-group">
                         <label class="radio-btn active-salida" id="lbl-salida">
-                            <input type="radio" name="tipoMov" value="Salida" checked onclick="cambiarMovimientoUI('Salida')"> 📤 SALIDA
+                            <input type="radio" name="tipoMov" value="Salida" checked onclick="window.cambiarMovimientoUI('Salida')"> 📤 SALIDA
                         </label>
                         <label class="radio-btn" id="lbl-entrada">
-                            <input type="radio" name="tipoMov" value="Entrada" onclick="cambiarMovimientoUI('Entrada')"> 📥 ENTRADA
+                            <input type="radio" name="tipoMov" value="Entrada" onclick="window.cambiarMovimientoUI('Entrada')"> 📥 ENTRADA
                         </label>
                     </div>
 
@@ -151,11 +163,11 @@
                         <div style="flex:1;">
                             <label>Regional</label>
                             <select id="regional">
-                                <option value="Bogota">Bogota</option>
+                                <option value="Bogota">Bogotá</option>
                                 <option value="Eje Cafetero">Eje Cafetero</option>
                                 <option value="Noroccidente">Noroccidente</option>
                                 <option value="Sabana">Sabana</option>
-                                <option value="Cordoba">Cordoba</option>
+                                <option value="Cordoba">Córdoba</option>
                                 <option value="Costa">Costa</option>
                                 <option value="Suroccidente">Suroccidente</option>
                                 <option value="Santanderes">Santanderes</option>
@@ -167,10 +179,10 @@
                         <div style="flex:1;">
                             <label>Técnico</label>
                             <select id="tecnico">
-                                <option value="Josue M">Josue</option>
-                                <option value="Nataly P">Nataly</option>
-                                <option value="Juan D">Juan</option>
-                                <option value="Santiago M">Santiago</option>
+                                <option value="Josue M">Josue M.</option>
+                                <option value="Nataly P">Nataly P.</option>
+                                <option value="Juan D">Juan D.</option>
+                                <option value="Santiago M">Santiago M.</option>
                             </select>
                         </div>
                         <div style="flex:1;">
@@ -189,15 +201,15 @@
                             </select>
                         </div>
                         <button class="btn-icon" id="btn-add-search"><i class="fa-solid fa-plus"></i></button>
-                        <button class="btn-icon" id="btn-camera" style="background:var(--success);"><i class="fa-solid fa-qrcode"></i></button>
+                        <button class="btn-icon" id="btn-camera"><i class="fa-solid fa-qrcode"></i></button>
                     </div>
                     <div id="reader"></div>
                 </div>
 
                 <div class="card">
-                    <h3 style="margin-top:0; font-size: 15px;">🛒 Lista de Accesorios</h3>
+                    <h3 style="margin-top:0; font-size: 16px; color: var(--g4s-black); border-bottom: 2px solid var(--border); padding-bottom: 8px;">🛒 Lista de Accesorios</h3>
                     <div id="items-list" style="min-height: 50px;">
-                        <p style="text-align:center; color:#9ca3af; font-size:13px;">No hay ítems seleccionados</p>
+                        <p style="text-align:center; color:#9ca3af; font-size:13px; padding: 20px 0;">No hay ítems seleccionados</p>
                     </div>
                     <button class="btn-primary" id="btn-submit" disabled><i class="fa-solid fa-cloud-arrow-up"></i> REGISTRAR MOVIMIENTO</button>
                 </div>
@@ -206,7 +218,7 @@
             <!-- TAB CATÁLOGO (CRUD) -->
             <div id="tab-catalogo" class="section">
                 <div class="card">
-                    <h3 style="margin-top:0; color: var(--primary);"><i class="fa-solid fa-folder-plus"></i> Nuevo Accesorio</h3>
+                    <h3 style="margin-top:0; color: var(--g4s-black); border-bottom: 2px solid var(--border); padding-bottom: 8px;"><i class="fa-solid fa-folder-plus"></i> Nuevo Accesorio</h3>
                     <p style="font-size: 12px; color: #6b7280; margin-bottom: 15px;">Agrega un nuevo producto a la base de datos de Excel automáticamente.</p>
                     
                     <label>SKU / ID Artículo (Código único)</label>
@@ -226,13 +238,13 @@
                     <label>Alerta de Stock Mínimo</label>
                     <input type="number" id="new-min" value="5" min="1">
 
-                    <button class="btn-success" id="btn-crear-acc"><i class="fa-solid fa-save"></i> CREAR ACCESORIO</button>
+                    <button class="btn-black" id="btn-crear-acc" style="margin-top: 20px;"><i class="fa-solid fa-save"></i> CREAR ACCESORIO EN EXCEL</button>
                 </div>
                 <div class="card">
                     <button class="btn-secondary" onclick="window.open('https://lookerstudio.google.com/', '_blank')">
                         <i class="fa-solid fa-chart-pie"></i> VER DASHBOARD LOOKER
                     </button>
-                    <button class="btn-secondary" style="margin-top:10px;" onclick="cargarCatalogo()">
+                    <button class="btn-secondary" style="margin-top:10px;" onclick="window.cargarCatalogo()">
                         <i class="fa-solid fa-rotate"></i> Forzar Sincronización de Catálogo
                     </button>
                 </div>
@@ -241,18 +253,30 @@
     </div>
 
     <script>
+        // =========================================================================
+        // URL FIJA DE APPS SCRIPT
+        // =========================================================================
+        const API_URL = "https://script.google.com/macros/s/AKfycbyVbcTmbIgMgs10-qgZwvtXwhkGExhiUZY9vexuInFEOBnq7iess90NdxshXjitGwEI/exec"; 
         
-        const API_URL = "https://script.google.com/macros/s/AKfycbyq_gXJSgV_lqQrqnPPpYUVW6XlHwWiFg8l_wV8RrU03oUQlltTUsm_IVgYJs7nGgA/exec"; 
-        
-        if ('serviceWorker' in navigator) { navigator.serviceWorker.register('sw.js').then(() => console.log("PWA SW Registrado v9")); }
+        if ('serviceWorker' in navigator) { navigator.serviceWorker.register('sw.js').then(() => console.log("PWA SW Registrado v10")); }
 
         let choicesInstance = null;
         let carrito = [];
         let html5QrcodeScanner = null;
 
+        // FUNCIÓN DE ALERTA TOTALMENTE REESCRITA Y A PRUEBA DE FALLOS
+        window.mostrarAlerta = function(texto, tipo) { 
+            let ab = document.getElementById('alert-box');
+            if(!ab) return; // Previene el crash si el elemento no existe
+            ab.innerText = texto; 
+            ab.className = "alert-box alert-" + tipo; 
+            ab.style.display = "block"; 
+            setTimeout(() => { ab.style.display = "none"; }, 4500); 
+        };
+
         window.onload = function() {
             let loggedUser = localStorage.getItem("g4sLoggedUser");
-            if (loggedUser) mostrarApp(loggedUser);
+            if (loggedUser) window.mostrarApp(loggedUser);
             else document.getElementById('login-screen').style.display = 'flex';
         };
 
@@ -269,22 +293,26 @@
         window.iniciarSesion = function() {
             let user = document.getElementById('login-user').value.trim();
             let pass = document.getElementById('login-pass').value.trim();
-            if(!user || !pass) { mostrarAlerta("Llena ambos campos", "error"); return; }
+            if(!user || !pass) { window.mostrarAlerta("Llena ambos campos", "error"); return; }
             
             let btn = document.getElementById('btn-login');
             let originalTxt = btn.innerHTML;
-            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Validando...'; btn.disabled = true;
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Validando...'; 
+            btn.disabled = true;
 
             fetch(API_URL, { method: 'POST', body: JSON.stringify({ action: "login", usuario: user, clave: pass }), headers: { 'Content-Type': 'text/plain' }, redirect: 'follow' })
             .then(res => res.json()).then(data => {
                 if(data.status === "success") {
                     localStorage.setItem("g4sLoggedUser", data.usuario);
-                    mostrarApp(data.usuario);
+                    window.mostrarApp(data.usuario);
                 } else {
-                    mostrarAlerta("❌ Usuario o contraseña incorrectos", "error");
+                    window.mostrarAlerta("❌ Usuario o contraseña incorrectos", "error");
                     btn.innerHTML = originalTxt; btn.disabled = false;
                 }
-            }).catch(e => { mostrarAlerta("❌ Error de red", "error"); btn.innerHTML = originalTxt; btn.disabled = false; });
+            }).catch(e => { 
+                window.mostrarAlerta("❌ Error de red. Intenta de nuevo.", "error"); 
+                btn.innerHTML = originalTxt; btn.disabled = false; 
+            });
         };
 
         window.cambiarClave = function() {
@@ -292,51 +320,58 @@
             let oldP = document.getElementById('cp-old').value.trim();
             let newP = document.getElementById('cp-new').value.trim();
             
-            if(!user || !oldP || !newP) { mostrarAlerta("Llena todos los campos", "error"); return; }
-            if(newP.length < 4) { mostrarAlerta("La nueva clave debe tener al menos 4 caracteres", "error"); return; }
+            if(!user || !oldP || !newP) { window.mostrarAlerta("Llena todos los campos", "error"); return; }
+            if(newP.length < 4) { window.mostrarAlerta("La nueva clave debe tener al menos 4 caracteres", "error"); return; }
 
             let btn = document.getElementById('btn-change-pass');
             let originalTxt = btn.innerHTML;
-            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Procesando...'; btn.disabled = true;
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Procesando...'; 
+            btn.disabled = true;
 
             fetch(API_URL, { method: 'POST', body: JSON.stringify({ action: "cambiar_clave", usuario: user, claveAntigua: oldP, claveNueva: newP }), headers: { 'Content-Type': 'text/plain' }, redirect: 'follow' })
             .then(res => res.json()).then(data => {
                 if(data.status === "success") {
-                    mostrarAlerta("✅ Contraseña actualizada correctamente", "success");
+                    window.mostrarAlerta("✅ Contraseña actualizada correctamente", "success");
                     document.getElementById('cp-user').value = ""; document.getElementById('cp-old').value = ""; document.getElementById('cp-new').value = "";
-                    setTimeout(volverLogin, 1500);
+                    setTimeout(window.volverLogin, 1500);
                 } else {
-                    mostrarAlerta("❌ " + data.message, "error");
+                    window.mostrarAlerta("❌ " + data.message, "error");
                 }
                 btn.innerHTML = originalTxt; btn.disabled = false;
-            }).catch(e => { mostrarAlerta("❌ Error de red", "error"); btn.innerHTML = originalTxt; btn.disabled = false; });
+            }).catch(e => { 
+                window.mostrarAlerta("❌ Error de red", "error"); 
+                btn.innerHTML = originalTxt; btn.disabled = false; 
+            });
         }
 
         window.cerrarSesion = function() {
             localStorage.removeItem("g4sLoggedUser");
             document.getElementById('app-screen').style.display = 'none';
             document.getElementById('login-pass').value = '';
-            document.getElementById('btn-login').innerHTML = '<i class="fa-solid fa-right-to-bracket"></i> INGRESAR';
-            document.getElementById('btn-login').disabled = false;
+            
+            let btn = document.getElementById('btn-login');
+            btn.innerHTML = '<i class="fa-solid fa-right-to-bracket"></i> INGRESAR';
+            btn.disabled = false;
+            
             document.getElementById('login-screen').style.display = 'flex';
         };
 
-        function mostrarApp(nombreUsuario) {
+        window.mostrarApp = function(nombreUsuario) {
             document.getElementById('login-screen').style.display = 'none';
             document.getElementById('change-pass-screen').style.display = 'none';
             document.getElementById('app-screen').style.display = 'block';
             document.getElementById('user-email').innerText = "Usuario: " + nombreUsuario;
-            cargarCatalogo();
+            window.cargarCatalogo();
         }
 
         window.cargarCatalogo = function() {
             fetch(API_URL, { method: 'POST', body: JSON.stringify({ action: "obtener_catalogo" }), headers: { 'Content-Type': 'text/plain' }, redirect: 'follow' })
             .then(res => res.json()).then(data => {
-                if(data.status === "success") inicializarBuscador(data.data);
+                if(data.status === "success") window.inicializarBuscador(data.data);
             }).catch(e => console.log("Error catálogo"));
         }
 
-        function inicializarBuscador(datosCatalogo) {
+        window.inicializarBuscador = function(datosCatalogo) {
             const select = document.getElementById('smart-search');
             if(choicesInstance) choicesInstance.destroy();
             const opciones = datosCatalogo.map(item => ({ value: item.idArticulo, label: `[${item.stockActual} u.] ${item.idArticulo} - ${item.descripcion}` }));
@@ -345,7 +380,7 @@
 
         document.getElementById('btn-add-search').addEventListener('click', () => {
             const val = document.getElementById('smart-search').value;
-            if(val) agregarAlCarrito(val);
+            if(val) window.agregarAlCarrito(val);
         });
 
         document.getElementById('btn-camera').addEventListener('click', () => {
@@ -353,35 +388,36 @@
             if(reader.style.display === "block") { if(html5QrcodeScanner) html5QrcodeScanner.clear(); reader.style.display = "none"; return; }
             reader.style.display = "block";
             html5QrcodeScanner = new Html5QrcodeScanner("reader", { fps: 10, qrbox: {width: 250, height: 250} }, false);
-            html5QrcodeScanner.render((decodedText) => { agregarAlCarrito(decodedText); html5QrcodeScanner.clear(); reader.style.display = "none"; try { navigator.vibrate(200); } catch(e) {} }, (err) => {});
+            html5QrcodeScanner.render((decodedText) => { window.agregarAlCarrito(decodedText); html5QrcodeScanner.clear(); reader.style.display = "none"; try { navigator.vibrate(200); } catch(e) {} }, (err) => {});
         });
 
-        function agregarAlCarrito(codigo) {
+        window.agregarAlCarrito = function(codigo) {
             let existe = carrito.find(item => item.idArticulo === codigo);
             if(existe) existe.cantidad += 1; else carrito.push({ idArticulo: codigo, cantidad: 1 });
-            renderizarCarrito(); mostrarAlerta("➕ " + codigo + " añadido", "success");
+            window.renderizarCarrito(); 
+            window.mostrarAlerta("➕ " + codigo + " añadido", "success");
         }
 
         window.actualizarCant = function(index, valor) {
             let nuevaCant = parseInt(valor);
             carrito[index].cantidad = (isNaN(nuevaCant) || nuevaCant <= 0) ? 1 : nuevaCant;
-            renderizarCarrito();
+            window.renderizarCarrito();
         }
 
-        window.eliminarItem = function(index) { carrito.splice(index, 1); renderizarCarrito(); }
+        window.eliminarItem = function(index) { carrito.splice(index, 1); window.renderizarCarrito(); }
 
-        function renderizarCarrito() {
+        window.renderizarCarrito = function() {
             let list = document.getElementById('items-list'); let btnSubmit = document.getElementById('btn-submit');
             if(carrito.length === 0) {
-                list.innerHTML = '<p style="text-align:center; color:#9ca3af; font-size:13px;">No hay ítems seleccionados</p>';
+                list.innerHTML = '<p style="text-align:center; color:#9ca3af; font-size:13px; padding: 20px 0;">No hay ítems seleccionados</p>';
                 btnSubmit.disabled = true; btnSubmit.innerHTML = '<i class="fa-solid fa-cloud-arrow-up"></i> REGISTRAR MOVIMIENTO';
             } else {
                 let html = '';
                 carrito.forEach((item, idx) => {
                     html += `<div class="item-row">
                         <div class="item-info">🏷️ ${item.idArticulo}</div>
-                        <input type="number" class="qty-input" value="${item.cantidad}" onchange="actualizarCant(${idx}, this.value)">
-                        <button class="btn-del" onclick="eliminarItem(${idx})"><i class="fa-solid fa-trash-can"></i></button>
+                        <input type="number" class="qty-input" value="${item.cantidad}" onchange="window.actualizarCant(${idx}, this.value)">
+                        <button class="btn-del" onclick="window.eliminarItem(${idx})"><i class="fa-solid fa-trash-can"></i></button>
                     </div>`;
                 });
                 list.innerHTML = html; btnSubmit.disabled = false; btnSubmit.innerHTML = `<i class="fa-solid fa-paper-plane"></i> REGISTRAR ${carrito.length} TIPO(S)`;
@@ -391,32 +427,61 @@
         document.getElementById('btn-submit').addEventListener('click', () => {
             let tipoMov = document.querySelector('input[name="tipoMov"]:checked').value;
             let payload = { action: "registrar_movimiento", tipoMovimiento: tipoMov, cliente: document.getElementById('cliente').value || "N/A", regional: document.getElementById('regional').value, tecnico: document.getElementById('tecnico').value, usuario: document.getElementById('usuario').value || "N/A", items: carrito };
-            let btn = document.getElementById('btn-submit'); btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Guardando...'; btn.disabled = true;
+            let btn = document.getElementById('btn-submit'); 
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Guardando...'; 
+            btn.disabled = true;
 
             fetch(API_URL, { method: 'POST', body: JSON.stringify(payload), headers: { 'Content-Type': 'text/plain' }, redirect: 'follow' })
             .then(res => res.json()).then(res => {
-                if(res.status === "success") { mostrarAlerta("🎉 Movimiento guardado con éxito", "success"); carrito = []; renderizarCarrito(); document.getElementById('usuario').value = ""; cargarCatalogo(); } 
-                else { mostrarAlerta("❌ " + res.message, "error"); btn.innerHTML = 'Reintentar'; btn.disabled = false; }
-            }).catch(e => { mostrarAlerta("❌ Error de red", "error"); btn.disabled = false; });
+                if(res.status === "success") { 
+                    window.mostrarAlerta("🎉 Movimiento guardado con éxito", "success"); 
+                    carrito = []; 
+                    window.renderizarCarrito(); 
+                    document.getElementById('usuario').value = ""; 
+                    window.cargarCatalogo(); 
+                } 
+                else { 
+                    window.mostrarAlerta("❌ " + res.message, "error"); 
+                    btn.innerHTML = 'Reintentar'; 
+                    btn.disabled = false; 
+                }
+            }).catch(e => { 
+                window.mostrarAlerta("❌ Error de conexión al servidor", "error"); 
+                btn.innerHTML = 'Reintentar';
+                btn.disabled = false; 
+            });
         });
 
         document.getElementById('btn-crear-acc').addEventListener('click', () => {
             let payload = { action: "crear_accesorio", idArticulo: document.getElementById('new-sku').value, categoria: document.getElementById('new-cat').value, descripcion: document.getElementById('new-desc').value, stockMinimo: document.getElementById('new-min').value };
-            if(!payload.idArticulo || !payload.descripcion) { mostrarAlerta("Llene SKU y Descripción", "error"); return; }
-            let btn = document.getElementById('btn-crear-acc'); btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Creando...';
+            if(!payload.idArticulo || !payload.descripcion) { window.mostrarAlerta("Llene SKU y Descripción", "error"); return; }
+            let btn = document.getElementById('btn-crear-acc'); 
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Creando...';
+            btn.disabled = true;
 
             fetch(API_URL, { method: 'POST', body: JSON.stringify(payload), headers: { 'Content-Type': 'text/plain' }, redirect: 'follow' })
             .then(res => res.json()).then(res => {
-                if(res.status === "success") { mostrarAlerta("✅ Accesorio creado en Excel", "success"); document.getElementById('new-sku').value = ""; document.getElementById('new-desc').value = ""; cargarCatalogo(); } 
-                else { mostrarAlerta("❌ " + res.message, "error"); }
-                btn.innerHTML = '<i class="fa-solid fa-save"></i> CREAR ACCESORIO';
+                if(res.status === "success") { 
+                    window.mostrarAlerta("✅ Accesorio creado en Excel", "success"); 
+                    document.getElementById('new-sku').value = ""; 
+                    document.getElementById('new-desc').value = ""; 
+                    window.cargarCatalogo(); 
+                } 
+                else { window.mostrarAlerta("❌ " + res.message, "error"); }
+                btn.innerHTML = '<i class="fa-solid fa-save"></i> CREAR ACCESORIO EN EXCEL';
+                btn.disabled = false;
+            }).catch(e => {
+                window.mostrarAlerta("❌ Error de red", "error"); 
+                btn.innerHTML = '<i class="fa-solid fa-save"></i> CREAR ACCESORIO EN EXCEL';
+                btn.disabled = false;
             });
         });
 
         window.switchTab = function(tabName) {
             document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-            document.getElementById('tab-' + tabName).classList.add('active'); event.target.classList.add('active');
+            document.getElementById('tab-' + tabName).classList.add('active'); 
+            event.target.classList.add('active');
         }
 
         window.cambiarMovimientoUI = function(tipo) {
@@ -425,8 +490,6 @@
             document.getElementById('lbl-usuario').innerText = tipo === 'Entrada' ? 'Proveedor' : 'Entregado a';
             document.getElementById('lbl-cliente').innerText = tipo === 'Entrada' ? 'Proyecto/Destino' : 'Cliente/Empresa';
         }
-
-        function mostrarAlerta(texto, tipo) { alertBox.innerText = texto; alertBox.className = "alert-box alert-" + tipo; alertBox.style.display = "block"; setTimeout(() => { alertBox.style.display = "none"; }, 4000); }
     </script>
 </body>
 </html>
