@@ -3,16 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Inventario Comunicaciones Enterprise</title>
+    <title>Inventario Comunicaciones</title>
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#4f46e5">
     <link rel="apple-touch-icon" href="icons/icon-192.png">
     
-    <!-- Librerías Externas -->
     <script src="https://unpkg.com/html5-qrcode"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-    
-    <!-- Choices.js (Buscador Inteligente) -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/choices.js/public/assets/styles/choices.min.css" />
     <script src="https://cdn.jsdelivr.net/npm/choices.js/public/assets/scripts/choices.min.js"></script>
 
@@ -24,7 +21,6 @@
         }
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); margin: 0; padding: 0; color: var(--text); -webkit-tap-highlight-color: transparent; }
         
-        /* Navbar & Tabs */
         .navbar { background: var(--primary); color: white; padding: 15px; text-align: center; position: sticky; top: 0; z-index: 50; display: flex; justify-content: space-between; align-items: center;}
         .navbar h2 { margin: 0; font-size: 18px; font-weight: 900; letter-spacing: -0.5px;}
         .user-info { font-size: 12px; opacity: 0.9; }
@@ -37,7 +33,7 @@
         .card { background: var(--card); border-radius: 20px; padding: 18px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); margin-bottom: 15px; }
         
         label { display: block; font-weight: 700; margin-bottom: 6px; font-size: 13px; margin-top: 10px; color: #4b5563;}
-        input[type="text"], input[type="number"], select { width: 100%; padding: 12px; border-radius: 10px; border: 2px solid var(--border); font-size: 15px; box-sizing: border-box; background: #fafafa; font-family: inherit;}
+        input[type="text"], input[type="password"], input[type="number"], select { width: 100%; padding: 12px; border-radius: 10px; border: 2px solid var(--border); font-size: 15px; box-sizing: border-box; background: #fafafa; font-family: inherit;}
         input:focus, select:focus { border-color: var(--primary); outline: none; background: #fff; }
         
         button { width: 100%; padding: 14px; border-radius: 12px; border: none; font-weight: 700; font-size: 15px; cursor: pointer; margin-top: 12px; color: white; display: flex; justify-content: center; align-items: center; gap: 8px; transition: transform 0.1s;}
@@ -48,42 +44,35 @@
         .btn-success { background-color: var(--success); }
         .btn-danger { background-color: var(--danger); }
         .btn-secondary { background: transparent; border: 2px solid var(--border); color: #6b7280; }
-        .btn-logout { background: transparent; color: white; border: 1px solid rgba(255,255,255,0.3); padding: 6px 12px; font-size: 12px; margin: 0; width: auto;}
+        .btn-link { background: transparent; border: none; color: var(--primary); font-size: 13px; padding: 5px; margin-top: 10px; text-decoration: underline;}
         
-        /* Secciones */
         .section { display: none; }
         .section.active { display: block; }
         
-        /* Login */
-        #login-screen { position: fixed; top:0; left:0; width:100%; height:100%; background: white; z-index: 100; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 20px; box-sizing: border-box;}
-        #login-screen h1 { color: var(--primary); font-size: 28px; font-weight: 900; text-align: center; margin-bottom: 5px;}
-        #login-screen p { color: #6b7280; text-align: center; margin-bottom: 30px;}
-        .google-btn { background: #4285F4; color: white; padding: 12px 20px; font-size: 16px; border-radius: 8px; display: inline-flex; align-items: center; gap: 10px; width: auto; box-shadow: 0 4px 10px rgba(66, 133, 244, 0.3);}
+        #login-screen, #change-pass-screen { position: fixed; top:0; left:0; width:100%; height:100%; background: white; z-index: 100; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 20px; box-sizing: border-box;}
+        .login-card { width: 100%; max-width: 400px; background: white; border-radius: 20px; padding: 25px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); border: 1px solid var(--border);}
+        .login-card h1 { color: var(--primary); font-size: 26px; font-weight: 900; text-align: center; margin-bottom: 5px; margin-top:0;}
+        .login-card p { color: #6b7280; text-align: center; margin-bottom: 25px; font-size: 14px;}
         
-        /* Buscador / Scanner */
         .search-row { display: flex; gap: 10px; align-items: flex-end; margin-top: 10px;}
         .search-row > div { flex: 1; margin-top: 0;}
         .btn-icon { width: 48px; height: 48px; padding: 0; flex-shrink: 0; margin: 0; border-radius: 10px; background: var(--primary); font-size: 20px;}
         #reader { width: 100%; border-radius: 16px; overflow: hidden; display: none; margin-top: 15px; border: 3px solid var(--primary); }
         
-        /* Radio Buttons */
         .radio-group { display: flex; gap: 8px; margin-bottom: 5px; }
         .radio-btn { flex: 1; text-align: center; padding: 10px; border-radius: 10px; cursor: pointer; font-weight: 700; border: 2px solid var(--border); background: #fafafa; color: #6b7280; font-size: 13px;}
         .radio-btn input { display: none; }
         .radio-btn.active-salida { border-color: #ef4444; background: #fee2e2; color: #b91c1c; }
         .radio-btn.active-entrada { border-color: #10b981; background: #d1fae5; color: #047857; }
 
-        /* Lista Items */
         .item-row { display: flex; align-items: center; justify-content: space-between; background: #f8fafc; border: 1px solid var(--border); border-radius: 10px; padding: 10px; margin-bottom: 8px; gap: 5px;}
         .item-info { flex: 1.2; font-weight: 700; font-size: 13px; color: var(--text); word-break: break-all;}
         .qty-input { width: 45px !important; height: 34px; text-align: center; font-size: 15px; font-weight: 800; border: 2px solid #cbd5e1; border-radius: 8px; padding: 0 !important; margin: 0; background: #fff;}
         .btn-del { color: var(--danger); background: transparent; border: none; font-size: 16px; padding: 5px; width: auto; margin: 0;}
         
-        /* Alertas */
         .alert-box { position: fixed; top: 15px; left: 50%; transform: translateX(-50%); width: 90%; max-width: 450px; padding: 16px 20px; border-radius: 16px; font-weight: 700; font-size: 14px; text-align: center; z-index: 9999; box-shadow: 0 10px 25px rgba(0,0,0,0.2); display: none; }
         .alert-success { background: #10b981; color: white; }
         .alert-error { background: #ef4444; color: white; }
-
         .choices__inner { border-radius: 10px !important; border: 2px solid var(--border) !important; background: #fafafa !important; min-height: 48px !important; display: flex; align-items: center;}
     </style>
 </head>
@@ -92,13 +81,38 @@
 
     <!-- PANTALLA DE LOGIN -->
     <div id="login-screen">
-        <i class="fa-solid fa-shield-halved" style="font-size: 48px; color: var(--primary); margin-bottom: 15px;"></i>
-        <h1>Inventario G4S</h1>
-        <p>Control de Comunicaciones</p>
-        <button class="google-btn" id="btn-login">
-            <i class="fa-brands fa-google"></i> Iniciar sesión con Google
-        </button>
-        <p style="font-size: 11px; margin-top: 15px; color: #9ca3af;">Acceso restringido a @g4s.com</p>
+        <div class="login-card">
+            <div style="text-align: center; margin-bottom: 20px;">
+                <i class="fa-solid fa-boxes-stacked" style="font-size: 40px; color: var(--primary);"></i>
+            </div>
+            <h1>G4S Inventario</h1>
+            <p>Acceso Seguro</p>
+            
+            <label>Usuario / Correo</label>
+            <input type="text" id="login-user" placeholder="Ej. jperez">
+            <label>Contraseña / PIN</label>
+            <input type="password" id="login-pass" placeholder="****">
+            
+            <button class="btn-primary" id="btn-login" onclick="iniciarSesion()"><i class="fa-solid fa-right-to-bracket"></i> INGRESAR</button>
+            <button class="btn-link" onclick="mostrarPantallaCambioClave()">Cambiar mi contraseña</button>
+        </div>
+    </div>
+
+    <!-- PANTALLA CAMBIO CONTRASEÑA -->
+    <div id="change-pass-screen" style="display:none;">
+        <div class="login-card">
+            <h2 style="text-align:center; color:var(--primary); margin-top:0;">Cambiar Contraseña</h2>
+            
+            <label>Usuario</label>
+            <input type="text" id="cp-user" placeholder="Tu usuario">
+            <label>Contraseña Actual</label>
+            <input type="password" id="cp-old" placeholder="Contraseña actual">
+            <label>Nueva Contraseña</label>
+            <input type="password" id="cp-new" placeholder="Mínimo 4 caracteres">
+            
+            <button class="btn-success" id="btn-change-pass" onclick="cambiarClave()"><i class="fa-solid fa-key"></i> ACTUALIZAR CLAVE</button>
+            <button class="btn-link" onclick="volverLogin()">Volver a Inicio de Sesión</button>
+        </div>
     </div>
 
     <!-- APLICACIÓN PRINCIPAL -->
@@ -108,13 +122,12 @@
                 <h2>📦 G4S Inventario</h2>
                 <div class="user-info" id="user-email">cargando...</div>
             </div>
-            <button class="btn-logout" id="btn-logout"><i class="fa-solid fa-right-from-bracket"></i> Salir</button>
+            <button class="btn-secondary" style="border-color:rgba(255,255,255,0.3); color:white; padding: 6px 12px; font-size:12px; width:auto; margin:0;" onclick="cerrarSesion()"><i class="fa-solid fa-right-from-bracket"></i> Salir</button>
         </div>
 
         <div class="tab-bar">
             <div class="tab active" onclick="switchTab('registro')">Movimientos</div>
             <div class="tab" onclick="switchTab('catalogo')">Catálogo</div>
-            <div class="tab" onclick="switchTab('config')">Config</div>
         </div>
 
         <div class="container">
@@ -198,7 +211,6 @@
                     
                     <label>SKU / ID Artículo (Código único)</label>
                     <input type="text" id="new-sku" placeholder="Ej. FOR-G40, CBL-01">
-                    
                     <label>Categoría</label>
                     <select id="new-cat">
                         <option value="Forro">Forro</option>
@@ -209,137 +221,130 @@
                         <option value="Batería Externa">Batería Externa</option>
                         <option value="Otro">Otro</option>
                     </select>
-
                     <label>Descripción completa</label>
                     <input type="text" id="new-desc" placeholder="Ej. Forro antigolpes G40">
-
                     <label>Alerta de Stock Mínimo</label>
                     <input type="number" id="new-min" value="5" min="1">
 
                     <button class="btn-success" id="btn-crear-acc"><i class="fa-solid fa-save"></i> CREAR ACCESORIO</button>
                 </div>
-                
                 <div class="card">
                     <button class="btn-secondary" onclick="window.open('https://lookerstudio.google.com/', '_blank')">
                         <i class="fa-solid fa-chart-pie"></i> VER DASHBOARD LOOKER
                     </button>
-                </div>
-            </div>
-
-            <!-- TAB CONFIG -->
-            <div id="tab-config" class="section">
-                <div class="card">
-                    <label><i class="fa-solid fa-link"></i> URL Webhook (Apps Script)</label>
-                    <input type="text" id="apiUrl" placeholder="https://script.google.com/.../exec">
-                    <button class="btn-primary" id="btn-save-url">Guardar Conexión</button>
-                    <hr style="border:0; border-top:1px solid #eee; margin: 20px 0;">
-                    <button class="btn-secondary" id="btn-sync-catalog"><i class="fa-solid fa-rotate"></i> Forzar Sincronización de Catálogo</button>
+                    <button class="btn-secondary" style="margin-top:10px;" onclick="cargarCatalogo()">
+                        <i class="fa-solid fa-rotate"></i> Forzar Sincronización de Catálogo
+                    </button>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- SCRIPT TIPO MÓDULO (Para Firebase) -->
-    <script type="module">
-        // Configuración de Firebase
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.5.2/firebase-app.js";
-        import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.5.2/firebase-auth.js";
+    <script>
+        // =========================================================================
+        // URL FIJA DE APPS SCRIPT (CÓDIGO QUEMADO - ¡PÉGALA AQUÍ!)
+        // =========================================================================
+        const API_URL = "https://script.google.com/macros/s/AKfyc.../exec"; 
+        
+        if ('serviceWorker' in navigator) { navigator.serviceWorker.register('sw.js').then(() => console.log("PWA SW Registrado v9")); }
 
-        const firebaseConfig = {
-            apiKey: "AIzaSyDeRUFj8s9ew0O0IO0bLy9U_V_-5e7JOks",
-            authDomain: "inventario-comunicaciones.firebaseapp.com",
-            projectId: "inventario-comunicaciones",
-            storageBucket: "inventario-comunicaciones.firebasestorage.app",
-            messagingSenderId: "932171465795",
-            appId: "1:932171465795:web:a761b6582523f90e78c0f6",
-            measurementId: "G-2LRJR9NF4R"
-        };
-
-        const app = initializeApp(firebaseConfig);
-        const auth = getAuth(app);
-        const provider = new GoogleAuthProvider();
-
-        // Variables Globales
         let choicesInstance = null;
         let carrito = [];
         let html5QrcodeScanner = null;
 
-        // Elementos DOM
-        const loginScreen = document.getElementById('login-screen');
-        const appScreen = document.getElementById('app-screen');
-        const userEmailLabel = document.getElementById('user-email');
-        const alertBox = document.getElementById('alert-box');
+        window.onload = function() {
+            let loggedUser = localStorage.getItem("g4sLoggedUser");
+            if (loggedUser) mostrarApp(loggedUser);
+            else document.getElementById('login-screen').style.display = 'flex';
+        };
 
-        // ==========================================
-        // 1. AUTENTICACIÓN
-        // ==========================================
-        onAuthStateChanged(auth, (user) => {
-            if (user) {
-                // Validación de dominio (g4s.com) o correo personal para pruebas
-                if (user.email.endsWith('@g4s.com') || user.email === 'jmolinaperez72@gmail.com') {
-                    loginScreen.style.display = 'none';
-                    appScreen.style.display = 'block';
-                    userEmailLabel.innerText = user.email;
-                    initApp();
-                } else {
-                    signOut(auth);
-                    mostrarAlerta("❌ Acceso denegado. Utiliza tu correo corporativo @g4s.com", "error");
-                }
-            } else {
-                loginScreen.style.display = 'flex';
-                appScreen.style.display = 'none';
-            }
-        });
-
-        document.getElementById('btn-login').addEventListener('click', () => {
-            signInWithPopup(auth, provider).catch(err => mostrarAlerta("Error al iniciar sesión", "error"));
-        });
-
-        document.getElementById('btn-logout').addEventListener('click', () => { signOut(auth); });
-
-        // ==========================================
-        // 2. INICIALIZACIÓN Y CATÁLOGO
-        // ==========================================
-        function initApp() {
-            let url = localStorage.getItem("inventarioApiUrl");
-            if(url) {
-                document.getElementById('apiUrl').value = url;
-                cargarCatalogo(url);
-            } else {
-                window.switchTab('config');
-                mostrarAlerta("⚠️ Configura la URL de Apps Script primero", "error");
-            }
+        window.mostrarPantallaCambioClave = function() {
+            document.getElementById('login-screen').style.display = 'none';
+            document.getElementById('change-pass-screen').style.display = 'flex';
         }
 
-        function cargarCatalogo(url) {
-            fetch(url, { method: 'POST', body: JSON.stringify({ action: "obtener_catalogo" }), headers: { 'Content-Type': 'text/plain' }, redirect: 'follow' })
-            .then(res => res.json())
-            .then(data => {
+        window.volverLogin = function() {
+            document.getElementById('change-pass-screen').style.display = 'none';
+            document.getElementById('login-screen').style.display = 'flex';
+        }
+
+        window.iniciarSesion = function() {
+            let user = document.getElementById('login-user').value.trim();
+            let pass = document.getElementById('login-pass').value.trim();
+            if(!user || !pass) { mostrarAlerta("Llena ambos campos", "error"); return; }
+            
+            let btn = document.getElementById('btn-login');
+            let originalTxt = btn.innerHTML;
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Validando...'; btn.disabled = true;
+
+            fetch(API_URL, { method: 'POST', body: JSON.stringify({ action: "login", usuario: user, clave: pass }), headers: { 'Content-Type': 'text/plain' }, redirect: 'follow' })
+            .then(res => res.json()).then(data => {
                 if(data.status === "success") {
-                    inicializarBuscador(data.data);
+                    localStorage.setItem("g4sLoggedUser", data.usuario);
+                    mostrarApp(data.usuario);
+                } else {
+                    mostrarAlerta("❌ Usuario o contraseña incorrectos", "error");
+                    btn.innerHTML = originalTxt; btn.disabled = false;
                 }
-            }).catch(e => console.log("Error cargando catálogo", e));
+            }).catch(e => { mostrarAlerta("❌ Error de red", "error"); btn.innerHTML = originalTxt; btn.disabled = false; });
+        };
+
+        window.cambiarClave = function() {
+            let user = document.getElementById('cp-user').value.trim();
+            let oldP = document.getElementById('cp-old').value.trim();
+            let newP = document.getElementById('cp-new').value.trim();
+            
+            if(!user || !oldP || !newP) { mostrarAlerta("Llena todos los campos", "error"); return; }
+            if(newP.length < 4) { mostrarAlerta("La nueva clave debe tener al menos 4 caracteres", "error"); return; }
+
+            let btn = document.getElementById('btn-change-pass');
+            let originalTxt = btn.innerHTML;
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Procesando...'; btn.disabled = true;
+
+            fetch(API_URL, { method: 'POST', body: JSON.stringify({ action: "cambiar_clave", usuario: user, claveAntigua: oldP, claveNueva: newP }), headers: { 'Content-Type': 'text/plain' }, redirect: 'follow' })
+            .then(res => res.json()).then(data => {
+                if(data.status === "success") {
+                    mostrarAlerta("✅ Contraseña actualizada correctamente", "success");
+                    document.getElementById('cp-user').value = ""; document.getElementById('cp-old').value = ""; document.getElementById('cp-new').value = "";
+                    setTimeout(volverLogin, 1500);
+                } else {
+                    mostrarAlerta("❌ " + data.message, "error");
+                }
+                btn.innerHTML = originalTxt; btn.disabled = false;
+            }).catch(e => { mostrarAlerta("❌ Error de red", "error"); btn.innerHTML = originalTxt; btn.disabled = false; });
+        }
+
+        window.cerrarSesion = function() {
+            localStorage.removeItem("g4sLoggedUser");
+            document.getElementById('app-screen').style.display = 'none';
+            document.getElementById('login-pass').value = '';
+            document.getElementById('btn-login').innerHTML = '<i class="fa-solid fa-right-to-bracket"></i> INGRESAR';
+            document.getElementById('btn-login').disabled = false;
+            document.getElementById('login-screen').style.display = 'flex';
+        };
+
+        function mostrarApp(nombreUsuario) {
+            document.getElementById('login-screen').style.display = 'none';
+            document.getElementById('change-pass-screen').style.display = 'none';
+            document.getElementById('app-screen').style.display = 'block';
+            document.getElementById('user-email').innerText = "Usuario: " + nombreUsuario;
+            cargarCatalogo();
+        }
+
+        window.cargarCatalogo = function() {
+            fetch(API_URL, { method: 'POST', body: JSON.stringify({ action: "obtener_catalogo" }), headers: { 'Content-Type': 'text/plain' }, redirect: 'follow' })
+            .then(res => res.json()).then(data => {
+                if(data.status === "success") inicializarBuscador(data.data);
+            }).catch(e => console.log("Error catálogo"));
         }
 
         function inicializarBuscador(datosCatalogo) {
             const select = document.getElementById('smart-search');
             if(choicesInstance) choicesInstance.destroy();
-            
-            const opciones = datosCatalogo.map(item => ({
-                value: item.idArticulo,
-                label: `[${item.stockActual} u.] ${item.idArticulo} - ${item.descripcion}`
-            }));
-
-            choicesInstance = new Choices(select, {
-                searchEnabled: true,
-                itemSelectText: '',
-                choices: [{value: '', label: 'Selecciona o busca un accesorio...', disabled: true}, ...opciones]
-            });
+            const opciones = datosCatalogo.map(item => ({ value: item.idArticulo, label: `[${item.stockActual} u.] ${item.idArticulo} - ${item.descripcion}` }));
+            choicesInstance = new Choices(select, { searchEnabled: true, itemSelectText: '', choices: [{value: '', label: 'Selecciona o busca un accesorio...', disabled: true}, ...opciones] });
         }
 
-        // ==========================================
-        // 3. CARRITO Y ESCÁNER
-        // ==========================================
         document.getElementById('btn-add-search').addEventListener('click', () => {
             const val = document.getElementById('smart-search').value;
             if(val) agregarAlCarrito(val);
@@ -347,30 +352,16 @@
 
         document.getElementById('btn-camera').addEventListener('click', () => {
             const reader = document.getElementById('reader');
-            if(reader.style.display === "block") {
-                if(html5QrcodeScanner) html5QrcodeScanner.clear();
-                reader.style.display = "none";
-                return;
-            }
+            if(reader.style.display === "block") { if(html5QrcodeScanner) html5QrcodeScanner.clear(); reader.style.display = "none"; return; }
             reader.style.display = "block";
             html5QrcodeScanner = new Html5QrcodeScanner("reader", { fps: 10, qrbox: {width: 250, height: 250} }, false);
-            html5QrcodeScanner.render(
-                (decodedText) => {
-                    agregarAlCarrito(decodedText);
-                    html5QrcodeScanner.clear();
-                    reader.style.display = "none";
-                    try { navigator.vibrate(200); } catch(e) {}
-                }, 
-                (err) => {}
-            );
+            html5QrcodeScanner.render((decodedText) => { agregarAlCarrito(decodedText); html5QrcodeScanner.clear(); reader.style.display = "none"; try { navigator.vibrate(200); } catch(e) {} }, (err) => {});
         });
 
         function agregarAlCarrito(codigo) {
             let existe = carrito.find(item => item.idArticulo === codigo);
-            if(existe) existe.cantidad += 1;
-            else carrito.push({ idArticulo: codigo, cantidad: 1 });
-            renderizarCarrito();
-            mostrarAlerta("➕ " + codigo + " añadido", "success");
+            if(existe) existe.cantidad += 1; else carrito.push({ idArticulo: codigo, cantidad: 1 });
+            renderizarCarrito(); mostrarAlerta("➕ " + codigo + " añadido", "success");
         }
 
         window.actualizarCant = function(index, valor) {
@@ -379,19 +370,13 @@
             renderizarCarrito();
         }
 
-        window.eliminarItem = function(index) {
-            carrito.splice(index, 1);
-            renderizarCarrito();
-        }
+        window.eliminarItem = function(index) { carrito.splice(index, 1); renderizarCarrito(); }
 
         function renderizarCarrito() {
-            let list = document.getElementById('items-list');
-            let btnSubmit = document.getElementById('btn-submit');
-            
+            let list = document.getElementById('items-list'); let btnSubmit = document.getElementById('btn-submit');
             if(carrito.length === 0) {
                 list.innerHTML = '<p style="text-align:center; color:#9ca3af; font-size:13px;">No hay ítems seleccionados</p>';
-                btnSubmit.disabled = true;
-                btnSubmit.innerHTML = '<i class="fa-solid fa-cloud-arrow-up"></i> REGISTRAR MOVIMIENTO';
+                btnSubmit.disabled = true; btnSubmit.innerHTML = '<i class="fa-solid fa-cloud-arrow-up"></i> REGISTRAR MOVIMIENTO';
             } else {
                 let html = '';
                 carrito.forEach((item, idx) => {
@@ -401,88 +386,39 @@
                         <button class="btn-del" onclick="eliminarItem(${idx})"><i class="fa-solid fa-trash-can"></i></button>
                     </div>`;
                 });
-                list.innerHTML = html;
-                btnSubmit.disabled = false;
-                btnSubmit.innerHTML = `<i class="fa-solid fa-paper-plane"></i> REGISTRAR ${carrito.length} TIPO(S)`;
+                list.innerHTML = html; btnSubmit.disabled = false; btnSubmit.innerHTML = `<i class="fa-solid fa-paper-plane"></i> REGISTRAR ${carrito.length} TIPO(S)`;
             }
         }
 
-        // ==========================================
-        // 4. ENVÍO DE DATOS
-        // ==========================================
         document.getElementById('btn-submit').addEventListener('click', () => {
-            let url = localStorage.getItem("inventarioApiUrl");
             let tipoMov = document.querySelector('input[name="tipoMov"]:checked').value;
-            let payload = {
-                action: "registrar_movimiento",
-                tipoMovimiento: tipoMov,
-                cliente: document.getElementById('cliente').value || "N/A",
-                regional: document.getElementById('regional').value,
-                tecnico: document.getElementById('tecnico').value,
-                usuario: document.getElementById('usuario').value || "N/A",
-                items: carrito
-            };
+            let payload = { action: "registrar_movimiento", tipoMovimiento: tipoMov, cliente: document.getElementById('cliente').value || "N/A", regional: document.getElementById('regional').value, tecnico: document.getElementById('tecnico').value, usuario: document.getElementById('usuario').value || "N/A", items: carrito };
+            let btn = document.getElementById('btn-submit'); btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Guardando...'; btn.disabled = true;
 
-            let btn = document.getElementById('btn-submit');
-            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Guardando...';
-            btn.disabled = true;
-
-            fetch(url, { method: 'POST', body: JSON.stringify(payload), headers: { 'Content-Type': 'text/plain' }, redirect: 'follow' })
-            .then(res => res.json())
-            .then(res => {
-                if(res.status === "success") {
-                    mostrarAlerta("🎉 Movimiento guardado con éxito", "success");
-                    carrito = []; renderizarCarrito(); document.getElementById('usuario').value = "";
-                    cargarCatalogo(url); // Actualizar stock visual
-                } else {
-                    mostrarAlerta("❌ " + res.message, "error");
-                    btn.innerHTML = 'Reintentar'; btn.disabled = false;
-                }
+            fetch(API_URL, { method: 'POST', body: JSON.stringify(payload), headers: { 'Content-Type': 'text/plain' }, redirect: 'follow' })
+            .then(res => res.json()).then(res => {
+                if(res.status === "success") { mostrarAlerta("🎉 Movimiento guardado con éxito", "success"); carrito = []; renderizarCarrito(); document.getElementById('usuario').value = ""; cargarCatalogo(); } 
+                else { mostrarAlerta("❌ " + res.message, "error"); btn.innerHTML = 'Reintentar'; btn.disabled = false; }
             }).catch(e => { mostrarAlerta("❌ Error de red", "error"); btn.disabled = false; });
         });
 
-        // ==========================================
-        // 5. CRUD (Crear Accesorio)
-        // ==========================================
         document.getElementById('btn-crear-acc').addEventListener('click', () => {
-            let url = localStorage.getItem("inventarioApiUrl");
-            let payload = {
-                action: "crear_accesorio",
-                idArticulo: document.getElementById('new-sku').value,
-                categoria: document.getElementById('new-cat').value,
-                descripcion: document.getElementById('new-desc').value,
-                stockMinimo: document.getElementById('new-min').value
-            };
+            let payload = { action: "crear_accesorio", idArticulo: document.getElementById('new-sku').value, categoria: document.getElementById('new-cat').value, descripcion: document.getElementById('new-desc').value, stockMinimo: document.getElementById('new-min').value };
+            if(!payload.idArticulo || !payload.descripcion) { mostrarAlerta("Llene SKU y Descripción", "error"); return; }
+            let btn = document.getElementById('btn-crear-acc'); btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Creando...';
 
-            if(!payload.idArticulo || !payload.descripcion) {
-                mostrarAlerta("Llene SKU y Descripción", "error"); return;
-            }
-
-            let btn = document.getElementById('btn-crear-acc');
-            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Creando...';
-
-            fetch(url, { method: 'POST', body: JSON.stringify(payload), headers: { 'Content-Type': 'text/plain' }, redirect: 'follow' })
-            .then(res => res.json())
-            .then(res => {
-                if(res.status === "success") {
-                    mostrarAlerta("✅ Accesorio creado en Excel", "success");
-                    document.getElementById('new-sku').value = ""; document.getElementById('new-desc').value = "";
-                    cargarCatalogo(url);
-                } else {
-                    mostrarAlerta("❌ " + res.message, "error");
-                }
+            fetch(API_URL, { method: 'POST', body: JSON.stringify(payload), headers: { 'Content-Type': 'text/plain' }, redirect: 'follow' })
+            .then(res => res.json()).then(res => {
+                if(res.status === "success") { mostrarAlerta("✅ Accesorio creado en Excel", "success"); document.getElementById('new-sku').value = ""; document.getElementById('new-desc').value = ""; cargarCatalogo(); } 
+                else { mostrarAlerta("❌ " + res.message, "error"); }
                 btn.innerHTML = '<i class="fa-solid fa-save"></i> CREAR ACCESORIO';
             });
         });
 
-        // ==========================================
-        // UI & UTILS
-        // ==========================================
         window.switchTab = function(tabName) {
             document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-            document.getElementById('tab-' + tabName).classList.add('active');
-            event.target.classList.add('active');
+            document.getElementById('tab-' + tabName).classList.add('active'); event.target.classList.add('active');
         }
 
         window.cambiarMovimientoUI = function(tipo) {
@@ -492,24 +428,7 @@
             document.getElementById('lbl-cliente').innerText = tipo === 'Entrada' ? 'Proyecto/Destino' : 'Cliente/Empresa';
         }
 
-        document.getElementById('btn-save-url').addEventListener('click', () => {
-            let val = document.getElementById('apiUrl').value;
-            localStorage.setItem("inventarioApiUrl", val);
-            mostrarAlerta("URL Guardada", "success");
-            cargarCatalogo(val);
-        });
-
-        document.getElementById('btn-sync-catalog').addEventListener('click', () => {
-            cargarCatalogo(localStorage.getItem("inventarioApiUrl"));
-            mostrarAlerta("Sincronizando...", "success");
-        });
-
-        function mostrarAlerta(texto, tipo) {
-            alertBox.innerText = texto;
-            alertBox.className = "alert-box alert-" + tipo;
-            alertBox.style.display = "block";
-            setTimeout(() => { alertBox.style.display = "none"; }, 4000);
-        }
+        function mostrarAlerta(texto, tipo) { alertBox.innerText = texto; alertBox.className = "alert-box alert-" + tipo; alertBox.style.display = "block"; setTimeout(() => { alertBox.style.display = "none"; }, 4000); }
     </script>
 </body>
 </html>
