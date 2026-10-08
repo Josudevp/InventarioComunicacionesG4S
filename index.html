@@ -34,10 +34,10 @@
         * { box-sizing: border-box; }
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: linear-gradient(145deg, #f8fafc 0%, #eef2f7 100%); margin: 0; padding: 0; color: var(--text); -webkit-tap-highlight-color: transparent; min-height: 100vh; }
         
-        .navbar { background: var(--g4s-black); color: white; padding: 12px max(15px, calc((100% - 760px) / 2)); text-align: center; position: sticky; top: 0; z-index: 50; display: flex; justify-content: space-between; align-items: center; border-bottom: 4px solid var(--g4s-red); gap: 12px;}
-        .brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
-        .brand-logo { width: 50px; height: 30px; object-fit: contain; border-radius: 5px; background: #fff; }
-        .navbar h2 { margin: 0; font-size: 18px; font-weight: 900; letter-spacing: -0.5px; display: flex; align-items: center; gap: 10px;}
+        .navbar { background: var(--g4s-black); color: white; padding: 12px 32px; text-align: center; position: sticky; top: 0; z-index: 50; display: flex; justify-content: space-between; align-items: center; border-bottom: 4px solid var(--g4s-red); gap: 24px;}
+        .brand { display: flex; align-items: center; gap: 16px; min-width: 0; }
+        .brand-logo { width: 88px; height: 50px; object-fit: contain; border-radius: 7px; background: #fff; }
+        .navbar h2 { margin: 0; font-size: 19px; font-weight: 900; letter-spacing: -0.5px; display: flex; align-items: center; gap: 10px;}
         .user-info { font-size: 12px; opacity: 0.8; margin-top: 2px;}
         
         .tab-bar { display: flex; background: white; border-bottom: 1px solid var(--border); box-shadow: 0 2px 5px rgba(0,0,0,0.05);}
@@ -94,12 +94,38 @@
         
         .choices__inner { border-radius: 8px !important; border: 2px solid var(--border) !important; background: #fafafa !important; min-height: 48px !important; display: flex; align-items: center; text-align:left;}
         .helper-text { color: var(--muted); font-size: 12px; margin: 8px 0 0; }
+        .distribution-panel { display: none; margin-top: 16px; padding: 14px; border: 1px solid var(--border); border-radius: 12px; background: #f8fafc; }
+        .distribution-panel.visible { display: block; }
+        .distribution-header, .distribution-row { display: grid; grid-template-columns: 1.4fr 1fr 1fr 44px; gap: 8px; align-items: end; }
+        .distribution-header { color: var(--muted); font-size: 12px; font-weight: 800; margin-bottom: 6px; }
+        .distribution-row { margin-bottom: 8px; }
+        .distribution-row button { width: 44px; height: 44px; margin: 0; padding: 0; }
+        .distribution-summary { font-size: 13px; font-weight: 700; color: var(--muted); margin: 10px 0 0; }
+        .catalog-toolbar { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+        .catalog-toolbar input, .catalog-toolbar select { flex: 1 1 180px; }
+        .catalog-table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 12px; }
+        .catalog-table { width: 100%; min-width: 680px; border-collapse: collapse; font-size: 13px; }
+        .catalog-table th, .catalog-table td { padding: 10px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: middle; }
+        .catalog-table th { background: #111; color: #fff; font-size: 12px; }
+        .catalog-table tr:last-child td { border-bottom: 0; }
+        .catalog-photo { width: 52px; height: 52px; border-radius: 8px; object-fit: cover; background: #f1f5f9; border: 1px solid var(--border); }
+        .stock-ok, .stock-low, .stock-empty { display: inline-block; padding: 4px 8px; border-radius: 999px; font-weight: 800; font-size: 11px; }
+        .stock-ok { color: #166534; background: #dcfce7; }
+        .stock-low { color: #92400e; background: #fef3c7; }
+        .stock-empty { color: #991b1b; background: #fee2e2; }
+        .photo-input { display: none; }
+        .photo-button { width: auto; margin: 0; padding: 8px 10px; font-size: 12px; }
         @media (max-width: 520px) {
             .navbar h2 { font-size: 15px; }
-            .navbar { padding-left: 12px; padding-right: 12px; }
+            .navbar { padding-left: 14px; padding-right: 14px; gap: 10px; }
+            .brand { gap: 9px; }
+            .brand-logo { width: 64px; height: 40px; }
             .container { padding-top: 14px; }
             .card { padding: 16px; }
             .form-row { flex-direction: column; gap: 0 !important; }
+            .distribution-header { display: none; }
+            .distribution-row { grid-template-columns: 1fr 1fr 44px; }
+            .distribution-row .distribution-product-label { display: none; }
         }
     </style>
 </head>
@@ -186,6 +212,17 @@
                                 <option value="Santanderes">Santanderes</option>
                             </select>
                         </div>
+                        <label class="radio-btn" style="display:flex; align-items:center; gap:8px; margin-top:14px; text-align:left;">
+                            <input type="checkbox" id="distribution-mode"> Distribuir este lote entre varios clientes
+                        </label>
+                        <div id="distribution-panel" class="distribution-panel">
+                            <strong>Distribución por cliente</strong>
+                            <p class="helper-text">Agrega una fila por cliente. La suma debe coincidir con las cantidades del lote.</p>
+                            <div class="distribution-header"><span>Cliente</span><span>Artículo</span><span>Cantidad</span><span></span></div>
+                            <div id="distribution-rows"></div>
+                            <button type="button" class="btn-secondary" id="btn-add-distribution"><i class="fa-solid fa-plus"></i> Agregar cliente</button>
+                            <p class="distribution-summary" id="distribution-summary">Sin distribución agregada.</p>
+                        </div>
                     </div>
 
                     <div class="form-row" style="display:flex; gap:10px;">
@@ -231,6 +268,25 @@
             <!-- TAB CATÁLOGO (CRUD) -->
             <div id="tab-catalogo" class="section">
                 <div class="card">
+                    <h3 style="margin-top:0; color:var(--g4s-black);">Catálogo actual</h3>
+                    <p class="helper-text">Consulta existencias, identifica artículos y agrega fotografías para ubicarlos físicamente.</p>
+                    <div class="catalog-toolbar">
+                        <input type="search" id="catalog-filter" placeholder="Buscar SKU o descripción" aria-label="Buscar en catálogo">
+                        <select id="catalog-stock-filter" aria-label="Filtrar por estado">
+                            <option value="all">Todos los estados</option>
+                            <option value="ok">Stock disponible</option>
+                            <option value="low">Stock bajo</option>
+                            <option value="empty">Agotados</option>
+                        </select>
+                    </div>
+                    <div class="catalog-table-wrap">
+                        <table class="catalog-table">
+                            <thead><tr><th>Foto</th><th>SKU</th><th>Descripción</th><th>Stock</th><th>Mínimo</th><th>Estado</th><th>Acción</th></tr></thead>
+                            <tbody id="catalog-table-body"><tr><td colspan="7">Cargando catálogo...</td></tr></tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="card">
                     <h3 style="margin-top:0; color: var(--g4s-black); border-bottom: 2px solid var(--border); padding-bottom: 8px;"><i class="fa-solid fa-folder-plus"></i> Nuevo Accesorio</h3>
                     <p style="font-size: 12px; color: #6b7280; margin-bottom: 15px;">Agrega un nuevo producto a la base de datos de Excel automáticamente.</p>
                     
@@ -269,28 +325,29 @@
         // =========================================================================
         // URL FIJA DE APPS SCRIPT
         // =========================================================================
-        const API_URL = "https://script.google.com/macros/s/AKfycbz8QCeI2uHk-tBDyfBRs_SpKT3PjGoNg10TNzuIYWpRsvxBPEjMXrylLtyWikjRI7pY/exec";
+        const API_URL = "https://script.google.com/macros/s/AKfycbz_n8o-m6ewe3U19sH2FXUYoReGSTDMk2xKRQhaE9XYu-L0PxLRbrc37ekbR3pp_-il/exec";
         // Reemplaza este valor por la ruta local o URL HTTPS de tu imagen de logo.
         const LOGO_URL = "assets/g4s-logo-.svg";
         
         if ('serviceWorker' in navigator) { navigator.serviceWorker.register('sw.js').then(() => console.log("PWA SW Registrado v11")); }
 
-        let choicesInstance = null;
+            let choicesInstance = null;
         let carrito = [];
         let html5QrcodeScanner = null;
+        let catalogoActual = [];
+        let distributionRows = [];
 
         document.querySelectorAll('[data-logo-image]').forEach(image => {
             image.src = LOGO_URL;
             image.addEventListener('error', () => {
-                image.src = 'assets/g4s-logo.svg';
+                image.src = 'assets/g4s-logo-.svg';
             }, { once: true });
         });
 
         window.apiHeaders = function() {
-            const headers = { 'Content-Type': 'text/plain;charset=utf-8' };
-            const token = sessionStorage.getItem('g4sSessionToken');
-            if (token) headers.Authorization = `Bearer ${token}`;
-            return headers;
+            // Apps Script web apps do not handle CORS preflight for custom headers.
+            // The session token is sent in the JSON body by apiPayload().
+            return { 'Content-Type': 'text/plain;charset=utf-8' };
         };
         window.apiPayload = function(payload) {
             const token = sessionStorage.getItem('g4sSessionToken');
@@ -315,8 +372,14 @@
         window.onload = function() {
             // Do not persist an authenticated identity beyond the current tab.
             let loggedUser = sessionStorage.getItem("g4sLoggedUser");
-            if (loggedUser) window.mostrarApp(loggedUser);
-            else document.getElementById('login-screen').style.display = 'flex';
+            let sessionToken = sessionStorage.getItem("g4sSessionToken");
+            if (loggedUser && sessionToken) {
+                window.mostrarApp(loggedUser);
+            } else {
+                sessionStorage.removeItem("g4sLoggedUser");
+                sessionStorage.removeItem("g4sSessionToken");
+                document.getElementById('login-screen').style.display = 'flex';
+            }
         };
 
         window.mostrarPantallaCambioClave = function() {
@@ -358,6 +421,14 @@
                 btn.innerHTML = originalTxt; btn.disabled = false; 
             });
         };
+
+        ['login-user', 'login-pass'].forEach(id => {
+            document.getElementById(id).addEventListener('keydown', event => {
+                if (event.key !== 'Enter') return;
+                event.preventDefault();
+                document.getElementById('btn-login').click();
+            });
+        });
 
         window.cambiarClave = function() {
             let user = document.getElementById('cp-user').value.trim();
@@ -421,10 +492,24 @@
         }
 
         window.cargarCatalogo = function() {
+            if (!sessionStorage.getItem("g4sSessionToken")) {
+                window.mostrarAlerta("La sesión anterior caducó. Inicia sesión nuevamente.", "error");
+                window.cerrarSesion();
+                return;
+            }
             fetch(API_URL, { method: 'POST', body: JSON.stringify(window.apiPayload({ action: "obtener_catalogo" })), headers: window.apiHeaders() })
             .then(res => res.json()).then(data => {
-                if(data.status === "success") window.inicializarBuscador(data.data);
-            }).catch(e => console.log("Error catálogo"));
+                if(data.status === "success") {
+                    catalogoActual = Array.isArray(data.data) ? data.data : [];
+                    window.inicializarBuscador(catalogoActual);
+                    window.renderizarCatalogo();
+                } else {
+                    window.mostrarAlerta("❌ " + (data.message || "No se pudo cargar el catálogo"), "error");
+                }
+            }).catch(e => {
+                console.error("Error catálogo:", e);
+                window.mostrarAlerta("❌ No se pudo consultar Apps Script. Verifica el despliegue y vuelve a iniciar sesión.", "error");
+            });
         }
 
         window.inicializarBuscador = function(datosCatalogo) {
@@ -436,9 +521,127 @@
             }
             const opciones = datosCatalogo
                 .filter(item => item && item.idArticulo)
-                .map(item => ({ value: String(item.idArticulo), label: `[${Number(item.stockActual) || 0} u.] ${String(item.idArticulo)} - ${String(item.descripcion || 'Sin descripción')}` }));
+                .map(item => ({ value: String(item.idArticulo), label: `[${Number(item.stockActual) || 0} u.] ${String(item.idArticulo)} - ${String(item.descripcion || 'Sin descripción')}${window.compatibilityNote(item.idArticulo)}` }));
             choicesInstance = new Choices(select, { searchEnabled: true, itemSelectText: '', choices: [{value: '', label: 'Selecciona o busca un accesorio...', disabled: true}, ...opciones] });
+            window.renderizarDistribucion();
         }
+
+        window.compatibilityNote = function(idArticulo) {
+            const id = String(idArticulo || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+            return ['G14', 'G22', 'G24'].includes(id) ? ' · Vidrio compatible G14/G22/G24' : '';
+        };
+
+        window.stockStatus = function(item) {
+            const stock = Number(item.stockActual) || 0;
+            const minimum = Number(item.stockMinimo) || 0;
+            if (stock <= 0) return { key: 'empty', label: 'Agotado', className: 'stock-empty' };
+            if (stock <= minimum) return { key: 'low', label: 'Stock bajo', className: 'stock-low' };
+            return { key: 'ok', label: 'Disponible', className: 'stock-ok' };
+        };
+
+        window.safeImageUrl = function(value) {
+            const url = String(value || '').trim();
+            if (!url) return '';
+            if (url.startsWith('assets/') || url.startsWith('https://')) return url;
+            return '';
+        };
+
+        window.renderizarCatalogo = function() {
+            const body = document.getElementById('catalog-table-body');
+            const filter = document.getElementById('catalog-filter').value.trim().toLowerCase();
+            const statusFilter = document.getElementById('catalog-stock-filter').value;
+            const items = catalogoActual.filter(item => {
+                const status = window.stockStatus(item);
+                const text = `${item.idArticulo || ''} ${item.descripcion || ''}`.toLowerCase();
+                return text.includes(filter) && (statusFilter === 'all' || status.key === statusFilter);
+            });
+            if (!items.length) {
+                body.innerHTML = '<tr><td colspan="7">No hay artículos que coincidan con el filtro.</td></tr>';
+                return;
+            }
+            body.innerHTML = items.map(item => {
+                const status = window.stockStatus(item);
+                const image = window.safeImageUrl(item.fotoUrl);
+                const compatibility = window.compatibilityNote(item.idArticulo);
+                return `<tr>
+                    <td>${image ? `<a href="${window.escapeHtml(image)}" target="_blank" rel="noopener"><img class="catalog-photo" src="${window.escapeHtml(image)}" alt="Foto de ${window.escapeHtml(item.idArticulo)}"></a>` : '<span aria-label="Sin fotografía">📷</span>'}</td>
+                    <td><strong>${window.escapeHtml(item.idArticulo)}</strong></td>
+                    <td>${window.escapeHtml(item.descripcion || 'Sin descripción')}${compatibility ? `<div class="helper-text">${window.escapeHtml(compatibility.replace(' · ', ''))}</div>` : ''}</td>
+                    <td>${Number(item.stockActual) || 0}</td>
+                    <td>${Number(item.stockMinimo) || 0}</td>
+                    <td><span class="${status.className}">${status.label}</span></td>
+                    <td>
+                        <input class="photo-input" type="file" accept="image/jpeg,image/png,image/webp" id="photo-${window.escapeHtml(item.idArticulo)}" onchange="window.subirFotografia('${window.escapeHtml(item.idArticulo)}', this)">
+                        <label class="btn-secondary photo-button" for="photo-${window.escapeHtml(item.idArticulo)}"><i class="fa-solid fa-image"></i> Foto</label>
+                    </td>
+                </tr>`;
+            }).join('');
+        };
+
+        ['catalog-filter', 'catalog-stock-filter'].forEach(id => document.getElementById(id).addEventListener('input', window.renderizarCatalogo));
+
+        window.subirFotografia = function(idArticulo, input) {
+            const file = input.files && input.files[0];
+            if (!file) return;
+            if (file.size > 5 * 1024 * 1024) {
+                window.mostrarAlerta("La fotografía no puede superar 5 MB", "error");
+                input.value = '';
+                return;
+            }
+            const reader = new FileReader();
+            reader.onload = () => {
+                const base64 = String(reader.result).split(',')[1];
+                fetch(API_URL, {
+                    method: 'POST',
+                    body: JSON.stringify(window.apiPayload({ action: 'subir_fotografia', idArticulo, fileName: file.name, mimeType: file.type, content: base64 })),
+                    headers: window.apiHeaders()
+                }).then(res => res.json()).then(data => {
+                    if (data.status !== 'success') throw new Error(data.message || 'No se pudo subir la fotografía');
+                    const item = catalogoActual.find(row => String(row.idArticulo) === String(idArticulo));
+                    if (item) item.fotoUrl = data.fotoUrl;
+                    window.renderizarCatalogo();
+                    window.mostrarAlerta("✅ Fotografía guardada en Drive", "success");
+                }).catch(error => window.mostrarAlerta("❌ " + error.message, "error"));
+            };
+            reader.readAsDataURL(file);
+        };
+
+        window.renderizarDistribucion = function() {
+            const container = document.getElementById('distribution-rows');
+            const options = carrito.map(item => `<option value="${window.escapeHtml(item.idArticulo)}">${window.escapeHtml(item.idArticulo)}</option>`).join('');
+            container.innerHTML = distributionRows.map((row, index) => `<div class="distribution-row">
+                <input type="text" value="${window.escapeHtml(row.cliente)}" placeholder="Cliente" onchange="window.actualizarDistribucion(${index}, 'cliente', this.value)">
+                <select class="distribution-product-label" onchange="window.actualizarDistribucion(${index}, 'idArticulo', this.value)">${options}</select>
+                <input type="number" min="1" value="${row.cantidad || 1}" onchange="window.actualizarDistribucion(${index}, 'cantidad', this.value)">
+                <button type="button" class="btn-danger" aria-label="Eliminar cliente" onclick="window.eliminarDistribucion(${index})"><i class="fa-solid fa-trash"></i></button>
+            </div>`).join('');
+            distributionRows.forEach((row, index) => {
+                const select = container.querySelectorAll('select')[index];
+                if (select) select.value = row.idArticulo || (carrito[0] && carrito[0].idArticulo) || '';
+            });
+            const totals = {};
+            distributionRows.forEach(row => { totals[row.idArticulo] = (totals[row.idArticulo] || 0) + (Number(row.cantidad) || 0); });
+            const summary = carrito.map(item => `${item.idArticulo}: ${totals[item.idArticulo] || 0}/${item.cantidad}`).join(' · ');
+            document.getElementById('distribution-summary').textContent = summary || 'Sin distribución agregada.';
+        };
+
+        window.actualizarDistribucion = function(index, field, value) {
+            distributionRows[index][field] = field === 'cantidad' ? Math.max(1, Number(value) || 1) : value;
+            window.renderizarDistribucion();
+        };
+        window.eliminarDistribucion = function(index) {
+            distributionRows.splice(index, 1);
+            window.renderizarDistribucion();
+        };
+        document.getElementById('distribution-mode').addEventListener('change', event => {
+            document.getElementById('distribution-panel').classList.toggle('visible', event.target.checked);
+            if (event.target.checked && !distributionRows.length) distributionRows.push({ cliente: '', idArticulo: carrito[0]?.idArticulo || '', cantidad: 1 });
+            window.renderizarDistribucion();
+        });
+        document.getElementById('btn-add-distribution').addEventListener('click', () => {
+            distributionRows.push({ cliente: '', idArticulo: carrito[0]?.idArticulo || '', cantidad: 1 });
+            window.renderizarDistribucion();
+        });
 
         document.getElementById('btn-add-search').addEventListener('click', () => {
             const val = document.getElementById('smart-search').value;
@@ -489,17 +692,34 @@
                 });
                 list.innerHTML = html; btnSubmit.disabled = false; btnSubmit.innerHTML = `<i class="fa-solid fa-paper-plane"></i> REGISTRAR ${carrito.length} TIPO(S)`;
             }
+            window.renderizarDistribucion();
         }
 
         document.getElementById('btn-submit').addEventListener('click', () => {
             let tipoMov = document.querySelector('input[name="tipoMov"]:checked').value;
             let cliente = document.getElementById('cliente').value.trim();
             let usuario = document.getElementById('usuario').value.trim();
-            if (!cliente || !usuario || carrito.length === 0) {
+            const distributionEnabled = document.getElementById('distribution-mode').checked;
+            if ((!cliente && !distributionEnabled) || !usuario || carrito.length === 0) {
                 window.mostrarAlerta("Completa los datos del movimiento y agrega al menos un artículo", "error");
                 return;
             }
-            let payload = { action: "registrar_movimiento", tipoMovimiento: tipoMov, cliente, regional: document.getElementById('regional').value, tecnico: document.getElementById('tecnico').value, usuario, items: carrito };
+            let distribution = [];
+            if (distributionEnabled) {
+                const totals = {};
+                distributionRows.forEach(row => {
+                    const quantity = Number(row.cantidad);
+                    if (!row.cliente.trim() || !row.idArticulo || !Number.isInteger(quantity) || quantity < 1) return;
+                    distribution.push({ cliente: row.cliente.trim(), idArticulo: row.idArticulo, cantidad: quantity });
+                    totals[row.idArticulo] = (totals[row.idArticulo] || 0) + quantity;
+                });
+                const matches = carrito.every(item => totals[item.idArticulo] === Number(item.cantidad));
+                if (!distribution.length || !matches || distribution.some(row => row.idArticulo === '')) {
+                    window.mostrarAlerta("La distribución debe tener cliente y coincidir exactamente con las cantidades del lote", "error");
+                    return;
+                }
+            }
+            let payload = { action: "registrar_movimiento", tipoMovimiento: tipoMov, cliente, regional: document.getElementById('regional').value, tecnico: document.getElementById('tecnico').value, usuario, items: carrito, distribution: distributionEnabled ? distribution : null };
             let btn = document.getElementById('btn-submit'); 
             btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Guardando...'; 
             btn.disabled = true;
@@ -509,6 +729,9 @@
                 if(res.status === "success") { 
                     window.mostrarAlerta("🎉 Movimiento guardado con éxito", "success"); 
                     carrito = []; 
+                    distributionRows = [];
+                    document.getElementById('distribution-mode').checked = false;
+                    document.getElementById('distribution-panel').classList.remove('visible');
                     window.renderizarCarrito(); 
                     document.getElementById('usuario').value = ""; 
                     window.cargarCatalogo(); 
