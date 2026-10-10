@@ -49,6 +49,7 @@
         
         label { display: block; font-weight: 700; margin-bottom: 6px; font-size: 13px; margin-top: 10px; color: #4b5563;}
         input[type="text"], input[type="password"], input[type="number"], select { width: 100%; padding: 12px; border-radius: 8px; border: 2px solid var(--border); font-size: 15px; background: #fafafa; font-family: inherit; transition: 0.2s;}
+        input[readonly] { background: #eef2f7; color: #475569; font-weight: 800; }
         input:focus, select:focus, button:focus-visible { border-color: var(--focus); outline: 3px solid rgba(37,99,235,.2); background: #fff; }
         
         button { width: 100%; padding: 14px; border-radius: 8px; border: none; font-weight: 800; font-size: 15px; cursor: pointer; margin-top: 15px; color: white; display: flex; justify-content: center; align-items: center; gap: 8px; transition: transform 0.1s, filter 0.2s;}
@@ -122,6 +123,14 @@
         .catalog-table th { background: #111; color: #fff; font-size: 12px; }
         .catalog-table tr:last-child td { border-bottom: 0; }
         .catalog-photo { width: 52px; height: 52px; border-radius: 8px; object-fit: cover; background: #f1f5f9; border: 1px solid var(--border); }
+        .catalog-image-wrap { width: 52px; height: 52px; display: flex; align-items: center; justify-content: center; }
+        .catalog-image-button { width: 52px; height: 52px; padding: 0; margin: 0; background: transparent; border: 0; color: inherit; }
+        .catalog-image-placeholder { font-size: 24px; color: var(--muted); }
+        .image-modal { position: fixed; inset: 0; z-index: 1000; display: none; align-items: center; justify-content: center; padding: 24px; background: rgba(15, 23, 42, .78); }
+        .image-modal.visible { display: flex; }
+        .image-modal-content { position: relative; max-width: min(900px, 95vw); max-height: 90vh; padding: 16px; background: #fff; border-radius: 12px; box-shadow: 0 20px 50px rgba(0,0,0,.35); }
+        .image-modal-content img { display: block; max-width: min(860px, 88vw); max-height: 82vh; object-fit: contain; }
+        .image-modal-close { position: absolute; top: -14px; right: -14px; width: 40px; height: 40px; margin: 0; padding: 0; border-radius: 50%; background: var(--g4s-red); color: #fff; font-size: 20px; }
         .stock-ok, .stock-low, .stock-empty { display: inline-block; padding: 4px 8px; border-radius: 999px; font-weight: 800; font-size: 11px; }
         .stock-ok { color: #166534; background: #dcfce7; }
         .stock-low { color: #92400e; background: #fef3c7; }
@@ -151,6 +160,12 @@
 </head>
 <body>
     <div id="alert-box" class="alert-box"></div>
+    <div id="image-modal" class="image-modal" role="dialog" aria-modal="true" aria-label="Imagen ampliada">
+        <div class="image-modal-content">
+            <button type="button" class="image-modal-close" onclick="window.cerrarImagenArticulo()" aria-label="Cerrar imagen">&times;</button>
+            <img id="image-modal-preview" alt="Imagen ampliada del accesorio">
+        </div>
+    </div>
 
     <!-- PANTALLA DE LOGIN -->
     <div id="login-screen">
@@ -264,7 +279,7 @@
             <div id="tab-catalogo" class="section">
                 <div class="card">
                     <h3 style="margin-top:0; color:var(--g4s-black);">Catálogo actual</h3>
-                    <p class="helper-text">Consulta existencias, identifica artículos y agrega fotografías para ubicarlos físicamente.</p>
+                    <p class="helper-text">Consulta existencias e identifica artículos con sus imágenes locales.</p>
                     <div class="catalog-toolbar">
                         <input type="search" id="catalog-filter" placeholder="Buscar SKU o descripción" aria-label="Buscar en catálogo">
                         <select id="catalog-stock-filter" aria-label="Filtrar por estado">
@@ -276,8 +291,8 @@
                     </div>
                     <div class="catalog-table-wrap">
                         <table class="catalog-table">
-                            <thead><tr><th>Foto</th><th>SKU</th><th>Descripción</th><th>Stock</th><th>Mínimo</th><th>Estado</th><th>Acción</th></tr></thead>
-                            <tbody id="catalog-table-body"><tr><td colspan="7">Cargando catálogo...</td></tr></tbody>
+                            <thead><tr><th>Foto</th><th>SKU</th><th>Descripción</th><th>Stock</th><th>Mínimo</th><th>Estado</th></tr></thead>
+                            <tbody id="catalog-table-body"><tr><td colspan="6">Cargando catálogo...</td></tr></tbody>
                         </table>
                     </div>
                 </div>
@@ -285,18 +300,20 @@
                     <h3 style="margin-top:0; color: var(--g4s-black); border-bottom: 2px solid var(--border); padding-bottom: 8px;"><i class="fa-solid fa-folder-plus"></i> Nuevo Accesorio</h3>
                     <p style="font-size: 12px; color: #6b7280; margin-bottom: 15px;">Agrega un nuevo producto a la base de datos de Excel automáticamente.</p>
                     
-                    <label>SKU / ID Artículo (Código único)</label>
-                    <input type="text" id="new-sku" placeholder="Ej. FOR-G40, CBL-01">
                     <label>Categoría</label>
                     <select id="new-cat">
-                        <option value="Forro">Forro</option>
-                        <option value="Vidrio Templado">Vidrio Templado</option>
-                        <option value="Cargador">Cargador</option>
-                        <option value="Cable">Cable</option>
-                        <option value="Manos Libres">Manos Libres</option>
-                        <option value="Batería Externa">Batería Externa</option>
-                        <option value="Otro">Otro</option>
+                        <option value="Forro" data-prefix="FOR-">Forro</option>
+                        <option value="Vidrio Templado" data-prefix="VID-">Vidrio Templado</option>
+                        <option value="Cargador" data-prefix="CARG-">Cargador</option>
+                        <option value="Cable" data-prefix="CBL-">Cable</option>
+                        <option value="Manos Libres" data-prefix="MLIB-">Manos Libres</option>
+                        <option value="Batería Externa" data-prefix="PBANK-">Batería Externa</option>
+                        <option value="Otro" data-prefix="OTR-">Otro</option>
                     </select>
+                    <label for="new-model">Modelo o referencia</label>
+                    <input type="text" id="new-model" placeholder="Ej. G40, G22, TIPO-C" maxlength="60" autocomplete="off">
+                    <label for="new-sku">SKU / ID Artículo generado</label>
+                    <input type="text" id="new-sku" readonly aria-readonly="true" placeholder="Selecciona una categoría y escribe el modelo">
                     <label>Descripción completa</label>
                     <input type="text" id="new-desc" placeholder="Ej. Forro antigolpes G40">
                     <label>Alerta de Stock Mínimo</label>
@@ -320,7 +337,7 @@
         // =========================================================================
         // URL FIJA DE APPS SCRIPT
         // =========================================================================
-        const API_URL = "https://script.google.com/macros/s/AKfycbz-trWt2QHidRMqbFfnwMjcJ3gzfrd5kTdbDxKU3IGeU98hhTjmpu6hpXgMK6B8yukf/exec";
+        const API_URL = "https://script.google.com/macros/s/AKfycbxsEfc2OYgtDidW7wd7kOLac65Wz52F_WngPZ3eOMHPs8uXiabG6mgqpWEEP-oEpykz/exec";
         // Reemplaza este valor por la ruta local o URL HTTPS de tu imagen de logo.
         const LOGO_URL = "assets/g4s-logo-.svg";
         
@@ -577,6 +594,59 @@
             return '';
         };
 
+        window.accessoryImageCandidates = function(idArticulo) {
+            const id = String(idArticulo || '').trim();
+            const names = [...new Set([id, id.replace(/-/g, '_'), id.replace(/_/g, '-')])];
+            return names.flatMap(name => ['png', 'jpg', 'jpeg', 'webp'].map(extension => `assets/accesorios/${encodeURIComponent(name)}.${extension}`));
+        };
+
+        window.fallbackAccessoryImage = function(image) {
+            const candidates = window.accessoryImageCandidates(image.dataset.articleId);
+            const current = Number(image.dataset.candidateIndex || 0) + 1;
+            if (current < candidates.length) {
+                image.dataset.candidateIndex = String(current);
+                image.src = candidates[current];
+                return;
+            }
+            image.hidden = true;
+            image.nextElementSibling.hidden = false;
+        };
+
+        window.cargarImagenArticulo = function(image, idArticulo) {
+            const candidates = window.accessoryImageCandidates(idArticulo);
+            image.dataset.articleId = String(idArticulo);
+            image.dataset.candidateIndex = '0';
+            image.src = candidates[0];
+            image.onerror = () => window.fallbackAccessoryImage(image);
+        };
+
+        window.verImagenArticulo = function(idArticulo) {
+            const modal = document.getElementById('image-modal');
+            const preview = document.getElementById('image-modal-preview');
+            const catalogItem = catalogoActual.find(item => String(item.idArticulo) === String(idArticulo));
+            const descripcion = catalogItem ? catalogItem.descripcion : idArticulo;
+            preview.alt = `Imagen ampliada de ${descripcion || idArticulo}`;
+            preview.hidden = false;
+            preview.dataset.articleId = String(idArticulo);
+            preview.dataset.candidateIndex = '0';
+            preview.onerror = () => {
+                const candidates = window.accessoryImageCandidates(idArticulo);
+                const current = Number(preview.dataset.candidateIndex || 0) + 1;
+                if (current < candidates.length) {
+                    preview.dataset.candidateIndex = String(current);
+                    preview.src = candidates[current];
+                } else {
+                    window.cerrarImagenArticulo();
+                }
+            };
+            preview.src = window.accessoryImageCandidates(idArticulo)[0];
+            modal.classList.add('visible');
+        };
+
+        window.cerrarImagenArticulo = function() {
+            document.getElementById('image-modal').classList.remove('visible');
+        };
+
         window.renderizarCatalogo = function() {
             const body = document.getElementById('catalog-table-body');
             const filter = document.getElementById('catalog-filter').value.trim().toLowerCase();
@@ -585,31 +655,41 @@
                 const status = window.stockStatus(item);
                 const text = `${item.idArticulo || ''} ${item.descripcion || ''}`.toLowerCase();
                 return text.includes(filter) && (statusFilter === 'all' || status.key === statusFilter);
+            }).sort((first, second) => {
+                const stockDifference = (Number(first.stockActual) || 0) - (Number(second.stockActual) || 0);
+                return stockDifference || String(first.descripcion || '').localeCompare(String(second.descripcion || ''), 'es');
             });
             if (!items.length) {
-                body.innerHTML = '<tr><td colspan="7">No hay artículos que coincidan con el filtro.</td></tr>';
+                body.innerHTML = '<tr><td colspan="6">No hay artículos que coincidan con el filtro.</td></tr>';
                 return;
             }
             body.innerHTML = items.map(item => {
                 const status = window.stockStatus(item);
-                const image = window.safeImageUrl(item.fotoUrl);
                 const compatibility = window.compatibilityNote(item.idArticulo);
                 return `<tr>
-                    <td>${image ? `<a href="${window.escapeHtml(image)}" target="_blank" rel="noopener"><img class="catalog-photo" src="${window.escapeHtml(image)}" alt="Foto de ${window.escapeHtml(item.idArticulo)}"></a>` : '<span aria-label="Sin fotografía">📷</span>'}</td>
+                    <td><div class="catalog-image-wrap"><button type="button" class="catalog-image-button" onclick="window.verImagenArticulo('${window.escapeHtml(item.idArticulo)}')" aria-label="Ver imagen ampliada"><img class="catalog-photo" src="${window.accessoryImageCandidates(item.idArticulo)[0]}" data-article-id="${window.escapeHtml(item.idArticulo)}" data-candidate-index="0" alt="Imagen de ${window.escapeHtml(item.descripcion || item.idArticulo)}" onerror="window.fallbackAccessoryImage(this)"><span class="catalog-image-placeholder" hidden aria-label="Sin imagen">📷</span></button></div></td>
                     <td><strong>${window.escapeHtml(item.idArticulo)}</strong></td>
                     <td>${window.escapeHtml(item.descripcion || 'Sin descripción')}${compatibility ? `<div class="helper-text">${window.escapeHtml(compatibility.replace(' · ', ''))}</div>` : ''}</td>
                     <td>${Number(item.stockActual) || 0}</td>
                     <td>${Number(item.stockMinimo) || 0}</td>
                     <td><span class="${status.className}">${status.label}</span></td>
-                    <td>
-                        <input class="photo-input" type="file" accept="image/jpeg,image/png,image/webp" id="photo-${window.escapeHtml(item.idArticulo)}" onchange="window.subirFotografia('${window.escapeHtml(item.idArticulo)}', this)">
-                        <label class="btn-secondary photo-button" for="photo-${window.escapeHtml(item.idArticulo)}"><i class="fa-solid fa-image"></i> Foto</label>
-                    </td>
                 </tr>`;
             }).join('');
         };
 
         ['catalog-filter', 'catalog-stock-filter'].forEach(id => document.getElementById(id).addEventListener('input', window.renderizarCatalogo));
+
+        window.actualizarSkuGenerado = function() {
+            const category = document.getElementById('new-cat');
+            const selected = category.options[category.selectedIndex];
+            const prefix = selected ? selected.dataset.prefix || '' : '';
+            const model = document.getElementById('new-model').value.trim().toUpperCase().replace(/\s+/g, '-');
+            document.getElementById('new-sku').value = model ? prefix + model : '';
+        };
+
+        document.getElementById('new-cat').addEventListener('change', window.actualizarSkuGenerado);
+        document.getElementById('new-model').addEventListener('input', window.actualizarSkuGenerado);
+        window.actualizarSkuGenerado();
 
         window.subirFotografia = function(idArticulo, input) {
             const file = input.files && input.files[0];
@@ -868,7 +948,7 @@
 
         document.getElementById('btn-crear-acc').addEventListener('click', () => {
             let payload = { action: "crear_accesorio", idArticulo: document.getElementById('new-sku').value, categoria: document.getElementById('new-cat').value, descripcion: document.getElementById('new-desc').value, stockMinimo: document.getElementById('new-min').value };
-            if(!payload.idArticulo || !payload.descripcion) { window.mostrarAlerta("Llene SKU y Descripción", "error"); return; }
+            if(!payload.idArticulo || !document.getElementById('new-model').value.trim() || !payload.descripcion) { window.mostrarAlerta("Selecciona la categoría, escribe el modelo y completa la descripción", "error"); return; }
             let btn = document.getElementById('btn-crear-acc'); 
             btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Creando...';
             btn.disabled = true;
@@ -878,6 +958,7 @@
                 if(res.status === "success") { 
                     window.mostrarAlerta("✅ Accesorio creado en Excel", "success"); 
                     document.getElementById('new-sku').value = ""; 
+                    document.getElementById('new-model').value = "";
                     document.getElementById('new-desc').value = ""; 
                     window.cargarCatalogo(); 
                 } 

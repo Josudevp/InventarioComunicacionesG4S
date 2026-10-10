@@ -192,10 +192,12 @@ function createAccessory_(data, session) {
     if (clean_(rows[i][0], 100).toUpperCase() === id.toUpperCase()) throw new Error("El codigo ya existe");
   }
   var row = sheet.getLastRow() + 1;
-  var entriesFormula = '=SUMAR.SI.CONJUNTO(\'Registro de Movimientos\'!E:E,\'Registro de Movimientos\'!C:C,A' + row + ',\'Registro de Movimientos\'!D:D,"Entrada")';
-  var exitsFormula = '=SUMAR.SI.CONJUNTO(\'Registro de Movimientos\'!E:E,\'Registro de Movimientos\'!C:C,A' + row + ',\'Registro de Movimientos\'!D:D,"Salida")';
-  var stockFormula = '=D' + row + '+E' + row + '-F' + row;
-  sheet.getRange(row, 1, 1, 8).setValues([[id, clean_(data.categoria, 100), description, 0, entriesFormula, exitsFormula, stockFormula, minimum]]);
+  sheet.getRange(row, 1, 1, 8).setValues([[id, clean_(data.categoria, 100), description, 0, 0, 0, 0, minimum]]);
+  sheet.getRange(row, 5, 1, 3).setFormulas([[
+    '=SUMIFS(\'Registro de Movimientos\'!E:E,\'Registro de Movimientos\'!C:C,A' + row + ',\'Registro de Movimientos\'!D:D,"Entrada")',
+    '=SUMIFS(\'Registro de Movimientos\'!E:E,\'Registro de Movimientos\'!C:C,A' + row + ',\'Registro de Movimientos\'!D:D,"Salida")',
+    '=D' + row + '+E' + row + '-F' + row
+  ]]);
   sheet.getRange(row, 9).setValue("");
   return json_({ status: "success", message: "Accesorio añadido" });
 }

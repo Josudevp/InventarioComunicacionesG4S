@@ -37,6 +37,7 @@ Para una PWA instalada conviene usar una imagen local PNG de 180x180 o mayor.
 El código actualizado está en [apps-script/Code.gs](./apps-script/Code.gs) y conserva tus hojas actuales:
 
 * `Maestro de inventario`: usa A=ID, B=Categoría, C=Descripción, D=Stock inicial, E=Entradas, F=Salidas, G=Stock_Actual, H=Stock_Minimo_Alerta e I=Foto_URL.
+* Las imágenes del catálogo se cargan localmente desde `assets/accesorios/` usando el SKU como nombre (`FOR-G06.png`, `VID-G22.jpg`, etc.). La aplicación busca `.png`, `.jpg`, `.jpeg` y `.webp` automáticamente.
 * `Registro de Movimientos`: usa A=ID_Transacción, B=Fecha_Hora, C=ID_Articulo, D=Tipo_Movimiento, E=Cantidad, F=Registrado_Por, G=Entregado_A_Usuario, H=Cliente e I=Regional.
 * Las salidas siempre se registran por distribución: cada fila contiene cliente, artículo, regional, cantidad y usuario destinatario. El registrador se toma de la sesión autenticada.
 * Las entradas no usan distribución: requieren proveedor, el destino se registra automáticamente como `Comunicaciones` en `Bogota` y el registrador también se toma de la sesión.
