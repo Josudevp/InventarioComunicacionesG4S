@@ -4,7 +4,8 @@
 //   E=Entradas, F=Salidas, G=Stock_Actual, H=Stock_Minimo_Alerta, I=Foto_URL.
 //   Registro de Movimientos: A=ID_Transaccion, B=Fecha_Hora, C=ID_Articulo,
 //   D=Tipo_Movimiento, E=Cantidad, F=Registrado_Por, G=Entregado_A_Usuario,
-//   H=Cliente, I=Regional.
+//   H=Cliente_Proveedor, I=Regional, J=Estado, K=ID_Transaccion_Relacionada,
+//   L=Motivo, M=Regional_Origen, N=Regional_Destino.
 //
 // Propiedades recomendadas:
 //   SPREADSHEET_ID: ID del archivo principal (opcional si el script esta vinculado al Sheet).
@@ -19,7 +20,16 @@ var CONFIG = {
   usersSheetIndex: 0,
   inventorySheet: "Maestro de inventario",
   movementsSheet: "Registro de Movimientos",
-  sessionTtlSeconds: 21600
+  movementHeaders: ["ID_Transaccion", "Fecha_Hora", "ID_Articulo", "Tipo_Movimiento", "Cantidad", "Registrado_Por", "Entregado_A_Usuario", "Cliente_Proveedor", "Regional", "Estado", "ID_Transaccion_Relacionada", "Motivo", "Regional_Origen", "Regional_Destino"],
+  movementTypes: ["Entrada", "Salida", "Devolucion", "Ajuste positivo", "Ajuste negativo", "Baja por daño"],
+  inventoryActiveColumn: 10,
+  sessionTtlSeconds: 21600,
+  passwordIterations: 10000,
+  maxLoginAttempts: 5,
+  lockoutSeconds: 900,
+  userFailedAttemptsColumn: 5,
+  userLockedUntilColumn: 6,
+  userLastLoginColumn: 7
 };
 
 // Ejecuta esta funcion una vez desde el editor de Apps Script con la cuenta
@@ -44,8 +54,12 @@ function doPost(e) {
     var session = requireSession_(data);
     if (action === "cambiar_clave") return changePassword_(data, session);
     if (action === "obtener_catalogo") return getCatalog_(session);
+    if (action === "obtener_movimientos") return getMovements_(data, session);
     if (action === "registrar_movimiento") return registerMovement_(data, session);
+    if (action === "reversar_movimiento") return reverseMovement_(data, session, "Reversado");
+    if (action === "anular_movimiento") return reverseMovement_(data, session, "Anulado");
     if (action === "crear_accesorio") return createAccessory_(data, session);
+    if (action === "actualizar_accesorio") return updateAccessory_(data, session);
     if (action === "subir_fotografia") return uploadPhoto_(data, session);
     return json_({ status: "error", message: "Accion no permitida" });
   } catch (error) {
@@ -60,22 +74,47 @@ function login_(data) {
   if (!userName || !password) throw new Error("Credenciales incompletas");
 
   var users = SpreadsheetApp.openById(ID_BOVEDA_USUARIOS).getSheets()[CONFIG.usersSheetIndex];
-  var rows = users.getDataRange().getValues();
-  var matched = null;
-  for (var i = 1; i < rows.length; i++) {
-    var active = rows[i].length < 4 || String(rows[i][3]).toLowerCase() !== "false";
-    if (active && String(rows[i][0]).trim().toLowerCase() === userName.toLowerCase() &&
-        String(rows[i][1]).trim() === password) {
-      matched = rows[i];
-      break;
+  ensureUserSecurityColumns_(users);
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    var rows = users.getDataRange().getValues();
+    var matched = null;
+    var matchedRow = 0;
+    for (var i = 1; i < rows.length; i++) {
+      var active = rows[i].length < 4 || String(rows[i][3]).toLowerCase() !== "false";
+      if (active && String(rows[i][0]).trim().toLowerCase() === userName.toLowerCase()) {
+        matched = rows[i];
+        matchedRow = i + 1;
+        break;
+      }
     }
-  }
-  if (!matched) throw new Error("Credenciales invalidas");
+    if (!matched) throw new Error("Credenciales invalidas");
 
-  var token = Utilities.getUuid() + Utilities.getUuid().replace(/-/g, "");
-  var session = { usuario: String(matched[0]).trim(), rol: String(matched[2] || "usuario").trim() };
-  CacheService.getScriptCache().put(sessionKey_(token), JSON.stringify(session), CONFIG.sessionTtlSeconds);
-  return json_({ status: "success", usuario: session.usuario, token: token });
+    var lockedUntil = matched[CONFIG.userLockedUntilColumn - 1];
+    if (lockedUntil && new Date(lockedUntil).getTime() > Date.now()) {
+      throw new Error("Cuenta bloqueada temporalmente. Intenta nuevamente mas tarde");
+    }
+
+    if (!verifyPassword_(password, String(matched[1] || ""))) {
+      recordFailedLogin_(users, matchedRow, matched);
+      throw new Error("Credenciales invalidas");
+    }
+
+    var storedPassword = String(matched[1] || "");
+    var updates = [[0, "", new Date()]];
+    users.getRange(matchedRow, CONFIG.userFailedAttemptsColumn, 1, 3).setValues(updates);
+    if (!isPasswordHash_(storedPassword)) {
+      users.getRange(matchedRow, 2).setValue(hashPassword_(password));
+    }
+
+    var token = Utilities.getUuid() + Utilities.getUuid().replace(/-/g, "");
+    var session = { usuario: String(matched[0]).trim(), rol: String(matched[2] || "usuario").trim() };
+    CacheService.getScriptCache().put(sessionKey_(token), JSON.stringify(session), CONFIG.sessionTtlSeconds);
+    return json_({ status: "success", usuario: session.usuario, token: token });
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 function requireSession_(data) {
@@ -95,11 +134,13 @@ function changePassword_(data, session) {
   if (newPassword.length < 8) throw new Error("La nueva clave debe tener al menos 8 caracteres");
 
   var users = SpreadsheetApp.openById(ID_BOVEDA_USUARIOS).getSheets()[CONFIG.usersSheetIndex];
+  ensureUserSecurityColumns_(users);
   var rows = users.getDataRange().getValues();
   for (var i = 1; i < rows.length; i++) {
     if (String(rows[i][0]).trim().toLowerCase() === session.usuario.toLowerCase() &&
-        String(rows[i][1]).trim() === oldPassword) {
-      users.getRange(i + 1, 2).setValue(newPassword);
+        verifyPassword_(oldPassword, String(rows[i][1] || ""))) {
+      users.getRange(i + 1, 2).setValue(hashPassword_(newPassword));
+      users.getRange(i + 1, CONFIG.userFailedAttemptsColumn, 1, 2).setValues([[0, ""]]);
       return json_({ status: "success" });
     }
   }
@@ -109,6 +150,8 @@ function changePassword_(data, session) {
 function getCatalog_(session) {
   var sheet = inventorySheet_();
   var rows = sheet.getDataRange().getValues();
+  refreshInventoryFormulas_(sheet, rows.length);
+  rows = sheet.getDataRange().getValues();
   var catalog = [];
   for (var i = 1; i < rows.length; i++) {
     if (!rows[i][0]) continue;
@@ -118,26 +161,57 @@ function getCatalog_(session) {
       descripcion: clean_(rows[i][2], 200),
       stockActual: number_(rows[i][6]),
       stockMinimo: number_(rows[i][7]),
-      fotoUrl: clean_(rows[i][8], 500)
+      fotoUrl: clean_(rows[i][8], 500),
+      activo: rows[i].length < CONFIG.inventoryActiveColumn || String(rows[i][CONFIG.inventoryActiveColumn - 1]).toLowerCase() !== "false"
     });
   }
   return json_({ status: "success", usuario: session.usuario, data: catalog });
 }
 
+function getMovements_(data, session) {
+  var sheet = movementSheet_();
+  ensureMovementHeaders_(sheet);
+  var rows = sheet.getDataRange().getValues();
+  var from = clean_(data.desde, 30);
+  var to = clean_(data.hasta, 30);
+  var filter = clean_(data.filtro, 200).toLowerCase();
+  var result = [];
+  for (var i = 1; i < rows.length; i++) {
+    if (!rows[i][0]) continue;
+    var date = rows[i][1] instanceof Date ? rows[i][1] : new Date(rows[i][1]);
+    var dateKey = isNaN(date.getTime()) ? "" : Utilities.formatDate(date, Session.getScriptTimeZone(), "yyyy-MM-dd");
+    var text = rows[i].slice(0, 14).join(" ").toLowerCase();
+    if (from && dateKey < from) continue;
+    if (to && dateKey > to) continue;
+    if (filter && text.indexOf(filter) < 0) continue;
+    result.push({
+      idTransaccion: clean_(rows[i][0], 100), fechaHora: date,
+      idArticulo: clean_(rows[i][2], 100), tipoMovimiento: clean_(rows[i][3], 100),
+      cantidad: number_(rows[i][4]), registradoPor: clean_(rows[i][5], 100),
+      entregadoA: clean_(rows[i][6], 150), clienteProveedor: clean_(rows[i][7], 150),
+      regional: clean_(rows[i][8], 100), estado: clean_(rows[i][9], 50) || "Confirmado",
+      relacionada: clean_(rows[i][10], 100), motivo: clean_(rows[i][11], 200),
+      regionalOrigen: clean_(rows[i][12], 100), regionalDestino: clean_(rows[i][13], 100)
+    });
+  }
+  return json_({ status: "success", usuario: session.usuario, data: result.slice(-500).reverse() });
+}
+
 function registerMovement_(data, session) {
   var type = String(data.tipoMovimiento || "Salida");
-  if (type !== "Entrada" && type !== "Salida") throw new Error("Tipo de movimiento invalido");
+  if (CONFIG.movementTypes.indexOf(type) < 0) throw new Error("Tipo de movimiento invalido");
   var items = normalizeItems_(data.items);
   if (!items.length) throw new Error("El movimiento no tiene articulos");
   var distribution = Array.isArray(data.distribution) ? data.distribution : [];
   if (type === "Salida" && !distribution.length) {
     throw new Error("Las salidas deben registrarse por cliente");
   }
-  if (type === "Entrada" && distribution.length) {
+  if (type !== "Salida" && distribution.length) {
     throw new Error("Las entradas no usan distribucion por cliente");
   }
   var provider = clean_(data.proveedor, 150);
-  if (type === "Entrada" && !provider) throw new Error("El proveedor es obligatorio");
+  if (["Entrada", "Devolucion"].indexOf(type) >= 0 && !provider) throw new Error("El proveedor es obligatorio");
+  if (["Ajuste positivo", "Ajuste negativo", "Baja por daño"].indexOf(type) >= 0 && !clean_(data.motivo, 200)) throw new Error("El motivo es obligatorio");
   var lock = LockService.getScriptLock();
   lock.waitLock(30000);
   try {
@@ -153,7 +227,8 @@ function registerMovement_(data, session) {
     Object.keys(requested).forEach(function(id) {
       var row = index[id];
       var current = number_(inventory.getRange(row, 7).getValue());
-      var next = type === "Entrada" ? current + requested[id] : current - requested[id];
+      var effect = movementEffect_(type);
+      var next = current + effect * requested[id];
       if (next < 0) throw new Error("Stock insuficiente para '" + id + "'. Disponible: " + current);
     });
 
@@ -164,20 +239,85 @@ function registerMovement_(data, session) {
       validateDistribution_(distribution, requested, type);
       distribution.forEach(function(row) {
         movementRows.push([transactionId, now, row.idArticulo, type, row.cantidad,
-          session.usuario, clean_(row.usuario, 150), clean_(row.cliente, 150), clean_(row.regional || data.regional, 100)]);
+          session.usuario, clean_(row.usuario, 150), clean_(row.cliente, 150), clean_(row.regional || data.regional, 100), "Confirmado", "", clean_(data.motivo, 200), "", ""]);
       });
     } else {
       items.forEach(function(item) {
         movementRows.push([transactionId, now, item.idArticulo, type, item.cantidad,
-          session.usuario, "", provider, "Bogota"]);
+          session.usuario, "", provider, clean_(data.regional || "Bogota", 100), "Confirmado", "", clean_(data.motivo, 200), clean_(data.regionalOrigen, 100), clean_(data.regionalDestino, 100)]);
       });
     }
     var movements = movementSheet_();
+    ensureMovementHeaders_(movements);
     movements.getRange(movements.getLastRow() + 1, 1, movementRows.length, movementRows[0].length).setValues(movementRows);
+    refreshInventoryFormulas_(inventory, rows.length);
     return json_({ status: "success", idTransaccion: transactionId, count: movementRows.length });
   } finally {
     lock.releaseLock();
   }
+}
+
+function reverseMovement_(data, session, finalStatus) {
+  var originalId = clean_(data.idTransaccion, 100);
+  if (!originalId) throw new Error("Falta la transaccion original");
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    var movements = movementSheet_();
+    var rows = movements.getDataRange().getValues();
+    var originals = [];
+    for (var i = 1; i < rows.length; i++) {
+      if (String(rows[i][0]) === originalId) originals.push({ row: i + 1, values: rows[i] });
+    }
+    if (!originals.length) throw new Error("Transaccion original no encontrada");
+    if (originals.some(function(item) { return String(item.values[9] || "Confirmado") !== "Confirmado"; })) {
+      throw new Error("La transaccion ya fue anulada o reversada");
+    }
+    var inverseItems = originals.map(function(item) {
+      return { idArticulo: clean_(item.values[2], 100), cantidad: number_(item.values[4]), type: inverseMovementType_(String(item.values[3])) };
+    });
+    var inventory = inventorySheet_();
+    var inventoryRows = inventory.getDataRange().getValues();
+    var index = {};
+    for (var j = 1; j < inventoryRows.length; j++) index[clean_(inventoryRows[j][0], 100)] = j + 1;
+    var requested = {};
+    inverseItems.forEach(function(item) {
+      requested[item.idArticulo] = (requested[item.idArticulo] || 0) + movementEffect_(item.type) * item.cantidad;
+    });
+    Object.keys(requested).forEach(function(id) {
+      if (!index[id]) throw new Error("Articulo no existe: " + id);
+      var current = number_(inventory.getRange(index[id], 7).getValue());
+      if (current + requested[id] < 0) throw new Error("Stock insuficiente para reversar '" + id + "'");
+    });
+    var reverseId = Utilities.getUuid();
+    var now = new Date();
+    var reverseRows = originals.map(function(item) {
+      var values = item.values;
+      return [reverseId, now, values[2], inverseMovementType_(String(values[3])), values[4], session.usuario,
+        values[6], values[7], values[8], "Confirmado", originalId, finalStatus === "Anulado" ? "Anulacion de " + originalId : "Reversion de " + originalId, values[12], values[13]];
+    });
+    ensureMovementHeaders_(movements);
+    movements.getRange(movements.getLastRow() + 1, 1, reverseRows.length, reverseRows[0].length).setValues(reverseRows);
+    originals.forEach(function(item) {
+      movements.getRange(item.row, 10, 1, 2).setValues([[finalStatus, reverseId]]);
+    });
+    refreshInventoryFormulas_(inventory, inventoryRows.length);
+    return json_({ status: "success", idTransaccion: reverseId, idTransaccionOriginal: originalId });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function inverseMovementType_(type) {
+  var inverses = {
+    "Entrada": "Salida",
+    "Salida": "Entrada",
+    "Devolucion": "Entrada",
+    "Ajuste positivo": "Ajuste negativo",
+    "Ajuste negativo": "Ajuste positivo",
+    "Baja por daño": "Ajuste positivo"
+  };
+  return inverses[type] || type;
 }
 
 function createAccessory_(data, session) {
@@ -192,14 +332,57 @@ function createAccessory_(data, session) {
     if (clean_(rows[i][0], 100).toUpperCase() === id.toUpperCase()) throw new Error("El codigo ya existe");
   }
   var row = sheet.getLastRow() + 1;
-  sheet.getRange(row, 1, 1, 8).setValues([[id, clean_(data.categoria, 100), description, 0, 0, 0, 0, minimum]]);
-  sheet.getRange(row, 5, 1, 3).setFormulas([[
-    '=SUMIFS(\'Registro de Movimientos\'!E:E,\'Registro de Movimientos\'!C:C,A' + row + ',\'Registro de Movimientos\'!D:D,"Entrada")',
-    '=SUMIFS(\'Registro de Movimientos\'!E:E,\'Registro de Movimientos\'!C:C,A' + row + ',\'Registro de Movimientos\'!D:D,"Salida")',
-    '=D' + row + '+E' + row + '-F' + row
-  ]]);
+  sheet.getRange(row, 1, 1, CONFIG.inventoryActiveColumn).setValues([[id, clean_(data.categoria, 100), description, 0, 0, 0, 0, minimum, "", true]]);
+  refreshInventoryFormulas_(sheet, row);
   sheet.getRange(row, 9).setValue("");
   return json_({ status: "success", message: "Accesorio añadido" });
+}
+
+function updateAccessory_(data, session) {
+  if (!isAdmin_(session)) throw new Error("Permisos insuficientes");
+  var id = clean_(data.idArticulo, 100);
+  var sheet = inventorySheet_();
+  var rows = sheet.getDataRange().getValues();
+  for (var i = 1; i < rows.length; i++) {
+    if (clean_(rows[i][0], 100).toUpperCase() !== id.toUpperCase()) continue;
+    if (data.descripcion != null) sheet.getRange(i + 1, 3).setValue(clean_(data.descripcion, 200));
+    if (data.stockMinimo != null && Number(data.stockMinimo) >= 0) sheet.getRange(i + 1, 8).setValue(Number(data.stockMinimo));
+    if (data.activo != null) sheet.getRange(i + 1, CONFIG.inventoryActiveColumn).setValue(Boolean(data.activo));
+    return json_({ status: "success", message: "Accesorio actualizado" });
+  }
+  throw new Error("Articulo no existe");
+}
+
+function movementEffect_(type) {
+  if (["Entrada", "Ajuste positivo"].indexOf(type) >= 0) return 1;
+  if (["Salida", "Devolucion", "Ajuste negativo", "Baja por daño"].indexOf(type) >= 0) return -1;
+  return 0;
+}
+
+function ensureMovementHeaders_(sheet) {
+  var current = sheet.getRange(1, 1, 1, CONFIG.movementHeaders.length).getValues()[0];
+  var changed = false;
+  CONFIG.movementHeaders.forEach(function(header, index) {
+    if (String(current[index] || "").trim() !== header) {
+      current[index] = header;
+      changed = true;
+    }
+  });
+  if (changed) sheet.getRange(1, 1, 1, CONFIG.movementHeaders.length).setValues([current]);
+  var rule = SpreadsheetApp.newDataValidation().requireValueInList(CONFIG.movementTypes, true).setAllowInvalid(false).build();
+  sheet.getRange(2, 4, Math.max(sheet.getMaxRows() - 1, 1), 1).setDataValidation(rule);
+}
+
+function refreshInventoryFormulas_(sheet, lastRow) {
+  var formulas = [];
+  for (var row = 2; row <= lastRow; row++) {
+    formulas.push([
+      '=SUMIFS(\'Registro de Movimientos\'!E:E;\'Registro de Movimientos\'!C:C;A' + row + ';\'Registro de Movimientos\'!D:D;"Entrada")+SUMIFS(\'Registro de Movimientos\'!E:E;\'Registro de Movimientos\'!C:C;A' + row + ';\'Registro de Movimientos\'!D:D;"Ajuste positivo")',
+      '=SUMIFS(\'Registro de Movimientos\'!E:E;\'Registro de Movimientos\'!C:C;A' + row + ';\'Registro de Movimientos\'!D:D;"Salida")+SUMIFS(\'Registro de Movimientos\'!E:E;\'Registro de Movimientos\'!C:C;A' + row + ';\'Registro de Movimientos\'!D:D;"Devolucion")+SUMIFS(\'Registro de Movimientos\'!E:E;\'Registro de Movimientos\'!C:C;A' + row + ';\'Registro de Movimientos\'!D:D;"Ajuste negativo")+SUMIFS(\'Registro de Movimientos\'!E:E;\'Registro de Movimientos\'!C:C;A' + row + ';\'Registro de Movimientos\'!D:D;"Baja por daño")',
+      '=D' + row + '+E' + row + '-F' + row
+    ]);
+  }
+  if (formulas.length) sheet.getRange(2, 5, formulas.length, 3).setFormulas(formulas);
 }
 
 function uploadPhoto_(data, session) {
@@ -312,4 +495,53 @@ function sha256_(value) {
   return Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, value, Utilities.Charset.UTF_8)
     .map(function(byte) { return ("0" + (byte < 0 ? byte + 256 : byte).toString(16)).slice(-2); })
     .join("");
+}
+
+function isPasswordHash_(value) {
+  return String(value || "").indexOf("v1$") === 0 && String(value).split("$").length === 3;
+}
+
+function hashPassword_(password) {
+  var salt = Utilities.getUuid().replace(/-/g, "");
+  return "v1$" + salt + "$" + passwordDigest_(password, salt);
+}
+
+function passwordDigest_(password, salt) {
+  var digest = sha256_(salt + "|" + password);
+  for (var i = 1; i < CONFIG.passwordIterations; i++) {
+    digest = sha256_(salt + "|" + digest + "|" + password);
+  }
+  return digest;
+}
+
+function verifyPassword_(password, stored) {
+  if (isPasswordHash_(stored)) {
+    var parts = stored.split("$");
+    return passwordDigest_(password, parts[1]) === parts[2];
+  }
+  return stored !== "" && stored === password;
+}
+
+function recordFailedLogin_(users, rowNumber, row) {
+  var attempts = Number(row[CONFIG.userFailedAttemptsColumn - 1]) || 0;
+  attempts += 1;
+  var lockUntil = "";
+  if (attempts >= CONFIG.maxLoginAttempts) {
+    lockUntil = new Date(Date.now() + CONFIG.lockoutSeconds * 1000);
+    attempts = 0;
+  }
+  users.getRange(rowNumber, CONFIG.userFailedAttemptsColumn, 1, 2).setValues([[attempts, lockUntil]]);
+}
+
+function ensureUserSecurityColumns_(users) {
+  var headers = users.getRange(1, CONFIG.userFailedAttemptsColumn, 1, 3).getValues()[0];
+  var expected = ["Intentos_Fallidos", "Bloqueado_Hasta", "Ultimo_Acceso"];
+  var changed = false;
+  for (var i = 0; i < expected.length; i++) {
+    if (String(headers[i] || "").trim() !== expected[i]) {
+      headers[i] = expected[i];
+      changed = true;
+    }
+  }
+  if (changed) users.getRange(1, CONFIG.userFailedAttemptsColumn, 1, 3).setValues([headers]);
 }

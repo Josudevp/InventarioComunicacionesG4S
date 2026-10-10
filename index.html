@@ -213,6 +213,7 @@
 
         <div class="tab-bar" role="tablist" aria-label="Secciones del inventario">
             <button type="button" class="tab active" role="tab" aria-selected="true" aria-controls="tab-registro" onclick="window.switchTab('registro', this)">Movimientos</button>
+            <button type="button" class="tab" role="tab" aria-selected="false" aria-controls="tab-historial" onclick="window.switchTab('historial', this)">Historial</button>
             <button type="button" class="tab" role="tab" aria-selected="false" aria-controls="tab-catalogo" onclick="window.switchTab('catalogo', this)">Catálogo</button>
         </div>
 
@@ -220,19 +221,26 @@
             <!-- TAB REGISTRO -->
             <div id="tab-registro" class="section active">
                 <div class="card">
-                    <div class="radio-group">
-                        <label class="radio-btn active-salida" id="lbl-salida">
-                            <input type="radio" name="tipoMov" value="Salida" checked onclick="window.cambiarMovimientoUI('Salida')"> <i class="fi fi-rr-inbox-out"></i> SALIDA
-                        </label>
-                        <label class="radio-btn" id="lbl-entrada">
-                            <input type="radio" name="tipoMov" value="Entrada" onclick="window.cambiarMovimientoUI('Entrada')"> <i class="fi fi-rr-inbox-in"></i> ENTRADA
-                        </label>
-                    </div>
+                    <label for="tipoMov">Tipo de movimiento</label>
+                    <select id="tipoMov" onchange="window.cambiarMovimientoUI(this.value)">
+                        <option value="Salida">Salida</option>
+                        <option value="Entrada">Entrada</option>
+                        <option value="Devolucion">Devolución</option>
+                        <option value="Ajuste positivo">Ajuste positivo</option>
+                        <option value="Ajuste negativo">Ajuste negativo</option>
+                        <option value="Baja por daño">Baja por daño</option>
+                    </select>
 
-                    <div id="entrada-fields" style="display:none;">
-                        <label for="proveedor">Proveedor</label>
-                        <input type="text" id="proveedor" placeholder="Ej. Proveedor o área que entrega">
-                        <p class="helper-text">Destino fijo: Comunicaciones, Bogotá.</p>
+                    <div id="movement-metadata">
+                        <div id="provider-field" style="display:none;">
+                            <label for="proveedor">Proveedor</label>
+                            <input type="text" id="proveedor" placeholder="Proveedor que recibe el artículo devuelto">
+                        </div>
+                        <div id="reason-field" style="display:none;">
+                            <label for="motivo">Motivo</label>
+                            <input type="text" id="motivo" placeholder="Indica el motivo del ajuste o baja por daño">
+                        </div>
+                        <p id="movement-helper" class="helper-text"></p>
                     </div>
                 </div>
 
@@ -275,6 +283,22 @@
                 </div>
             </div>
 
+            <div id="tab-historial" class="section">
+                <div class="card">
+                    <h3 style="margin-top:0; color:var(--g4s-black);">Historial de movimientos</h3>
+                    <div class="catalog-toolbar">
+                        <input type="date" id="history-from" aria-label="Desde">
+                        <input type="date" id="history-to" aria-label="Hasta">
+                        <input type="search" id="history-filter" placeholder="Artículo, cliente, regional o usuario" aria-label="Filtrar historial">
+                        <button type="button" class="btn-secondary" id="btn-history-search" style="width:auto; margin:0;"><i class="fa-solid fa-filter"></i> Filtrar</button>
+                    </div>
+                    <div class="catalog-table-wrap">
+                        <table class="catalog-table"><thead><tr><th>Fecha</th><th>Artículo</th><th>Tipo</th><th>Cantidad</th><th>Cliente/Proveedor</th><th>Regional</th><th>Estado</th><th>Usuario</th><th>Acción</th></tr></thead>
+                        <tbody id="history-table-body"><tr><td colspan="9">Carga el historial para consultar movimientos.</td></tr></tbody></table>
+                    </div>
+                </div>
+            </div>
+
             <!-- TAB CATÁLOGO (CRUD) -->
             <div id="tab-catalogo" class="section">
                 <div class="card">
@@ -291,8 +315,8 @@
                     </div>
                     <div class="catalog-table-wrap">
                         <table class="catalog-table">
-                            <thead><tr><th>Foto</th><th>SKU</th><th>Descripción</th><th>Stock</th><th>Mínimo</th><th>Estado</th></tr></thead>
-                            <tbody id="catalog-table-body"><tr><td colspan="6">Cargando catálogo...</td></tr></tbody>
+                            <thead><tr><th>Foto</th><th>SKU</th><th>Descripción</th><th>Stock</th><th>Mínimo</th><th>Estado</th><th>Activo</th><th>Acción</th></tr></thead>
+                            <tbody id="catalog-table-body"><tr><td colspan="8">Cargando catálogo...</td></tr></tbody>
                         </table>
                     </div>
                 </div>
@@ -322,6 +346,17 @@
                     <button class="btn-black" id="btn-crear-acc" style="margin-top: 20px;"><i class="fa-solid fa-save"></i> CREAR ACCESORIO EN EXCEL</button>
                 </div>
                 <div class="card">
+                    <h3 style="margin-top:0; color:var(--g4s-black); border-bottom: 2px solid var(--border); padding-bottom: 8px;"><i class="fa-solid fa-pen-to-square"></i> Editar catálogo</h3>
+                    <label for="edit-sku">Artículo</label>
+                    <select id="edit-sku"><option value="">Selecciona un artículo</option></select>
+                    <label for="edit-desc">Descripción</label>
+                    <input type="text" id="edit-desc" placeholder="Descripción del artículo">
+                    <label for="edit-min">Stock mínimo</label>
+                    <input type="number" id="edit-min" min="0" value="5">
+                    <label style="display:flex; align-items:center; gap:8px;"><input type="checkbox" id="edit-active" checked style="width:auto;"> Artículo activo</label>
+                    <button class="btn-black" id="btn-editar-acc"><i class="fa-solid fa-save"></i> GUARDAR CAMBIOS</button>
+                </div>
+                <div class="card">
                     <button class="btn-secondary" onclick="window.open('https://lookerstudio.google.com/', '_blank')">
                         <i class="fa-solid fa-chart-pie"></i> VER DASHBOARD LOOKER
                     </button>
@@ -337,7 +372,7 @@
         // =========================================================================
         // URL FIJA DE APPS SCRIPT
         // =========================================================================
-        const API_URL = "https://script.google.com/macros/s/AKfycbxsEfc2OYgtDidW7wd7kOLac65Wz52F_WngPZ3eOMHPs8uXiabG6mgqpWEEP-oEpykz/exec";
+        const API_URL = "https://script.google.com/macros/s/AKfycbyjxkT0TRAAlgysmMYxGeSQHbESWKYgogbcMz5RS-1y2RlAjHTWhfWwyMyNReVmisP1/exec";
         // Reemplaza este valor por la ruta local o URL HTTPS de tu imagen de logo.
         const LOGO_URL = "assets/g4s-logo-.svg";
         
@@ -533,7 +568,7 @@
                 return;
             }
             const opciones = datosCatalogo
-                .filter(item => item && item.idArticulo)
+                .filter(item => item && item.idArticulo && item.activo !== false)
                 .map(item => {
                     const status = window.stockStatus(item);
                     return {
@@ -660,7 +695,7 @@
                 return stockDifference || String(first.descripcion || '').localeCompare(String(second.descripcion || ''), 'es');
             });
             if (!items.length) {
-                body.innerHTML = '<tr><td colspan="6">No hay artículos que coincidan con el filtro.</td></tr>';
+                body.innerHTML = '<tr><td colspan="8">No hay artículos que coincidan con el filtro.</td></tr>';
                 return;
             }
             body.innerHTML = items.map(item => {
@@ -673,9 +708,50 @@
                     <td>${Number(item.stockActual) || 0}</td>
                     <td>${Number(item.stockMinimo) || 0}</td>
                     <td><span class="${status.className}">${status.label}</span></td>
+                    <td>${item.activo === false ? 'Inactivo' : 'Activo'}</td>
+                    <td><button type="button" class="btn-secondary photo-button" onclick="window.seleccionarEdicion('${window.escapeHtml(item.idArticulo)}')"><i class="fa-solid fa-pen"></i> Editar</button></td>
                 </tr>`;
             }).join('');
+            window.renderizarSelectorEdicion();
         };
+
+        window.renderizarSelectorEdicion = function() {
+            const select = document.getElementById('edit-sku');
+            const current = select.value;
+            select.innerHTML = '<option value="">Selecciona un artículo</option>' + catalogoActual.map(item => `<option value="${window.escapeHtml(item.idArticulo)}">${window.escapeHtml(item.descripcion || item.idArticulo)}</option>`).join('');
+            if (current) select.value = current;
+        };
+
+        window.seleccionarEdicion = function(idArticulo) {
+            const item = catalogoActual.find(entry => String(entry.idArticulo) === String(idArticulo));
+            if (!item) return;
+            document.getElementById('edit-sku').value = item.idArticulo;
+            document.getElementById('edit-desc').value = item.descripcion || '';
+            document.getElementById('edit-min').value = Number(item.stockMinimo) || 0;
+            document.getElementById('edit-active').checked = item.activo !== false;
+            document.getElementById('edit-sku').closest('.card').scrollIntoView({ behavior: 'smooth', block: 'center' });
+        };
+
+        document.getElementById('edit-sku').addEventListener('change', () => window.seleccionarEdicion(document.getElementById('edit-sku').value));
+        document.getElementById('btn-editar-acc').addEventListener('click', () => {
+            const idArticulo = document.getElementById('edit-sku').value;
+            if (!idArticulo) {
+                window.mostrarAlerta('Selecciona un artículo para editar', 'error');
+                return;
+            }
+            const button = document.getElementById('btn-editar-acc');
+            button.disabled = true;
+            fetch(API_URL, { method: 'POST', body: JSON.stringify(window.apiPayload({
+                action: 'actualizar_accesorio', idArticulo,
+                descripcion: document.getElementById('edit-desc').value,
+                stockMinimo: document.getElementById('edit-min').value,
+                activo: document.getElementById('edit-active').checked
+            })), headers: window.apiHeaders() }).then(response => response.json()).then(result => {
+                if (result.status !== 'success') throw new Error(result.message || 'No se pudo actualizar el artículo');
+                window.mostrarAlerta('Artículo actualizado', 'success');
+                window.cargarCatalogo();
+            }).catch(error => window.mostrarAlerta(error.message, 'error')).finally(() => { button.disabled = false; });
+        });
 
         ['catalog-filter', 'catalog-stock-filter'].forEach(id => document.getElementById(id).addEventListener('input', window.renderizarCatalogo));
 
@@ -793,7 +869,7 @@
                 return;
             }
             const selectedItem = catalogoActual.find(item => String(item.idArticulo) === String(selected));
-            const isSalida = document.querySelector('input[name="tipoMov"]:checked').value === 'Salida';
+            const isSalida = window.tipoMovimientoActual() === 'Salida';
             if (!selectedItem || (isSalida && Number(selectedItem.stockActual) <= 0)) {
                 window.mostrarAlerta('Este accesorio no tiene stock disponible', 'error');
                 return;
@@ -833,7 +909,7 @@
 
         window.agregarAlCarrito = function(codigo) {
             const catalogItem = catalogoActual.find(item => String(item.idArticulo) === String(codigo));
-            const isSalida = document.querySelector('input[name="tipoMov"]:checked').value === 'Salida';
+            const isSalida = window.tipoMovimientoActual() === 'Salida';
             if (!catalogItem || (isSalida && Number(catalogItem.stockActual) <= 0)) {
                 window.mostrarAlerta('No se puede agregar un accesorio sin stock disponible', 'error');
                 return;
@@ -857,7 +933,7 @@
         window.actualizarCant = function(index, valor) {
             let nuevaCant = parseInt(valor);
             const catalogItem = catalogoActual.find(item => String(item.idArticulo) === String(carrito[index].idArticulo));
-            const isSalida = document.querySelector('input[name="tipoMov"]:checked').value === 'Salida';
+            const isSalida = window.tipoMovimientoActual() === 'Salida';
             const maximum = isSalida && catalogItem ? Number(catalogItem.stockActual) || 0 : 9999;
             carrito[index].cantidad = Math.min(maximum, (isNaN(nuevaCant) || nuevaCant <= 0) ? 1 : nuevaCant);
             if (isSalida && maximum === 0) {
@@ -887,7 +963,7 @@
                     const status = catalogItem ? window.stockStatus(catalogItem) : null;
                     const warningText = status && status.key === 'empty' ? 'Agotado: no hay unidades disponibles.' : 'Stock bajo: las existencias están en el mínimo configurado.';
                     const stockWarning = status && status.key !== 'ok' ? `<span class="stock-warning ${status.key === 'empty' ? 'empty' : ''}" title="${window.escapeHtml(warningText)}" aria-label="${window.escapeHtml(warningText)}">&#9888;</span>` : '';
-                        const maxQuantity = document.querySelector('input[name="tipoMov"]:checked').value === 'Salida' && catalogItem ? Number(catalogItem.stockActual) || 0 : 9999;
+                        const maxQuantity = window.tipoMovimientoActual() === 'Salida' && catalogItem ? Number(catalogItem.stockActual) || 0 : 9999;
                     html += `<div class="item-row">
                             <div class="item-info">🏷️ ${window.escapeHtml(window.nombreArticulo(item.idArticulo))}</div>
                         ${stockWarning}
@@ -895,17 +971,20 @@
                             <button type="button" class="btn-del" onclick="window.eliminarItem(${idx})" aria-label="Eliminar ${window.escapeHtml(item.idArticulo)}"><i class="fa-solid fa-trash-can"></i></button>
                     </div>`;
                 });
-                list.innerHTML = html; btnSubmit.disabled = document.querySelector('input[name="tipoMov"]:checked').value === 'Salida' && !distributionConfirmed; btnSubmit.innerHTML = `<i class="fa-solid fa-paper-plane"></i> REGISTRAR MOVIMIENTO`;
+                list.innerHTML = html; btnSubmit.disabled = window.tipoMovimientoActual() === 'Salida' && !distributionConfirmed; btnSubmit.innerHTML = `<i class="fa-solid fa-paper-plane"></i> REGISTRAR MOVIMIENTO`;
             }
             window.renderizarDistribucion();
         }
 
         document.getElementById('btn-submit').addEventListener('click', () => {
-            let tipoMov = document.querySelector('input[name="tipoMov"]:checked').value;
+            let tipoMov = window.tipoMovimientoActual();
             let cliente = tipoMov === 'Salida' ? distributionRows[0]?.cliente.trim() || '' : 'Comunicaciones';
-            const proveedor = tipoMov === 'Entrada' ? document.getElementById('proveedor').value.trim() : '';
-            if ((tipoMov === 'Salida' && !cliente) || (tipoMov === 'Entrada' && !proveedor) || carrito.length === 0) {
-                window.mostrarAlerta(tipoMov === 'Entrada' ? "Indica el proveedor y agrega al menos un artículo" : "Completa la distribución y agrega al menos un artículo", "error");
+            const providerRequired = ['Entrada', 'Devolucion'].includes(tipoMov);
+            const provider = providerRequired ? document.getElementById('proveedor').value.trim() : '';
+            const reasonRequired = ['Ajuste positivo', 'Ajuste negativo', 'Baja por daño'].includes(tipoMov);
+            const reason = reasonRequired ? document.getElementById('motivo').value.trim() : '';
+            if ((tipoMov === 'Salida' && !cliente) || (providerRequired && !provider) || (reasonRequired && !reason) || carrito.length === 0) {
+                window.mostrarAlerta(providerRequired ? "Indica el proveedor y agrega artículos" : reasonRequired ? "Indica el motivo y agrega artículos" : "Completa la distribución y agrega artículos", "error");
                 return;
             }
             let distribution = [];
@@ -916,7 +995,7 @@
                 }
                 distribution = distributionRows.map(row => ({ cliente: row.cliente.trim(), idArticulo: row.idArticulo, regional: row.regional, usuario: row.usuario.trim(), cantidad: Number(row.cantidad) }));
             }
-            let payload = { action: "registrar_movimiento", tipoMovimiento: tipoMov, cliente, proveedor, items: carrito, distribution: tipoMov === 'Salida' ? distribution : null };
+            let payload = { action: "registrar_movimiento", tipoMovimiento: tipoMov, cliente, proveedor: provider, motivo: reason, items: carrito, distribution: tipoMov === 'Salida' ? distribution : null };
             let btn = document.getElementById('btn-submit'); 
             btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Guardando...'; 
             btn.disabled = true;
@@ -931,6 +1010,7 @@
                     document.getElementById('distribution-review').style.display = 'none';
                     document.getElementById('items-card').style.display = 'none';
                     document.getElementById('proveedor').value = '';
+                    document.getElementById('motivo').value = '';
                     window.renderizarCarrito(); 
                     window.cargarCatalogo(); 
                 } 
@@ -978,7 +1058,54 @@
             document.getElementById('tab-' + tabName).classList.add('active'); 
             document.querySelectorAll('.tab').forEach(t => t.setAttribute('aria-selected', String(t === tabElement)));
             tabElement.classList.add('active');
+            if (tabName === 'historial') window.cargarHistorial();
         }
+
+        window.cargarHistorial = function() {
+            const body = document.getElementById('history-table-body');
+            body.innerHTML = '<tr><td colspan="9">Cargando movimientos...</td></tr>';
+            const payload = {
+                action: 'obtener_movimientos',
+                desde: document.getElementById('history-from').value,
+                hasta: document.getElementById('history-to').value,
+                filtro: document.getElementById('history-filter').value.trim()
+            };
+            fetch(API_URL, { method: 'POST', body: JSON.stringify(window.apiPayload(payload)), headers: window.apiHeaders() })
+                .then(response => response.json()).then(result => {
+                    if (result.status !== 'success') throw new Error(result.message || 'No se pudo cargar el historial');
+                    const rows = Array.isArray(result.data) ? result.data : [];
+                    if (!rows.length) {
+                        body.innerHTML = '<tr><td colspan="9">No hay movimientos para los filtros seleccionados.</td></tr>';
+                        return;
+                    }
+                    body.innerHTML = rows.map(row => {
+                        const date = row.fechaHora ? new Date(row.fechaHora).toLocaleString('es-CO') : '';
+                        const canReverse = row.estado === 'Confirmado';
+                        return `<tr><td>${window.escapeHtml(date)}</td><td>${window.escapeHtml(window.nombreArticulo(row.idArticulo))}</td><td>${window.escapeHtml(row.tipoMovimiento)}</td><td>${row.cantidad}</td><td>${window.escapeHtml(row.clienteProveedor)}</td><td>${window.escapeHtml(row.regional || row.regionalOrigen || '')}</td><td>${window.escapeHtml(row.estado)}</td><td>${window.escapeHtml(row.registradoPor)}</td><td>${canReverse ? `<button type="button" class="btn-secondary photo-button" onclick="window.reversarMovimiento('${window.escapeHtml(row.idTransaccion)}')">Reversar</button><button type="button" class="btn-secondary photo-button" onclick="window.anularMovimiento('${window.escapeHtml(row.idTransaccion)}')">Anular</button>` : window.escapeHtml(row.relacionada || '')}</td></tr>`;
+                    }).join('');
+                }).catch(error => { body.innerHTML = `<tr><td colspan="9">${window.escapeHtml(error.message)}</td></tr>`; });
+        };
+
+        window.reversarMovimiento = function(idTransaccion) {
+            window.procesarCorreccionMovimiento(idTransaccion, 'reversar_movimiento', 'Se creará una transacción inversa y el original quedará como reversado. ¿Continuar?');
+        };
+
+        window.anularMovimiento = function(idTransaccion) {
+            window.procesarCorreccionMovimiento(idTransaccion, 'anular_movimiento', 'Se creará una transacción inversa y el original quedará como anulado. ¿Continuar?');
+        };
+
+        window.procesarCorreccionMovimiento = function(idTransaccion, action, confirmation) {
+            if (!window.confirm(confirmation)) return;
+            fetch(API_URL, { method: 'POST', body: JSON.stringify(window.apiPayload({ action, idTransaccion })), headers: window.apiHeaders() })
+                .then(response => response.json()).then(result => {
+                    if (result.status !== 'success') throw new Error(result.message || 'No se pudo reversar');
+                    window.mostrarAlerta('Movimiento reversado correctamente', 'success');
+                    window.cargarHistorial();
+                    window.cargarCatalogo();
+                }).catch(error => window.mostrarAlerta(error.message, 'error'));
+        };
+
+        document.getElementById('btn-history-search').addEventListener('click', window.cargarHistorial);
 
         document.querySelectorAll('[role="tab"]').forEach(tab => {
             tab.addEventListener('keydown', event => {
@@ -988,16 +1115,24 @@
             });
         });
 
+        window.tipoMovimientoActual = function() {
+            return document.getElementById('tipoMov').value;
+        };
+
         window.cambiarMovimientoUI = function(tipo) {
-            document.getElementById('lbl-salida').className = 'radio-btn' + (tipo === 'Salida' ? ' active-salida' : '');
-            document.getElementById('lbl-entrada').className = 'radio-btn' + (tipo === 'Entrada' ? ' active-entrada' : '');
+            const providerRequired = ['Entrada', 'Devolucion'].includes(tipo);
+            const reasonRequired = ['Ajuste positivo', 'Ajuste negativo', 'Baja por daño'].includes(tipo);
             document.getElementById('salida-fields').style.display = tipo === 'Salida' ? 'block' : 'none';
-            document.getElementById('entrada-fields').style.display = tipo === 'Entrada' ? 'block' : 'none';
-            if (tipo === 'Entrada') document.getElementById('items-card').style.display = carrito.length ? 'block' : 'none';
+            document.getElementById('provider-field').style.display = providerRequired ? 'block' : 'none';
+            document.getElementById('reason-field').style.display = reasonRequired ? 'block' : 'none';
+            document.getElementById('movement-helper').textContent = tipo === 'Entrada' ? 'Destino fijo: Comunicaciones, Bogotá.' : tipo === 'Devolucion' ? 'Devuelve al proveedor un artículo dañado, incorrecto o cubierto por garantía.' : reasonRequired ? 'El motivo queda registrado para auditoría.' : '';
+            distributionConfirmed = tipo === 'Salida' ? distributionConfirmed : false;
             distributionConfirmed = false;
             document.getElementById('distribution-review').style.display = 'none';
             window.renderizarCarrito();
         }
+
+        window.cambiarMovimientoUI('Salida');
     </script>
 </body>
 </html>

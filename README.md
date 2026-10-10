@@ -37,11 +37,16 @@ Para una PWA instalada conviene usar una imagen local PNG de 180x180 o mayor.
 El código actualizado está en [apps-script/Code.gs](./apps-script/Code.gs) y conserva tus hojas actuales:
 
 * `Maestro de inventario`: usa A=ID, B=Categoría, C=Descripción, D=Stock inicial, E=Entradas, F=Salidas, G=Stock_Actual, H=Stock_Minimo_Alerta e I=Foto_URL.
+* El catálogo agrega J=Activo; los artículos inactivos se conservan para historial, pero no se ofrecen en nuevos movimientos.
 * Las imágenes del catálogo se cargan localmente desde `assets/accesorios/` usando el SKU como nombre (`FOR-G06.png`, `VID-G22.jpg`, etc.). La aplicación busca `.png`, `.jpg`, `.jpeg` y `.webp` automáticamente.
-* `Registro de Movimientos`: usa A=ID_Transacción, B=Fecha_Hora, C=ID_Articulo, D=Tipo_Movimiento, E=Cantidad, F=Registrado_Por, G=Entregado_A_Usuario, H=Cliente e I=Regional.
+* `Registro de Movimientos`: usa A=ID_Transacción, B=Fecha_Hora, C=ID_Articulo, D=Tipo_Movimiento, E=Cantidad, F=Registrado_Por, G=Entregado_A_Usuario, H=Cliente_Proveedor, I=Regional, J=Estado, K=ID_Transacción_Relacionada, L=Motivo, M=Regional_Origen y N=Regional_Destino.
 * Las salidas siempre se registran por distribución: cada fila contiene cliente, artículo, regional, cantidad y usuario destinatario. El registrador se toma de la sesión autenticada.
 * Las entradas no usan distribución: requieren proveedor, el destino se registra automáticamente como `Comunicaciones` en `Bogota` y el registrador también se toma de la sesión.
+* Los tipos disponibles son `Entrada`, `Salida`, `Devolucion`, `Ajuste positivo`, `Ajuste negativo` y `Baja por daño`. Una `Devolucion` representa un artículo que se devuelve al proveedor por garantía, daño o entrega incorrecta, y descuenta stock de Comunicaciones. Un ajuste positivo corrige faltantes a favor del inventario; uno negativo corrige sobrantes registrados y resta stock. Las correcciones se realizan con `reversar_movimiento` o `anular_movimiento`, nunca borrando filas.
+* El catálogo permite editar descripción, stock mínimo y estado activo/inactivo. Los artículos inactivos no aparecen para nuevos movimientos.
 * La bóveda de usuarios conserva el ID configurado en `ID_BOVEDA_USUARIOS`.
+* La bóveda de usuarios usa A=Usuario, B=Clave protegida, C=Rol, D=Activo, E=Intentos_Fallidos, F=Bloqueado_Hasta y G=Ultimo_Acceso. Las claves antiguas se migran a hash con salt al iniciar sesión correctamente.
+* Después de cinco intentos fallidos, la cuenta se bloquea durante 15 minutos. Las nuevas claves y los cambios de contraseña se guardan siempre como hash, nunca en texto plano.
 
 Configura en Propiedades del proyecto:
 
