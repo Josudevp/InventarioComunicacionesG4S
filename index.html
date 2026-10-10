@@ -15,6 +15,7 @@
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet" integrity="sha384-3B6NwesSXE7YJlcLI9RpRqGf2p/EgVH8BgoKTaUrmKNDkHPStTQ3EyoYjCGXaOTS" crossorigin="anonymous">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/choices.js@11.0.2/public/assets/styles/choices.min.css" integrity="sha384-n0GACcBzAGKp29zpmkTj4eje26AGm3wqHG9TROENrVHXySIkFf8nwmY5IgVr5qen" crossorigin="anonymous" />
     <script src="https://cdn.jsdelivr.net/npm/choices.js@11.0.2/public/assets/scripts/choices.min.js" integrity="sha384-RW4gs5EBMnvixdJOoWLeT/qJSVHjMQOOwwxMSGVlEzuuuPWm9WVTDYPspqVrYBds" crossorigin="anonymous"></script>
+    <link rel='stylesheet' href='https://cdn-uicons.flaticon.com/4.0.0/uicons-regular-rounded/css/uicons-regular-rounded.css'>
 
     <style>
         :root {
@@ -33,8 +34,7 @@
         }
         * { box-sizing: border-box; }
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: linear-gradient(145deg, #f8fafc 0%, #eef2f7 100%); margin: 0; padding: 0; color: var(--text); -webkit-tap-highlight-color: transparent; min-height: 100vh; }
-        
-        .navbar { background: var(--g4s-black); color: white; padding: 12px 32px; text-align: center; position: sticky; top: 0; z-index: 50; display: flex; justify-content: space-between; align-items: center; border-bottom: 4px solid var(--g4s-red); gap: 24px;}
+        .navbar { background: var(--g4s-black); color: white; padding: 12px 32px; position: sticky; top: 0; z-index: 50; display: flex; justify-content: space-between; align-items: center; border-bottom: 4px solid #4b5563; box-shadow: 0 2px 0 #9ca3af; gap: 24px; }
         .brand { display: flex; align-items: center; gap: 16px; min-width: 0; }
         .brand-logo { width: 88px; height: 50px; object-fit: contain; border-radius: 7px; background: #fff; }
         .navbar h2 { margin: 0; font-size: 19px; font-weight: 900; letter-spacing: -0.5px; display: flex; align-items: center; gap: 10px;}
@@ -44,7 +44,7 @@
         .tab { flex: 1; text-align: center; padding: 14px 0; margin: 0; width: auto; font-weight: 800; color: #6b7280; background: #fff; border: 0; border-bottom: 3px solid transparent; border-radius: 0; cursor: pointer; transition: 0.2s; font-size: 14px;}
         .tab.active { color: var(--g4s-red); border-bottom: 3px solid var(--g4s-red); }
         
-        .container { padding: 20px 15px 40px; max-width: 760px; margin: 0 auto; }
+        .container { padding: 24px 20px 40px; max-width: 1120px; margin: 0 auto; }
         .card { background: rgba(255,255,255,.96); border-radius: 16px; padding: 20px; box-shadow: 0 8px 24px rgba(15,23,42,.07); margin-bottom: 15px; border: 1px solid var(--border); }
         
         label { display: block; font-weight: 700; margin-bottom: 6px; font-size: 13px; margin-top: 10px; color: #4b5563;}
@@ -74,6 +74,7 @@
         
         .search-row { display: flex; gap: 10px; align-items: flex-end; margin-top: 10px;}
         .search-row > div { flex: 1; margin-top: 0;}
+        .search-row .choices { flex: 1; min-width: 0; margin-bottom: 0; }
         .btn-icon { width: 48px; height: 48px; padding: 0; flex-shrink: 0; margin: 0; border-radius: 8px; background: var(--g4s-black); font-size: 20px;}
         #reader { width: 100%; border-radius: 12px; overflow: hidden; display: none; margin-top: 15px; border: 3px solid var(--g4s-red); }
         
@@ -86,6 +87,8 @@
         .item-row { display: flex; align-items: center; justify-content: space-between; background: #f9fafb; border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-bottom: 8px; gap: 8px;}
         .item-info { flex: 1.2; font-weight: 700; font-size: 14px; color: var(--text); word-break: break-all;}
         .qty-input { width: 50px !important; height: 38px; text-align: center; font-size: 15px; font-weight: 800; border: 2px solid #cbd5e1; border-radius: 6px; padding: 0 !important; margin: 0; background: #fff;}
+        .stock-warning { color: #d97706; font-size: 16px; margin-right: 4px; }
+        .stock-warning.empty { color: var(--danger); }
         .btn-del { color: var(--danger); background: transparent; border: none; font-size: 18px; padding: 5px; width: auto; margin: 0;}
         
         .alert-box { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); width: 90%; max-width: 400px; padding: 16px 20px; border-radius: 12px; font-weight: 700; font-size: 14px; text-align: center; z-index: 99999; box-shadow: 0 10px 25px rgba(0,0,0,0.3); display: none; }
@@ -93,10 +96,20 @@
         .alert-error { background: #ee1c25; color: white; border: 2px solid #b91c1c;}
         
         .choices__inner { border-radius: 8px !important; border: 2px solid var(--border) !important; background: #fafafa !important; min-height: 48px !important; display: flex; align-items: center; text-align:left;}
+        .choices__list--single { width: 100%; padding: 4px 34px 4px 16px !important; }
+        .choices__list--dropdown .choices__list { padding: 12px 14px !important; }
+        .choices__list--dropdown .choices__item,
+        .choices__list--dropdown .choices__item--choice { display: flex; align-items: center; min-height: 52px; padding: 18px 16px !important; margin: 9px 0 !important; border-radius: 6px; line-height: 1.4; }
+        .choices__list--dropdown .choices__item.is-unavailable { background: #fff7f7; color: #991b1b; cursor: not-allowed; }
+        .choice-with-stock { display: flex; align-items: center; justify-content: space-between; gap: 18px; width: 100%; min-height: 24px; }
+        .choice-description { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
+        .choice-stock { flex: 0 0 auto; min-width: 48px; padding: 5px 9px; border-radius: 6px; background: #e0f2fe; color: #075985; font-size: 11px; font-weight: 800; text-align: center; }
+        .choice-stock.low { background: #fef3c7; color: #92400e; }
+        .choice-stock.empty { background: #fee2e2; color: #991b1b; }
         .helper-text { color: var(--muted); font-size: 12px; margin: 8px 0 0; }
         .distribution-panel { display: none; margin-top: 16px; padding: 14px; border: 1px solid var(--border); border-radius: 12px; background: #f8fafc; }
         .distribution-panel.visible { display: block; }
-        .distribution-header, .distribution-row { display: grid; grid-template-columns: 1.4fr 1fr 1fr 44px; gap: 8px; align-items: end; }
+        .distribution-header, .distribution-row { display: grid; grid-template-columns: 1.25fr 1.2fr .8fr 1.15fr .6fr 44px; gap: 8px; align-items: end; }
         .distribution-header { color: var(--muted); font-size: 12px; font-weight: 800; margin-bottom: 6px; }
         .distribution-row { margin-bottom: 8px; }
         .distribution-row button { width: 44px; height: 44px; margin: 0; padding: 0; }
@@ -115,17 +128,24 @@
         .stock-empty { color: #991b1b; background: #fee2e2; }
         .photo-input { display: none; }
         .photo-button { width: auto; margin: 0; padding: 8px 10px; font-size: 12px; }
+        .distribution-row input, .distribution-row select { min-width: 0; }
         @media (max-width: 520px) {
             .navbar h2 { font-size: 15px; }
             .navbar { padding-left: 14px; padding-right: 14px; gap: 10px; }
             .brand { gap: 9px; }
             .brand-logo { width: 64px; height: 40px; }
-            .container { padding-top: 14px; }
+            .container { padding: 14px 10px 30px; }
             .card { padding: 16px; }
+            .search-row { flex-wrap: wrap; }
+            .search-row > div { flex: 1 1 calc(100% - 58px); }
+            .search-row .helper-text { flex: 1 1 auto; }
             .form-row { flex-direction: column; gap: 0 !important; }
             .distribution-header { display: none; }
-            .distribution-row { grid-template-columns: 1fr 1fr 44px; }
-            .distribution-row .distribution-product-label { display: none; }
+            .distribution-row { grid-template-columns: 1fr 1fr 1fr 44px; }
+            .distribution-row .distribution-product-label { grid-column: span 2; }
+            .distribution-row .distribution-regional { grid-column: span 2; }
+            .distribution-row > div { grid-column: span 2; }
+            .distribution-row > input[type="number"] { grid-column: span 1; }
         }
     </style>
 </head>
@@ -187,80 +207,55 @@
                 <div class="card">
                     <div class="radio-group">
                         <label class="radio-btn active-salida" id="lbl-salida">
-                            <input type="radio" name="tipoMov" value="Salida" checked onclick="window.cambiarMovimientoUI('Salida')"> 📤 SALIDA
+                            <input type="radio" name="tipoMov" value="Salida" checked onclick="window.cambiarMovimientoUI('Salida')"> <i class="fi fi-rr-inbox-out"></i> SALIDA
                         </label>
                         <label class="radio-btn" id="lbl-entrada">
-                            <input type="radio" name="tipoMov" value="Entrada" onclick="window.cambiarMovimientoUI('Entrada')"> 📥 ENTRADA
+                            <input type="radio" name="tipoMov" value="Entrada" onclick="window.cambiarMovimientoUI('Entrada')"> <i class="fi fi-rr-inbox-in"></i> ENTRADA
                         </label>
                     </div>
 
-                    <div class="form-row" style="display:flex; gap:10px;">
-                        <div style="flex:1;">
-                            <label id="lbl-cliente">Cliente/Empresa</label>
-                            <input type="text" id="cliente" placeholder="Ej. Banco ABC">
-                        </div>
-                        <div style="flex:1;">
-                            <label>Regional</label>
-                            <select id="regional">
-                                <option value="Bogota">Bogotá</option>
-                                <option value="Eje Cafetero">Eje Cafetero</option>
-                                <option value="Noroccidente">Noroccidente</option>
-                                <option value="Sabana">Sabana</option>
-                                <option value="Cordoba">Córdoba</option>
-                                <option value="Costa">Costa</option>
-                                <option value="Suroccidente">Suroccidente</option>
-                                <option value="Santanderes">Santanderes</option>
-                            </select>
-                        </div>
-                        <label class="radio-btn" style="display:flex; align-items:center; gap:8px; margin-top:14px; text-align:left;">
-                            <input type="checkbox" id="distribution-mode"> Distribuir este lote entre varios clientes
-                        </label>
-                        <div id="distribution-panel" class="distribution-panel">
-                            <strong>Distribución por cliente</strong>
-                            <p class="helper-text">Agrega una fila por cliente. La suma debe coincidir con las cantidades del lote.</p>
-                            <div class="distribution-header"><span>Cliente</span><span>Artículo</span><span>Cantidad</span><span></span></div>
-                            <div id="distribution-rows"></div>
-                            <button type="button" class="btn-secondary" id="btn-add-distribution"><i class="fa-solid fa-plus"></i> Agregar cliente</button>
-                            <p class="distribution-summary" id="distribution-summary">Sin distribución agregada.</p>
-                        </div>
-                    </div>
-
-                    <div class="form-row" style="display:flex; gap:10px;">
-                        <div style="flex:1;">
-                            <label>Técnico</label>
-                            <select id="tecnico">
-                                <option value="Josue M">Josue M.</option>
-                                <option value="Nataly P">Nataly P.</option>
-                                <option value="Juan D">Juan D.</option>
-                                <option value="Santiago M">Santiago M.</option>
-                            </select>
-                        </div>
-                        <div style="flex:1;">
-                            <label id="lbl-usuario">Entregado a</label>
-                            <input type="text" id="usuario" placeholder="Ej. Derly">
-                        </div>
+                    <div id="entrada-fields" style="display:none;">
+                        <label for="proveedor">Proveedor</label>
+                        <input type="text" id="proveedor" placeholder="Ej. Proveedor o área que entrega">
+                        <p class="helper-text">Destino fijo: Comunicaciones, Bogotá.</p>
                     </div>
                 </div>
 
                 <div class="card">
-                    <label>🔍 Buscar o Escanear Accesorio</label>
+                    <label>Buscar o agregar accesorio</label>
                     <div class="search-row">
-                        <div style="flex:1; width: 100%;">
-                            <select id="smart-search">
+                        <div>
+                            <select id="smart-search" aria-label="Buscar accesorio">
                                 <option value="">Cargando catálogo...</option>
                             </select>
                         </div>
-                        <button class="btn-icon" id="btn-add-search"><i class="fa-solid fa-plus"></i></button>
+                        <button type="button" class="btn-icon" id="btn-add-search" aria-label="Agregar accesorio seleccionado"><i class="fa-solid fa-plus"></i></button>
+                        <span class="helper-text" style="align-self:center; margin:0;">o escanea</span>
                         <button class="btn-icon" id="btn-camera"><i class="fa-solid fa-qrcode"></i></button>
                     </div>
                     <div id="reader"></div>
                 </div>
 
-                <div class="card">
-                    <h3 style="margin-top:0; font-size: 16px; color: var(--g4s-black); border-bottom: 2px solid var(--border); padding-bottom: 8px;">🛒 Lista de Accesorios</h3>
+                <div class="card" id="items-card">
+                    <h3 style="margin-top:0; font-size: 16px; color: var(--g4s-black); border-bottom: 2px solid var(--border); padding-bottom: 8px;"> <i class="fi fi-rr-shopping-cart"></i> Lista de Accesorios</h3>
                     <div id="items-list" style="min-height: 50px;">
                         <p style="text-align:center; color:#9ca3af; font-size:13px; padding: 20px 0;">No hay ítems seleccionados</p>
                     </div>
+                </div>
+
+                <div class="card" id="salida-fields">
+                    <strong>Distribución por cliente</strong>
+                    <p class="helper-text">Con los accesorios ya definidos, agrega una fila por cada entrega. Un mismo cliente puede tener varias filas.</p>
+                    <div class="distribution-panel visible">
+                        <div class="distribution-header"><span>Cliente</span><span>Artículo</span><span>Regional</span><span>Entregado a</span><span>Cantidad</span><span></span></div>
+                        <div id="distribution-rows"></div>
+                        <button type="button" class="btn-secondary" id="btn-add-distribution"><i class="fa-solid fa-plus"></i> Agregar cliente</button>
+                        <p class="distribution-summary" id="distribution-summary">Agrega accesorios para comenzar la distribución.</p>
+                    </div>
+                    <button type="button" class="btn-black" id="btn-save-distribution"><i class="fa-solid fa-list-check"></i> Guardar distribución y revisar</button>
+                    <div id="distribution-review" class="distribution-panel" aria-live="polite"></div>
+                </div>
+                <div class="card" id="movement-actions">
                     <button class="btn-primary" id="btn-submit" disabled><i class="fa-solid fa-cloud-arrow-up"></i> REGISTRAR MOVIMIENTO</button>
                 </div>
             </div>
@@ -325,7 +320,7 @@
         // =========================================================================
         // URL FIJA DE APPS SCRIPT
         // =========================================================================
-        const API_URL = "https://script.google.com/macros/s/AKfycbz_n8o-m6ewe3U19sH2FXUYoReGSTDMk2xKRQhaE9XYu-L0PxLRbrc37ekbR3pp_-il/exec";
+        const API_URL = "https://script.google.com/macros/s/AKfycbz-trWt2QHidRMqbFfnwMjcJ3gzfrd5kTdbDxKU3IGeU98hhTjmpu6hpXgMK6B8yukf/exec";
         // Reemplaza este valor por la ruta local o URL HTTPS de tu imagen de logo.
         const LOGO_URL = "assets/g4s-logo-.svg";
         
@@ -336,6 +331,7 @@
         let html5QrcodeScanner = null;
         let catalogoActual = [];
         let distributionRows = [];
+        let distributionConfirmed = false;
 
         document.querySelectorAll('[data-logo-image]').forEach(image => {
             image.src = LOGO_URL;
@@ -514,15 +510,45 @@
 
         window.inicializarBuscador = function(datosCatalogo) {
             const select = document.getElementById('smart-search');
-            if(choicesInstance) choicesInstance.destroy();
+            if (choicesInstance) choicesInstance.destroy();
             if (!Array.isArray(datosCatalogo)) {
                 window.mostrarAlerta("El catálogo recibido no tiene un formato válido", "error");
                 return;
             }
             const opciones = datosCatalogo
                 .filter(item => item && item.idArticulo)
-                .map(item => ({ value: String(item.idArticulo), label: `[${Number(item.stockActual) || 0} u.] ${String(item.idArticulo)} - ${String(item.descripcion || 'Sin descripción')}${window.compatibilityNote(item.idArticulo)}` }));
-            choicesInstance = new Choices(select, { searchEnabled: true, itemSelectText: '', choices: [{value: '', label: 'Selecciona o busca un accesorio...', disabled: true}, ...opciones] });
+                .map(item => {
+                    const status = window.stockStatus(item);
+                    return {
+                        value: String(item.idArticulo),
+                        label: String(item.descripcion || 'Sin descripción'),
+                        customProperties: { stock: Number(item.stockActual) || 0, stockStatus: status.key }
+                    };
+                });
+            choicesInstance = new Choices(select, {
+                searchEnabled: true,
+                itemSelectText: '',
+                shouldSort: false,
+                fuseOptions: { threshold: 0, distance: 0, ignoreLocation: true },
+                choices: [{ value: '', label: 'Selecciona o busca un accesorio...', disabled: true }, ...opciones],
+                callbackOnCreateTemplates: template => ({
+                    choice: (classNames, data) => {
+                        if (data.value === '') {
+                            return template(`<div class="${classNames.item} ${classNames.itemChoice} ${classNames.itemDisabled}" data-choice data-id="${data.id}" data-value="">${data.label}</div>`);
+                        }
+                        const stock = data.customProperties || {};
+                        const stockClass = stock.stockStatus === 'low' ? ' low' : stock.stockStatus === 'empty' ? ' empty' : '';
+                        const unavailable = stock.stockStatus === 'empty';
+                        const disabledClass = unavailable ? classNames.itemDisabled : classNames.itemSelectable;
+                        const unavailableClass = unavailable ? ' is-unavailable' : '';
+                        return template(`<div class="${classNames.item} ${classNames.itemChoice} ${disabledClass}${unavailableClass}" data-select-text="${data.selectText || ''}" data-choice data-id="${data.id}" data-value="${data.value}" data-choice-selectable><div class="choice-with-stock"><span class="choice-description">${data.label}</span><span class="choice-stock${stockClass}">${Number(stock.stock) || 0} u.</span></div></div>`);
+                    },
+                    item: (classNames, data) => {
+                        const stock = data.customProperties || {};
+                        return template(`<div class="${classNames.item}" data-item data-id="${data.id}" data-value="${data.value}"><div class="choice-with-stock"><span class="choice-description">${data.label}</span><span class="choice-stock">${Number(stock.stock) || 0} u.</span></div></div>`);
+                    }
+                })
+            });
             window.renderizarDistribucion();
         }
 
@@ -537,6 +563,11 @@
             if (stock <= 0) return { key: 'empty', label: 'Agotado', className: 'stock-empty' };
             if (stock <= minimum) return { key: 'low', label: 'Stock bajo', className: 'stock-low' };
             return { key: 'ok', label: 'Disponible', className: 'stock-ok' };
+        };
+
+        window.nombreArticulo = function(idArticulo) {
+            const item = catalogoActual.find(entry => String(entry.idArticulo) === String(idArticulo));
+            return item && item.descripcion ? String(item.descripcion) : 'Artículo no identificado';
         };
 
         window.safeImageUrl = function(value) {
@@ -608,44 +639,103 @@
 
         window.renderizarDistribucion = function() {
             const container = document.getElementById('distribution-rows');
-            const options = carrito.map(item => `<option value="${window.escapeHtml(item.idArticulo)}">${window.escapeHtml(item.idArticulo)}</option>`).join('');
+            const options = carrito.map(item => `<option value="${window.escapeHtml(item.idArticulo)}">${window.escapeHtml(window.nombreArticulo(item.idArticulo))}</option>`).join('');
             container.innerHTML = distributionRows.map((row, index) => `<div class="distribution-row">
                 <input type="text" value="${window.escapeHtml(row.cliente)}" placeholder="Cliente" onchange="window.actualizarDistribucion(${index}, 'cliente', this.value)">
                 <select class="distribution-product-label" onchange="window.actualizarDistribucion(${index}, 'idArticulo', this.value)">${options}</select>
-                <input type="number" min="1" value="${row.cantidad || 1}" onchange="window.actualizarDistribucion(${index}, 'cantidad', this.value)">
+                <select class="distribution-regional" onchange="window.actualizarDistribucion(${index}, 'regional', this.value)">
+                    <option value="Bogota">Bogotá</option><option value="Eje Cafetero">Eje Cafetero</option><option value="Noroccidente">Noroccidente</option><option value="Sabana">Sabana</option><option value="Cordoba">Córdoba</option><option value="Costa">Costa</option><option value="Suroccidente">Suroccidente</option><option value="Santanderes">Santanderes</option>
+                </select>
+                <div><input type="text" value="${window.escapeHtml(row.usuario)}" placeholder="Usuario" onchange="window.actualizarDistribucion(${index}, 'usuario', this.value)"></div>
+                <input type="number" min="${window.maxDistribucion(index) > 0 ? 1 : 0}" max="${window.maxDistribucion(index)}" value="${Math.min(row.cantidad || 1, window.maxDistribucion(index))}" aria-label="Cantidad" ${window.maxDistribucion(index) === 0 ? 'disabled' : ''} onchange="window.actualizarDistribucion(${index}, 'cantidad', this.value)">
                 <button type="button" class="btn-danger" aria-label="Eliminar cliente" onclick="window.eliminarDistribucion(${index})"><i class="fa-solid fa-trash"></i></button>
             </div>`).join('');
             distributionRows.forEach((row, index) => {
-                const select = container.querySelectorAll('select')[index];
+                const rowElement = container.querySelectorAll('.distribution-row')[index];
+                const select = rowElement && rowElement.querySelector('.distribution-product-label');
                 if (select) select.value = row.idArticulo || (carrito[0] && carrito[0].idArticulo) || '';
+                const regional = rowElement && rowElement.querySelector('.distribution-regional');
+                if (regional) regional.value = row.regional || 'Bogota';
             });
             const totals = {};
             distributionRows.forEach(row => { totals[row.idArticulo] = (totals[row.idArticulo] || 0) + (Number(row.cantidad) || 0); });
-            const summary = carrito.map(item => `${item.idArticulo}: ${totals[item.idArticulo] || 0}/${item.cantidad}`).join(' · ');
+            const summary = carrito.map(item => `${window.nombreArticulo(item.idArticulo)}: ${totals[item.idArticulo] || 0}/${item.cantidad}`).join(' · ');
             document.getElementById('distribution-summary').textContent = summary || 'Sin distribución agregada.';
         };
 
+        window.maxDistribucion = function(index) {
+            const row = distributionRows[index];
+            if (!row || !row.idArticulo) return 1;
+            const item = carrito.find(entry => entry.idArticulo === row.idArticulo);
+            const assignedElsewhere = distributionRows.reduce((total, entry, entryIndex) => {
+                return total + (entryIndex !== index && entry.idArticulo === row.idArticulo ? Number(entry.cantidad) || 0 : 0);
+            }, 0);
+            return Math.max(0, (item ? Number(item.cantidad) : 0) - assignedElsewhere);
+        };
+
         window.actualizarDistribucion = function(index, field, value) {
-            distributionRows[index][field] = field === 'cantidad' ? Math.max(1, Number(value) || 1) : value;
+            if (field === 'cantidad') {
+                const maximum = window.maxDistribucion(index);
+                distributionRows[index][field] = maximum > 0 ? Math.min(maximum, Math.max(1, Number(value) || 1)) : 0;
+            } else {
+                distributionRows[index][field] = value;
+                if (field === 'idArticulo') {
+                    const maximum = window.maxDistribucion(index);
+                    distributionRows[index].cantidad = maximum > 0 ? Math.min(Number(distributionRows[index].cantidad) || 1, maximum) : 0;
+                }
+            }
+            distributionConfirmed = false;
+            document.getElementById('distribution-review').style.display = 'none';
             window.renderizarDistribucion();
         };
         window.eliminarDistribucion = function(index) {
             distributionRows.splice(index, 1);
+            distributionConfirmed = false;
             window.renderizarDistribucion();
         };
-        document.getElementById('distribution-mode').addEventListener('change', event => {
-            document.getElementById('distribution-panel').classList.toggle('visible', event.target.checked);
-            if (event.target.checked && !distributionRows.length) distributionRows.push({ cliente: '', idArticulo: carrito[0]?.idArticulo || '', cantidad: 1 });
-            window.renderizarDistribucion();
-        });
         document.getElementById('btn-add-distribution').addEventListener('click', () => {
-            distributionRows.push({ cliente: '', idArticulo: carrito[0]?.idArticulo || '', cantidad: 1 });
+            const available = carrito.some(item => {
+                const assigned = distributionRows.filter(row => row.idArticulo === item.idArticulo).reduce((sum, row) => sum + (Number(row.cantidad) || 0), 0);
+                return assigned < Number(item.cantidad);
+            });
+            if (!available) {
+                window.mostrarAlerta('Ya distribuiste toda la cantidad de los accesorios agregados', 'error');
+                return;
+            }
+            distributionRows.push({ cliente: '', idArticulo: carrito[0]?.idArticulo || '', regional: 'Bogota', usuario: '', cantidad: 1 });
+            distributionConfirmed = false;
             window.renderizarDistribucion();
         });
-
         document.getElementById('btn-add-search').addEventListener('click', () => {
-            const val = document.getElementById('smart-search').value;
-            if(val) window.agregarAlCarrito(val);
+            const selected = document.getElementById('smart-search').value;
+            if (!selected) {
+                window.mostrarAlerta('Selecciona un accesorio para agregarlo', 'error');
+                return;
+            }
+            const selectedItem = catalogoActual.find(item => String(item.idArticulo) === String(selected));
+            const isSalida = document.querySelector('input[name="tipoMov"]:checked').value === 'Salida';
+            if (!selectedItem || (isSalida && Number(selectedItem.stockActual) <= 0)) {
+                window.mostrarAlerta('Este accesorio no tiene stock disponible', 'error');
+                return;
+            }
+            window.agregarAlCarrito(selected);
+            if (choicesInstance) choicesInstance.removeActiveItems();
+        });
+        document.getElementById('btn-save-distribution').addEventListener('click', () => {
+            const totals = {};
+            const validRows = distributionRows.filter(row => row.cliente.trim() && row.idArticulo && row.usuario.trim() && row.regional && Number.isInteger(Number(row.cantidad)) && Number(row.cantidad) > 0);
+            validRows.forEach(row => { totals[row.idArticulo] = (totals[row.idArticulo] || 0) + Number(row.cantidad); });
+            const matches = carrito.length > 0 && carrito.every(item => totals[item.idArticulo] === Number(item.cantidad)) && validRows.length === distributionRows.length;
+            if (!matches) {
+                window.mostrarAlerta('Completa cada fila y verifica que la suma coincida con los accesorios agregados', 'error');
+                return;
+            }
+            distributionConfirmed = true;
+            const review = document.getElementById('distribution-review');
+            review.innerHTML = '<strong>Distribución lista para registrar</strong>' + validRows.map(row => `<p class="helper-text">${window.escapeHtml(row.cliente)} · ${window.escapeHtml(window.nombreArticulo(row.idArticulo))} · ${row.cantidad} · ${window.escapeHtml(row.regional)} · ${window.escapeHtml(row.usuario)}</p>`).join('');
+            review.style.display = 'block';
+            document.getElementById('items-card').style.display = 'block';
+            window.renderizarCarrito();
         });
 
         document.getElementById('btn-camera').addEventListener('click', () => {
@@ -662,19 +752,47 @@
         });
 
         window.agregarAlCarrito = function(codigo) {
+            const catalogItem = catalogoActual.find(item => String(item.idArticulo) === String(codigo));
+            const isSalida = document.querySelector('input[name="tipoMov"]:checked').value === 'Salida';
+            if (!catalogItem || (isSalida && Number(catalogItem.stockActual) <= 0)) {
+                window.mostrarAlerta('No se puede agregar un accesorio sin stock disponible', 'error');
+                return;
+            }
             let existe = carrito.find(item => item.idArticulo === codigo);
+            const stockDisponible = Number(catalogItem.stockActual) || 0;
+            if (isSalida && existe && existe.cantidad >= stockDisponible) {
+                window.mostrarAlerta(`No puedes agregar más de ${stockDisponible} unidades disponibles`, 'error');
+                return;
+            }
             if(existe) existe.cantidad += 1; else carrito.push({ idArticulo: codigo, cantidad: 1 });
+            const row = distributionRows.find(item => item.idArticulo === codigo);
+            if (row) row.cantidad += 1;
+            else distributionRows.push({ cliente: '', idArticulo: codigo, regional: 'Bogota', usuario: '', cantidad: 1 });
+            distributionConfirmed = false;
+            document.getElementById('distribution-review').style.display = 'none';
             window.renderizarCarrito(); 
             window.mostrarAlerta("➕ " + codigo + " añadido", "success");
         }
 
         window.actualizarCant = function(index, valor) {
             let nuevaCant = parseInt(valor);
-            carrito[index].cantidad = (isNaN(nuevaCant) || nuevaCant <= 0) ? 1 : nuevaCant;
+            const catalogItem = catalogoActual.find(item => String(item.idArticulo) === String(carrito[index].idArticulo));
+            const isSalida = document.querySelector('input[name="tipoMov"]:checked').value === 'Salida';
+            const maximum = isSalida && catalogItem ? Number(catalogItem.stockActual) || 0 : 9999;
+            carrito[index].cantidad = Math.min(maximum, (isNaN(nuevaCant) || nuevaCant <= 0) ? 1 : nuevaCant);
+            if (isSalida && maximum === 0) {
+                carrito.splice(index, 1);
+                window.mostrarAlerta('No se puede agregar un accesorio sin stock disponible', 'error');
+                window.renderizarCarrito();
+                return;
+            }
+            const distributionTotal = distributionRows.filter(row => row.idArticulo === carrito[index].idArticulo).reduce((sum, row) => sum + Number(row.cantidad || 0), 0);
+            if (distributionRows.length === carrito.length && distributionRows[index] && distributionTotal === Number(carrito[index].cantidad)) distributionRows[index].cantidad = carrito[index].cantidad;
+            distributionConfirmed = false;
             window.renderizarCarrito();
         }
 
-        window.eliminarItem = function(index) { carrito.splice(index, 1); window.renderizarCarrito(); }
+        window.eliminarItem = function(index) { carrito.splice(index, 1); distributionRows = distributionRows.filter(row => carrito.some(item => item.idArticulo === row.idArticulo)); distributionConfirmed = false; window.renderizarCarrito(); }
 
         window.renderizarCarrito = function() {
             let list = document.getElementById('items-list'); let btnSubmit = document.getElementById('btn-submit');
@@ -682,44 +800,43 @@
                 list.innerHTML = '<p style="text-align:center; color:#9ca3af; font-size:13px; padding: 20px 0;">No hay ítems seleccionados</p>';
                 btnSubmit.disabled = true; btnSubmit.innerHTML = '<i class="fa-solid fa-cloud-arrow-up"></i> REGISTRAR MOVIMIENTO';
             } else {
+                document.getElementById('items-card').style.display = 'block';
                 let html = '';
                 carrito.forEach((item, idx) => {
+                    const catalogItem = catalogoActual.find(entry => String(entry.idArticulo) === String(item.idArticulo));
+                    const status = catalogItem ? window.stockStatus(catalogItem) : null;
+                    const warningText = status && status.key === 'empty' ? 'Agotado: no hay unidades disponibles.' : 'Stock bajo: las existencias están en el mínimo configurado.';
+                    const stockWarning = status && status.key !== 'ok' ? `<span class="stock-warning ${status.key === 'empty' ? 'empty' : ''}" title="${window.escapeHtml(warningText)}" aria-label="${window.escapeHtml(warningText)}">&#9888;</span>` : '';
+                        const maxQuantity = document.querySelector('input[name="tipoMov"]:checked').value === 'Salida' && catalogItem ? Number(catalogItem.stockActual) || 0 : 9999;
                     html += `<div class="item-row">
-                            <div class="item-info">🏷️ ${window.escapeHtml(item.idArticulo)}</div>
-                            <input type="number" min="1" max="9999" class="qty-input" value="${item.cantidad}" onchange="window.actualizarCant(${idx}, this.value)" aria-label="Cantidad de ${window.escapeHtml(item.idArticulo)}">
+                            <div class="item-info">🏷️ ${window.escapeHtml(window.nombreArticulo(item.idArticulo))}</div>
+                        ${stockWarning}
+                            <input type="number" min="1" max="${maxQuantity}" class="qty-input" value="${Math.min(item.cantidad, maxQuantity)}" onchange="window.actualizarCant(${idx}, this.value)" aria-label="Cantidad de ${window.escapeHtml(item.idArticulo)}">
                             <button type="button" class="btn-del" onclick="window.eliminarItem(${idx})" aria-label="Eliminar ${window.escapeHtml(item.idArticulo)}"><i class="fa-solid fa-trash-can"></i></button>
                     </div>`;
                 });
-                list.innerHTML = html; btnSubmit.disabled = false; btnSubmit.innerHTML = `<i class="fa-solid fa-paper-plane"></i> REGISTRAR ${carrito.length} TIPO(S)`;
+                list.innerHTML = html; btnSubmit.disabled = document.querySelector('input[name="tipoMov"]:checked').value === 'Salida' && !distributionConfirmed; btnSubmit.innerHTML = `<i class="fa-solid fa-paper-plane"></i> REGISTRAR MOVIMIENTO`;
             }
             window.renderizarDistribucion();
         }
 
         document.getElementById('btn-submit').addEventListener('click', () => {
             let tipoMov = document.querySelector('input[name="tipoMov"]:checked').value;
-            let cliente = document.getElementById('cliente').value.trim();
-            let usuario = document.getElementById('usuario').value.trim();
-            const distributionEnabled = document.getElementById('distribution-mode').checked;
-            if ((!cliente && !distributionEnabled) || !usuario || carrito.length === 0) {
-                window.mostrarAlerta("Completa los datos del movimiento y agrega al menos un artículo", "error");
+            let cliente = tipoMov === 'Salida' ? distributionRows[0]?.cliente.trim() || '' : 'Comunicaciones';
+            const proveedor = tipoMov === 'Entrada' ? document.getElementById('proveedor').value.trim() : '';
+            if ((tipoMov === 'Salida' && !cliente) || (tipoMov === 'Entrada' && !proveedor) || carrito.length === 0) {
+                window.mostrarAlerta(tipoMov === 'Entrada' ? "Indica el proveedor y agrega al menos un artículo" : "Completa la distribución y agrega al menos un artículo", "error");
                 return;
             }
             let distribution = [];
-            if (distributionEnabled) {
-                const totals = {};
-                distributionRows.forEach(row => {
-                    const quantity = Number(row.cantidad);
-                    if (!row.cliente.trim() || !row.idArticulo || !Number.isInteger(quantity) || quantity < 1) return;
-                    distribution.push({ cliente: row.cliente.trim(), idArticulo: row.idArticulo, cantidad: quantity });
-                    totals[row.idArticulo] = (totals[row.idArticulo] || 0) + quantity;
-                });
-                const matches = carrito.every(item => totals[item.idArticulo] === Number(item.cantidad));
-                if (!distribution.length || !matches || distribution.some(row => row.idArticulo === '')) {
-                    window.mostrarAlerta("La distribución debe tener cliente y coincidir exactamente con las cantidades del lote", "error");
+            if (tipoMov === 'Salida') {
+                if (!distributionConfirmed) {
+                    window.mostrarAlerta("Guarda la distribución y revisa el resumen antes de registrar", "error");
                     return;
                 }
+                distribution = distributionRows.map(row => ({ cliente: row.cliente.trim(), idArticulo: row.idArticulo, regional: row.regional, usuario: row.usuario.trim(), cantidad: Number(row.cantidad) }));
             }
-            let payload = { action: "registrar_movimiento", tipoMovimiento: tipoMov, cliente, regional: document.getElementById('regional').value, tecnico: document.getElementById('tecnico').value, usuario, items: carrito, distribution: distributionEnabled ? distribution : null };
+            let payload = { action: "registrar_movimiento", tipoMovimiento: tipoMov, cliente, proveedor, items: carrito, distribution: tipoMov === 'Salida' ? distribution : null };
             let btn = document.getElementById('btn-submit'); 
             btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Guardando...'; 
             btn.disabled = true;
@@ -730,10 +847,11 @@
                     window.mostrarAlerta("🎉 Movimiento guardado con éxito", "success"); 
                     carrito = []; 
                     distributionRows = [];
-                    document.getElementById('distribution-mode').checked = false;
-                    document.getElementById('distribution-panel').classList.remove('visible');
+                    distributionConfirmed = false;
+                    document.getElementById('distribution-review').style.display = 'none';
+                    document.getElementById('items-card').style.display = 'none';
+                    document.getElementById('proveedor').value = '';
                     window.renderizarCarrito(); 
-                    document.getElementById('usuario').value = ""; 
                     window.cargarCatalogo(); 
                 } 
                 else { 
@@ -792,8 +910,12 @@
         window.cambiarMovimientoUI = function(tipo) {
             document.getElementById('lbl-salida').className = 'radio-btn' + (tipo === 'Salida' ? ' active-salida' : '');
             document.getElementById('lbl-entrada').className = 'radio-btn' + (tipo === 'Entrada' ? ' active-entrada' : '');
-            document.getElementById('lbl-usuario').innerText = tipo === 'Entrada' ? 'Proveedor' : 'Entregado a';
-            document.getElementById('lbl-cliente').innerText = tipo === 'Entrada' ? 'Proyecto/Destino' : 'Cliente/Empresa';
+            document.getElementById('salida-fields').style.display = tipo === 'Salida' ? 'block' : 'none';
+            document.getElementById('entrada-fields').style.display = tipo === 'Entrada' ? 'block' : 'none';
+            if (tipo === 'Entrada') document.getElementById('items-card').style.display = carrito.length ? 'block' : 'none';
+            distributionConfirmed = false;
+            document.getElementById('distribution-review').style.display = 'none';
+            window.renderizarCarrito();
         }
     </script>
 </body>

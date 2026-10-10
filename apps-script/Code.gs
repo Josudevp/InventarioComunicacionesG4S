@@ -3,8 +3,8 @@
 //   Maestro de inventario: A=ID, B=Categoria, C=Descripcion, D=Stock inicial,
 //   E=Entradas, F=Salidas, G=Stock_Actual, H=Stock_Minimo_Alerta, I=Foto_URL.
 //   Registro de Movimientos: A=ID_Transaccion, B=Fecha_Hora, C=ID_Articulo,
-//   D=Tipo_Movimiento, E=Cantidad, F=Entregado_Por_Tecnico,
-//   G=Entregado_A_Usuario, H=Cliente, I=Regional.
+//   D=Tipo_Movimiento, E=Cantidad, F=Registrado_Por, G=Entregado_A_Usuario,
+//   H=Cliente, I=Regional.
 //
 // Propiedades recomendadas:
 //   SPREADSHEET_ID: ID del archivo principal (opcional si el script esta vinculado al Sheet).
@@ -130,6 +130,14 @@ function registerMovement_(data, session) {
   var items = normalizeItems_(data.items);
   if (!items.length) throw new Error("El movimiento no tiene articulos");
   var distribution = Array.isArray(data.distribution) ? data.distribution : [];
+  if (type === "Salida" && !distribution.length) {
+    throw new Error("Las salidas deben registrarse por cliente");
+  }
+  if (type === "Entrada" && distribution.length) {
+    throw new Error("Las entradas no usan distribucion por cliente");
+  }
+  var provider = clean_(data.proveedor, 150);
+  if (type === "Entrada" && !provider) throw new Error("El proveedor es obligatorio");
   var lock = LockService.getScriptLock();
   lock.waitLock(30000);
   try {
@@ -153,15 +161,15 @@ function registerMovement_(data, session) {
     var now = new Date();
     var movementRows = [];
     if (distribution.length) {
-      validateDistribution_(distribution, requested);
+      validateDistribution_(distribution, requested, type);
       distribution.forEach(function(row) {
         movementRows.push([transactionId, now, row.idArticulo, type, row.cantidad,
-          clean_(data.tecnico, 100), clean_(data.usuario, 150), clean_(row.cliente, 150), clean_(data.regional, 100)]);
+          session.usuario, clean_(row.usuario, 150), clean_(row.cliente, 150), clean_(row.regional || data.regional, 100)]);
       });
     } else {
       items.forEach(function(item) {
         movementRows.push([transactionId, now, item.idArticulo, type, item.cantidad,
-          clean_(data.tecnico, 100), clean_(data.usuario, 150), clean_(data.cliente, 150), clean_(data.regional, 100)]);
+          session.usuario, "", provider, "Bogota"]);
       });
     }
     var movements = movementSheet_();
@@ -226,13 +234,18 @@ function uploadPhoto_(data, session) {
   throw new Error("Articulo no existe");
 }
 
-function validateDistribution_(distribution, requested) {
+function validateDistribution_(distribution, requested, type) {
   var totals = {};
   distribution.forEach(function(row) {
     var id = clean_(row.idArticulo, 100);
     var client = clean_(row.cliente, 150);
+    var user = clean_(row.usuario, 150);
+    var regional = clean_(row.regional, 100);
     var quantity = Number(row.cantidad);
-    if (!id || !client || !Number.isInteger(quantity) || quantity < 1) throw new Error("Distribucion invalida");
+    if (!id || !client || (type === "Salida" && !user) || !Number.isInteger(quantity) || quantity < 1) {
+      throw new Error("Distribucion invalida");
+    }
+    if (type === "Salida" && !regional) throw new Error("Regional invalida");
     totals[id] = (totals[id] || 0) + quantity;
   });
   Object.keys(requested).forEach(function(id) {
