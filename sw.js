@@ -1,6 +1,14 @@
 
-const CACHE_NAME = 'inventario-v25';
-const urlsToCache = ['./', './index.html', './manifest.json', './assets/g4s-logo-.svg'];
+const CACHE_NAME = 'inventario-v26';
+const BUILD_ASSETS = [];
+const urlsToCache = [
+    './',
+    './index.html',
+    './manifest.json',
+    './assets/g4s-logo-.svg',
+    './assets/LOGO_G4S.jpg',
+    ...BUILD_ASSETS
+];
 
 self.addEventListener('install', event => {
     event.waitUntil(

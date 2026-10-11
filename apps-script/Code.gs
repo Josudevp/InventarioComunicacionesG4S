@@ -11,18 +11,24 @@
 //   SPREADSHEET_ID: ID del archivo principal (opcional si el script esta vinculado al Sheet).
 //   PHOTOS_FOLDER_ID: carpeta de Drive para fotografias.
 //   ADMIN_USERS: usuarios separados por coma autorizados a crear accesorios.
+//   CATALOG_EDITOR_USERS: usuarios separados por coma autorizados a crear y editar accesorios.
 
 var ID_BOVEDA_USUARIOS = "1CSj9D793DGZkxtGadmeTYIOu05ClPhhcOYnxZLzpnWw";
 var CONFIG = {
   mainSheetIdProperty: "SPREADSHEET_ID",
   photosFolderProperty: "PHOTOS_FOLDER_ID",
   adminsProperty: "ADMIN_USERS",
+  catalogEditorsProperty: "CATALOG_EDITOR_USERS",
   usersSheetIndex: 0,
   inventorySheet: "Maestro de inventario",
   movementsSheet: "Registro de Movimientos",
+  requestsSheet: "Solicitudes",
+  requestHeaders: ["ID_Solicitud", "Fecha_Registro", "Registrado_Por", "Cliente", "Regional", "Entregado_A", "ID_Articulo", "Descripcion", "Cantidad", "Estado", "Proveedor", "Fecha_Solicitud_Proveedor", "Fecha_Recepcion", "Fecha_Entrega", "ID_Transaccion_Recepcion", "ID_Transaccion_Entrega", "Observaciones", "Actualizado_Por", "Fecha_Actualizacion", "Costo_Unitario_COP"],
+  requestStatuses: ["Registrada", "Solicitada", "Recibida", "Entregada"],
   movementHeaders: ["ID_Transaccion", "Fecha_Hora", "ID_Articulo", "Tipo_Movimiento", "Cantidad", "Registrado_Por", "Entregado_A_Usuario", "Cliente_Proveedor", "Regional", "Estado", "ID_Transaccion_Relacionada", "Motivo", "Regional_Origen", "Regional_Destino"],
   movementTypes: ["Entrada", "Salida", "Devolucion", "Ajuste positivo", "Ajuste negativo", "Baja por daño"],
   inventoryActiveColumn: 10,
+  inventoryCostColumn: 11,
   sessionTtlSeconds: 21600,
   passwordIterations: 10000,
   maxLoginAttempts: 5,
@@ -55,6 +61,12 @@ function doPost(e) {
     if (action === "cambiar_clave") return changePassword_(data, session);
     if (action === "obtener_catalogo") return getCatalog_(session);
     if (action === "obtener_movimientos") return getMovements_(data, session);
+    if (action === "auditar_inventario") return auditInventory_(session);
+    if (action === "reparar_formulas_inventario") return rebuildInventoryFormulas_(session);
+    if (action === "obtener_dashboard") return getDashboard_(session);
+    if (action === "obtener_solicitudes") return getRequests_(data, session);
+    if (action === "crear_solicitud") return createRequest_(data, session);
+    if (action === "actualizar_estado_solicitud") return updateRequestStatus_(data, session);
     if (action === "registrar_movimiento") return registerMovement_(data, session);
     if (action === "reversar_movimiento") return reverseMovement_(data, session, "Reversado");
     if (action === "anular_movimiento") return reverseMovement_(data, session, "Anulado");
@@ -111,7 +123,7 @@ function login_(data) {
     var token = Utilities.getUuid() + Utilities.getUuid().replace(/-/g, "");
     var session = { usuario: String(matched[0]).trim(), rol: String(matched[2] || "usuario").trim() };
     CacheService.getScriptCache().put(sessionKey_(token), JSON.stringify(session), CONFIG.sessionTtlSeconds);
-    return json_({ status: "success", usuario: session.usuario, token: token });
+    return json_({ status: "success", usuario: session.usuario, token: token, permissions: permissions_(session) });
   } finally {
     lock.releaseLock();
   }
@@ -149,9 +161,9 @@ function changePassword_(data, session) {
 
 function getCatalog_(session) {
   var sheet = inventorySheet_();
+  ensureInventoryCostColumn_(sheet);
   var rows = sheet.getDataRange().getValues();
-  refreshInventoryFormulas_(sheet, rows.length);
-  rows = sheet.getDataRange().getValues();
+  var ledger = calculateStockLedger_(rows, movementSheet_().getDataRange().getValues());
   var catalog = [];
   for (var i = 1; i < rows.length; i++) {
     if (!rows[i][0]) continue;
@@ -159,13 +171,94 @@ function getCatalog_(session) {
       idArticulo: clean_(rows[i][0], 100),
       categoria: clean_(rows[i][1], 100),
       descripcion: clean_(rows[i][2], 200),
-      stockActual: number_(rows[i][6]),
+      stockActual: number_(ledger.balances[clean_(rows[i][0], 100)]),
       stockMinimo: number_(rows[i][7]),
+      costoUnitario: number_(rows[i][CONFIG.inventoryCostColumn - 1]),
       fotoUrl: clean_(rows[i][8], 500),
       activo: rows[i].length < CONFIG.inventoryActiveColumn || String(rows[i][CONFIG.inventoryActiveColumn - 1]).toLowerCase() !== "false"
     });
   }
-  return json_({ status: "success", usuario: session.usuario, data: catalog });
+  return json_({ status: "success", usuario: session.usuario, permissions: permissions_(session), data: catalog });
+}
+
+function auditInventory_(session) {
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    return auditInventoryData_();
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function auditInventoryData_() {
+  var inventory = inventorySheet_();
+  var inventoryRows = inventory.getDataRange().getValues();
+  var movements = movementSheet_();
+  ensureMovementHeaders_(movements);
+  var movementRows = movements.getDataRange().getValues();
+  var ledger = calculateStockLedger_(inventoryRows, movementRows);
+  var issues = [];
+  for (var i = 1; i < inventoryRows.length; i++) {
+    var id = clean_(inventoryRows[i][0], 100);
+    if (!id) continue;
+    var ledgerStock = number_(ledger.balances[id]);
+    var sheetStock = number_(inventoryRows[i][6]);
+    var unknown = Boolean(ledger.unknownMovements[id]);
+    var firstNegative = findFirstNegativeMovement_(id, number_(inventoryRows[i][3]), movementRows);
+    if (Math.abs(ledgerStock - sheetStock) > 0.0001 || ledgerStock < 0 || unknown) {
+      issues.push({
+        idArticulo: id,
+        descripcion: clean_(inventoryRows[i][2], 200),
+        stockEnHoja: sheetStock,
+        stockSegunMovimientos: ledgerStock,
+        diferencia: sheetStock - ledgerStock,
+        stockNegativo: ledgerStock < 0,
+        movimientosInvalidos: unknown,
+        primerMovimientoNegativo: firstNegative
+      });
+    }
+  }
+  return json_({ status: "success", data: { articulosRevisados: Math.max(inventoryRows.length - 1, 0), inconsistencias: issues } });
+}
+
+function rebuildInventoryFormulas_(session) {
+  if (!isAdmin_(session)) throw new Error("Solo un administrador puede reparar formulas de inventario");
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    var inventory = inventorySheet_();
+    refreshInventoryFormulas_(inventory, inventory.getLastRow());
+    SpreadsheetApp.flush();
+  } finally {
+    lock.releaseLock();
+  }
+  return auditInventory_(session);
+}
+
+function findFirstNegativeMovement_(id, openingStock, movementRows) {
+  var balance = openingStock;
+  for (var i = 1; i < movementRows.length; i++) {
+    var row = movementRows[i];
+    if (clean_(row[2], 100) !== id || (clean_(row[9], 50) || "Confirmado") !== "Confirmado") continue;
+    var type = clean_(row[3], 100);
+    if (CONFIG.movementTypes.indexOf(type) < 0) continue;
+    var quantity = Number(row[4]);
+    if (!Number.isInteger(quantity) || quantity < 1) continue;
+    var next = balance + movementEffect_(type) * quantity;
+    if (next < 0 && balance >= 0) {
+      return {
+        idTransaccion: clean_(row[0], 100),
+        tipoMovimiento: type,
+        cantidad: quantity,
+        fechaHora: row[1],
+        saldoAntes: balance,
+        saldoDespues: next
+      };
+    }
+    balance = next;
+  }
+  return null;
 }
 
 function getMovements_(data, session) {
@@ -197,6 +290,279 @@ function getMovements_(data, session) {
   return json_({ status: "success", usuario: session.usuario, data: result.slice(-500).reverse() });
 }
 
+function getDashboard_(session) {
+  var inventory = inventorySheet_();
+  var inventoryRows = inventory.getDataRange().getValues();
+  var movementRows = movementSheet_().getDataRange().getValues();
+  var ledger = calculateStockLedger_(inventoryRows, movementRows);
+  var metrics = { articulos: 0, unidades: 0, stockBajo: 0, agotados: 0 };
+  for (var i = 1; i < inventoryRows.length; i++) {
+    if (!inventoryRows[i][0]) continue;
+    var stock = number_(ledger.balances[clean_(inventoryRows[i][0], 100)]);
+    var minimum = number_(inventoryRows[i][7]);
+    var active = String(inventoryRows[i][9]).toLowerCase() !== "false";
+    metrics.unidades += stock;
+    if (!active) continue;
+    metrics.articulos++;
+    if (stock <= 0) metrics.agotados++;
+    else if (stock <= minimum) metrics.stockBajo++;
+  }
+
+  var requestRows = requestSheet_().getDataRange().getValues();
+  var requests = Object.create(null);
+  for (var j = 1; j < requestRows.length; j++) {
+    var requestRow = requestRows[j];
+    var requestId = clean_(requestRow[0], 100);
+    if (!requestId) continue;
+    if (!requests[requestId]) {
+      requests[requestId] = {
+        estado: String(requestRow[9] || "Registrada"),
+        fechaRegistro: requestRow[1],
+        fechaCompra: requestRow[11],
+        fechaEntrega: requestRow[13],
+        lineas: []
+      };
+    }
+    requests[requestId].lineas.push({ cantidad: number_(requestRow[8]), costoUnitario: number_(requestRow[19]) });
+  }
+  var states = { Registrada: 0, Solicitada: 0, Recibida: 0, Entregada: 0 };
+  Object.keys(requests).forEach(function(id) { states[requests[id].estado] = (states[requests[id].estado] || 0) + 1; });
+
+  var now = new Date();
+  var monthKey = Utilities.formatDate(now, Session.getScriptTimeZone(), "yyyy-MM");
+  var purchaseMonthKeys = [];
+  var purchaseCounts = Object.create(null);
+  for (var monthOffset = 0; monthOffset < 6; monthOffset++) {
+    var monthDate = new Date(now.getFullYear(), now.getMonth() - monthOffset, 1);
+    var purchaseMonthKey = Utilities.formatDate(monthDate, Session.getScriptTimeZone(), "yyyy-MM");
+    purchaseMonthKeys.push(purchaseMonthKey);
+    purchaseCounts[purchaseMonthKey] = 0;
+  }
+  var deliveredCount = 0;
+  var completedDurationHours = 0;
+  var completedDurationCount = 0;
+  var purchaseValueThisMonth = 0;
+  var purchaseLinesThisMonth = 0;
+  var costedLinesThisMonth = 0;
+  Object.keys(requests).forEach(function(id) {
+    var request = requests[id];
+    var purchased = request.fechaCompra instanceof Date ? request.fechaCompra : new Date(request.fechaCompra);
+    var purchaseDateIsValid = !isNaN(purchased.getTime());
+    var purchasedMonth = purchaseDateIsValid ? Utilities.formatDate(purchased, Session.getScriptTimeZone(), "yyyy-MM") : "";
+    if (purchaseMonthKeys.indexOf(purchasedMonth) >= 0) purchaseCounts[purchasedMonth]++;
+    if (purchasedMonth === monthKey) {
+      request.lineas.forEach(function(line) {
+        purchaseLinesThisMonth++;
+        if (line.costoUnitario > 0) {
+          purchaseValueThisMonth += line.cantidad * line.costoUnitario;
+          costedLinesThisMonth++;
+        }
+      });
+    }
+    if (request.estado === "Entregada") {
+      var delivered = request.fechaEntrega instanceof Date ? request.fechaEntrega : new Date(request.fechaEntrega);
+      var registered = request.fechaRegistro instanceof Date ? request.fechaRegistro : new Date(request.fechaRegistro);
+      if (!isNaN(delivered.getTime()) && !isNaN(registered.getTime()) && delivered >= registered) {
+        completedDurationHours += (delivered.getTime() - registered.getTime()) / 3600000;
+        completedDurationCount++;
+      }
+      if (!isNaN(delivered.getTime()) && Utilities.formatDate(delivered, Session.getScriptTimeZone(), "yyyy-MM") === monthKey) deliveredCount++;
+    }
+  });
+  var purchasesLastSixMonths = purchaseMonthKeys.reduce(function(total, key) { return total + purchaseCounts[key]; }, 0);
+  var movementRows = movementSheet_().getDataRange().getValues();
+  var movementsThisMonth = 0;
+  for (var k = 1; k < movementRows.length; k++) {
+    if (!movementRows[k][0]) continue;
+    var movementDate = movementRows[k][1] instanceof Date ? movementRows[k][1] : new Date(movementRows[k][1]);
+    if (!isNaN(movementDate.getTime()) && Utilities.formatDate(movementDate, Session.getScriptTimeZone(), "yyyy-MM") === monthKey) movementsThisMonth++;
+  }
+
+  return json_({
+    status: "success",
+    data: {
+      articulos: metrics.articulos,
+      unidades: metrics.unidades,
+      stockBajo: metrics.stockBajo,
+      agotados: metrics.agotados,
+      solicitudesPendientes: states.Registrada + states.Solicitada + states.Recibida,
+      solicitudesPorEstado: states,
+      movimientosMes: movementsThisMonth,
+      tiempoPromedioEntregaHoras: completedDurationCount ? Math.round(completedDurationHours / completedDurationCount * 10) / 10 : null,
+      solicitudesEntregadasMes: deliveredCount,
+      comprasProveedorMes: purchaseCounts[monthKey] || 0,
+      comprasPromedioMensual: Math.round(purchasesLastSixMonths / 6 * 10) / 10,
+      valorComprasMes: costedLinesThisMonth ? purchaseValueThisMonth : null,
+      lineasCompraMes: purchaseLinesThisMonth,
+      lineasCompraConCostoMes: costedLinesThisMonth
+    }
+  });
+}
+
+function getRequests_(data, session) {
+  var sheet = requestSheet_();
+  var rows = sheet.getDataRange().getValues();
+  var grouped = Object.create(null);
+  var statusFilter = clean_(data.estado, 30);
+  for (var i = 1; i < rows.length; i++) {
+    var row = rows[i];
+    var id = clean_(row[0], 100);
+    if (!id) continue;
+    var status = clean_(row[9], 30) || "Registrada";
+    if (statusFilter && status !== statusFilter) continue;
+    if (!grouped[id]) {
+      grouped[id] = {
+        idSolicitud: id,
+        fechaRegistro: row[1],
+        registradoPor: clean_(row[2], 100),
+        estado: status,
+        proveedor: clean_(row[10], 150),
+        fechaSolicitudProveedor: row[11],
+        fechaRecepcion: row[12],
+        fechaEntrega: row[13],
+        observaciones: clean_(row[16], 500),
+        items: []
+      };
+    }
+    grouped[id].items.push({
+      cliente: clean_(row[3], 150),
+      regional: clean_(row[4], 100),
+      entregadoA: clean_(row[5], 150),
+      idArticulo: clean_(row[6], 100),
+      descripcion: clean_(row[7], 200),
+      cantidad: number_(row[8]),
+      costoUnitario: number_(row[19])
+    });
+  }
+  var result = Object.keys(grouped).map(function(id) { return grouped[id]; });
+  result.sort(function(first, second) { return new Date(second.fechaRegistro).getTime() - new Date(first.fechaRegistro).getTime(); });
+  return json_({ status: "success", usuario: session.usuario, data: result.slice(0, 300) });
+}
+
+function createRequest_(data, session) {
+  var lines = Array.isArray(data.items) ? data.items : [];
+  if (!lines.length || lines.length > 250) throw new Error("La solicitud debe tener entre 1 y 250 lineas");
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    var inventory = inventorySheet_();
+    ensureInventoryCostColumn_(inventory);
+    var inventoryRows = inventory.getDataRange().getValues();
+    var catalog = Object.create(null);
+    for (var i = 1; i < inventoryRows.length; i++) {
+      var sku = clean_(inventoryRows[i][0], 100);
+      if (sku) catalog[sku] = {
+        description: clean_(inventoryRows[i][2], 200),
+        active: String(inventoryRows[i][9]).toLowerCase() !== "false",
+        cost: number_(inventoryRows[i][CONFIG.inventoryCostColumn - 1])
+      };
+    }
+    var requestId = Utilities.getUuid();
+    var now = new Date();
+    var observations = clean_(data.observaciones, 500);
+    var rows = lines.map(function(line) {
+      var id = clean_(line.idArticulo, 100);
+      var item = catalog[id];
+      var quantity = Number(line.cantidad);
+      var client = clean_(line.cliente, 150);
+      var regional = clean_(line.regional, 100);
+      var recipient = clean_(line.entregadoA || line.usuario, 150);
+      if (!item || !item.active) throw new Error("Articulo inexistente o inactivo: " + id);
+      if (!client || !regional || !recipient || !Number.isInteger(quantity) || quantity < 1 || quantity > 9999) {
+        throw new Error("Cada linea requiere cliente, regional, destinatario y cantidad valida");
+      }
+      return [requestId, now, session.usuario, client, regional, recipient, id, item.description, quantity,
+        "Registrada", "", "", "", "", "", "", observations, session.usuario, now, item.cost];
+    });
+    var sheet = requestSheet_();
+    sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, CONFIG.requestHeaders.length).setValues(rows);
+    return json_({ status: "success", idSolicitud: requestId, estado: "Registrada", lineas: rows.length });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function updateRequestStatus_(data, session) {
+  var requestId = clean_(data.idSolicitud, 100);
+  var nextStatus = clean_(data.estado, 30);
+  if (!requestId || ["Solicitada", "Recibida", "Entregada"].indexOf(nextStatus) < 0) throw new Error("Solicitud o estado invalido");
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    var sheet = requestSheet_();
+    var values = sheet.getDataRange().getValues();
+    var rows = [];
+    for (var i = 1; i < values.length; i++) {
+      if (String(values[i][0]) === requestId) rows.push({ row: i + 1, values: values[i] });
+    }
+    if (!rows.length) throw new Error("Solicitud no encontrada");
+    var currentStatus = String(rows[0].values[9] || "Registrada");
+    if (rows.some(function(row) { return String(row.values[9] || "Registrada") !== currentStatus; })) {
+      throw new Error("La solicitud tiene estados inconsistentes; requiere revision administrativa");
+    }
+    var allowed = { Registrada: "Solicitada", Solicitada: "Recibida", Recibida: "Entregada" };
+    if (allowed[currentStatus] !== nextStatus) throw new Error("Transicion invalida: " + currentStatus + " a " + nextStatus);
+    if (rows.some(function(row, index) { return index && row.row !== rows[index - 1].row + 1; })) {
+      throw new Error("Las lineas de la solicitud no son contiguas; requiere revision administrativa");
+    }
+
+    var now = new Date();
+    var provider = clean_(data.proveedor, 150) || clean_(rows[0].values[10], 150);
+    var unitCosts = [];
+    if (nextStatus === "Solicitada") {
+      var inventory = inventorySheet_();
+      ensureInventoryCostColumn_(inventory);
+      var inventoryRows = inventory.getDataRange().getValues();
+      var costsBySku = Object.create(null);
+      for (var inventoryIndex = 1; inventoryIndex < inventoryRows.length; inventoryIndex++) {
+        costsBySku[clean_(inventoryRows[inventoryIndex][0], 100)] = number_(inventoryRows[inventoryIndex][CONFIG.inventoryCostColumn - 1]);
+      }
+      unitCosts = rows.map(function(row) {
+        var sku = clean_(row.values[6], 100);
+        if (!Object.prototype.hasOwnProperty.call(costsBySku, sku)) throw new Error("Articulo no existe en el catalogo: " + sku);
+        return costsBySku[sku];
+      });
+    }
+    var transactionId = "";
+    var receiptTransactionId = String(rows[0].values[14] || "");
+    var deliveryTransactionId = String(rows[0].values[15] || "");
+    var movementRows = [];
+    if (nextStatus === "Solicitada" && !provider) throw new Error("Indica el proveedor solicitado");
+    if (nextStatus === "Recibida") {
+      if (!provider) throw new Error("La solicitud no tiene proveedor registrado");
+      receiptTransactionId = receiptTransactionId || Utilities.getUuid();
+      transactionId = receiptTransactionId;
+      if (!rows[0].values[14]) sheet.getRange(rows[0].row, 15, rows.length, 1).setValues(rows.map(function() { return [receiptTransactionId]; }));
+      movementRows = buildReceiptMovements_(rows, session, provider, transactionId, now);
+      ensureRequestTransaction_(movementSheet_(), transactionId, movementRows);
+    }
+    if (nextStatus === "Entregada") {
+      validateRequestStock_(rows);
+      deliveryTransactionId = deliveryTransactionId || Utilities.getUuid();
+      transactionId = deliveryTransactionId;
+      if (!rows[0].values[15]) sheet.getRange(rows[0].row, 16, rows.length, 1).setValues(rows.map(function() { return [deliveryTransactionId]; }));
+      movementRows = buildDeliveryMovements_(rows, session, transactionId, now);
+      ensureRequestTransaction_(movementSheet_(), transactionId, movementRows);
+    }
+
+    var updates = rows.map(function(row) {
+      var original = row.values;
+      return [nextStatus, provider,
+        nextStatus === "Solicitada" ? now : original[11],
+        nextStatus === "Recibida" ? now : original[12],
+        nextStatus === "Entregada" ? now : original[13],
+        receiptTransactionId, deliveryTransactionId, original[16] || "", session.usuario, now];
+    });
+    sheet.getRange(rows[0].row, 10, updates.length, 10).setValues(updates);
+    if (nextStatus === "Solicitada") {
+      unitCosts.forEach(function(amount, index) { sheet.getRange(rows[index].row, 20).setValue(amount); });
+    }
+    return json_({ status: "success", idSolicitud: requestId, estado: nextStatus, idTransaccion: transactionId });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
 function registerMovement_(data, session) {
   var type = String(data.tipoMovimiento || "Salida");
   if (CONFIG.movementTypes.indexOf(type) < 0) throw new Error("Tipo de movimiento invalido");
@@ -217,20 +583,19 @@ function registerMovement_(data, session) {
   try {
     var inventory = inventorySheet_();
     var rows = inventory.getDataRange().getValues();
+    var movements = movementSheet_();
+    ensureMovementHeaders_(movements);
+    var ledger = calculateStockLedger_(rows, movements.getDataRange().getValues());
     var index = {};
     for (var i = 1; i < rows.length; i++) index[clean_(rows[i][0], 100)] = i + 1;
     var requested = {};
+    var stockChanges = {};
     items.forEach(function(item) {
       if (!index[item.idArticulo]) throw new Error("Articulo no existe: " + item.idArticulo);
       requested[item.idArticulo] = (requested[item.idArticulo] || 0) + item.cantidad;
+      stockChanges[item.idArticulo] = (stockChanges[item.idArticulo] || 0) + movementEffect_(type) * item.cantidad;
     });
-    Object.keys(requested).forEach(function(id) {
-      var row = index[id];
-      var current = number_(inventory.getRange(row, 7).getValue());
-      var effect = movementEffect_(type);
-      var next = current + effect * requested[id];
-      if (next < 0) throw new Error("Stock insuficiente para '" + id + "'. Disponible: " + current);
-    });
+    validateStockChanges_(stockChanges, ledger);
 
     var transactionId = Utilities.getUuid();
     var now = new Date();
@@ -247,10 +612,7 @@ function registerMovement_(data, session) {
           session.usuario, "", provider, clean_(data.regional || "Bogota", 100), "Confirmado", "", clean_(data.motivo, 200), clean_(data.regionalOrigen, 100), clean_(data.regionalDestino, 100)]);
       });
     }
-    var movements = movementSheet_();
-    ensureMovementHeaders_(movements);
     movements.getRange(movements.getLastRow() + 1, 1, movementRows.length, movementRows[0].length).setValues(movementRows);
-    refreshInventoryFormulas_(inventory, rows.length);
     return json_({ status: "success", idTransaccion: transactionId, count: movementRows.length });
   } finally {
     lock.releaseLock();
@@ -278,17 +640,20 @@ function reverseMovement_(data, session, finalStatus) {
     });
     var inventory = inventorySheet_();
     var inventoryRows = inventory.getDataRange().getValues();
+    var ledger = calculateStockLedger_(inventoryRows, rows);
     var index = {};
     for (var j = 1; j < inventoryRows.length; j++) index[clean_(inventoryRows[j][0], 100)] = j + 1;
     var requested = {};
+    var stockChanges = {};
     inverseItems.forEach(function(item) {
-      requested[item.idArticulo] = (requested[item.idArticulo] || 0) + movementEffect_(item.type) * item.cantidad;
+      var delta = movementEffect_(item.type) * item.cantidad;
+      requested[item.idArticulo] = (requested[item.idArticulo] || 0) + delta;
+      stockChanges[item.idArticulo] = (stockChanges[item.idArticulo] || 0) + delta;
     });
     Object.keys(requested).forEach(function(id) {
       if (!index[id]) throw new Error("Articulo no existe: " + id);
-      var current = number_(inventory.getRange(index[id], 7).getValue());
-      if (current + requested[id] < 0) throw new Error("Stock insuficiente para reversar '" + id + "'");
     });
+    validateStockChanges_(stockChanges, ledger, "reversar");
     var reverseId = Utilities.getUuid();
     var now = new Date();
     var reverseRows = originals.map(function(item) {
@@ -301,7 +666,6 @@ function reverseMovement_(data, session, finalStatus) {
     originals.forEach(function(item) {
       movements.getRange(item.row, 10, 1, 2).setValues([[finalStatus, reverseId]]);
     });
-    refreshInventoryFormulas_(inventory, inventoryRows.length);
     return json_({ status: "success", idTransaccion: reverseId, idTransaccionOriginal: originalId });
   } finally {
     lock.releaseLock();
@@ -321,33 +685,41 @@ function inverseMovementType_(type) {
 }
 
 function createAccessory_(data, session) {
-  if (!isAdmin_(session)) throw new Error("Permisos insuficientes");
+  requireCatalogEditor_(session);
   var id = clean_(data.idArticulo, 100);
   var description = clean_(data.descripcion, 200);
   var minimum = number_(data.stockMinimo);
   if (!id || !description || minimum < 1) throw new Error("Datos de accesorio invalidos");
   var sheet = inventorySheet_();
+  ensureInventoryCostColumn_(sheet);
+  var unitCost = Number(data.costoUnitario);
+  if (!isFinite(unitCost) || unitCost < 0 || unitCost > 1000000000) throw new Error("Costo unitario invalido");
   var rows = sheet.getDataRange().getValues();
   for (var i = 1; i < rows.length; i++) {
     if (clean_(rows[i][0], 100).toUpperCase() === id.toUpperCase()) throw new Error("El codigo ya existe");
   }
   var row = sheet.getLastRow() + 1;
   sheet.getRange(row, 1, 1, CONFIG.inventoryActiveColumn).setValues([[id, clean_(data.categoria, 100), description, 0, 0, 0, 0, minimum, "", true]]);
+  sheet.getRange(row, CONFIG.inventoryCostColumn).setValue(unitCost);
   refreshInventoryFormulas_(sheet, row);
   sheet.getRange(row, 9).setValue("");
   return json_({ status: "success", message: "Accesorio añadido" });
 }
 
 function updateAccessory_(data, session) {
-  if (!isAdmin_(session)) throw new Error("Permisos insuficientes");
+  requireCatalogEditor_(session);
   var id = clean_(data.idArticulo, 100);
   var sheet = inventorySheet_();
+  ensureInventoryCostColumn_(sheet);
+  var unitCost = data.costoUnitario == null ? null : Number(data.costoUnitario);
+  if (unitCost != null && (!isFinite(unitCost) || unitCost < 0 || unitCost > 1000000000)) throw new Error("Costo unitario invalido");
   var rows = sheet.getDataRange().getValues();
   for (var i = 1; i < rows.length; i++) {
     if (clean_(rows[i][0], 100).toUpperCase() !== id.toUpperCase()) continue;
     if (data.descripcion != null) sheet.getRange(i + 1, 3).setValue(clean_(data.descripcion, 200));
     if (data.stockMinimo != null && Number(data.stockMinimo) >= 0) sheet.getRange(i + 1, 8).setValue(Number(data.stockMinimo));
     if (data.activo != null) sheet.getRange(i + 1, CONFIG.inventoryActiveColumn).setValue(Boolean(data.activo));
+    if (unitCost != null) sheet.getRange(i + 1, CONFIG.inventoryCostColumn).setValue(unitCost);
     return json_({ status: "success", message: "Accesorio actualizado" });
   }
   throw new Error("Articulo no existe");
@@ -357,6 +729,48 @@ function movementEffect_(type) {
   if (["Entrada", "Ajuste positivo"].indexOf(type) >= 0) return 1;
   if (["Salida", "Devolucion", "Ajuste negativo", "Baja por daño"].indexOf(type) >= 0) return -1;
   return 0;
+}
+
+function calculateStockLedger_(inventoryRows, movementRows) {
+  var balances = Object.create(null);
+  var unknownMovements = Object.create(null);
+  for (var i = 1; i < inventoryRows.length; i++) {
+    var id = clean_(inventoryRows[i][0], 100);
+    if (id) balances[id] = number_(inventoryRows[i][3]);
+  }
+  for (var j = 1; j < movementRows.length; j++) {
+    var movement = movementRows[j];
+    var id = clean_(movement[2], 100);
+    if (!id || !Object.prototype.hasOwnProperty.call(balances, id)) continue;
+    var status = clean_(movement[9], 50) || "Confirmado";
+    if (status !== "Confirmado") continue;
+    var type = clean_(movement[3], 100);
+    if (CONFIG.movementTypes.indexOf(type) < 0) {
+      unknownMovements[id] = true;
+      continue;
+    }
+    var quantity = Number(movement[4]);
+    if (!Number.isInteger(quantity) || quantity < 1) {
+      unknownMovements[id] = true;
+      continue;
+    }
+    balances[id] += movementEffect_(type) * quantity;
+  }
+  return { balances: balances, unknownMovements: unknownMovements };
+}
+
+function validateStockChanges_(changes, ledger, operation) {
+  var verb = operation || "registrar";
+  Object.keys(changes).forEach(function(id) {
+    if (ledger.unknownMovements[id]) {
+      throw new Error("No se puede " + verb + " el movimiento de '" + id + "': hay movimientos confirmados inválidos; audita el inventario primero");
+    }
+    var current = number_(ledger.balances[id]);
+    var next = current + changes[id];
+    if (next < 0) {
+      throw new Error("Stock insuficiente para '" + id + "'. Disponible según movimientos: " + current);
+    }
+  });
 }
 
 function ensureMovementHeaders_(sheet) {
@@ -376,9 +790,14 @@ function ensureMovementHeaders_(sheet) {
 function refreshInventoryFormulas_(sheet, lastRow) {
   var formulas = [];
   for (var row = 2; row <= lastRow; row++) {
+    var confirmedMovement = function(type) {
+      var criteria = "'Registro de Movimientos'!C:C;A" + row + ";'Registro de Movimientos'!D:D;\"" + type + "\";";
+      return "SUMIFS('Registro de Movimientos'!E:E;" + criteria + "'Registro de Movimientos'!J:J;\"Confirmado\")+" +
+        "SUMIFS('Registro de Movimientos'!E:E;" + criteria + "'Registro de Movimientos'!J:J;\"\")";
+    };
     formulas.push([
-      '=SUMIFS(\'Registro de Movimientos\'!E:E;\'Registro de Movimientos\'!C:C;A' + row + ';\'Registro de Movimientos\'!D:D;"Entrada")+SUMIFS(\'Registro de Movimientos\'!E:E;\'Registro de Movimientos\'!C:C;A' + row + ';\'Registro de Movimientos\'!D:D;"Ajuste positivo")',
-      '=SUMIFS(\'Registro de Movimientos\'!E:E;\'Registro de Movimientos\'!C:C;A' + row + ';\'Registro de Movimientos\'!D:D;"Salida")+SUMIFS(\'Registro de Movimientos\'!E:E;\'Registro de Movimientos\'!C:C;A' + row + ';\'Registro de Movimientos\'!D:D;"Devolucion")+SUMIFS(\'Registro de Movimientos\'!E:E;\'Registro de Movimientos\'!C:C;A' + row + ';\'Registro de Movimientos\'!D:D;"Ajuste negativo")+SUMIFS(\'Registro de Movimientos\'!E:E;\'Registro de Movimientos\'!C:C;A' + row + ';\'Registro de Movimientos\'!D:D;"Baja por daño")',
+      "=" + confirmedMovement("Entrada") + "+" + confirmedMovement("Ajuste positivo"),
+      "=" + confirmedMovement("Salida") + "+" + confirmedMovement("Devolucion") + "+" + confirmedMovement("Ajuste negativo") + "+" + confirmedMovement("Baja por daño"),
       '=D' + row + '+E' + row + '-F' + row
     ]);
   }
@@ -386,6 +805,7 @@ function refreshInventoryFormulas_(sheet, lastRow) {
 }
 
 function uploadPhoto_(data, session) {
+  requireCatalogEditor_(session);
   var id = clean_(data.idArticulo, 100);
   var mime = String(data.mimeType || "");
   var content = String(data.content || "");
@@ -455,6 +875,108 @@ function isAdmin_(session) {
   var configured = PropertiesService.getScriptProperties().getProperty(CONFIG.adminsProperty) || "";
   var admins = configured.split(",").map(function(value) { return value.trim().toLowerCase(); });
   return String(session.rol || "").toLowerCase() === "admin" || admins.indexOf(session.usuario.toLowerCase()) >= 0;
+}
+
+function isCatalogEditor_(session) {
+  var configured = PropertiesService.getScriptProperties().getProperty(CONFIG.catalogEditorsProperty) || "";
+  var editors = configured.split(",").map(function(value) { return value.trim().toLowerCase(); }).filter(Boolean);
+  return isAdmin_(session) || editors.indexOf(String(session.usuario || "").toLowerCase()) >= 0;
+}
+
+function permissions_(session) {
+  return {
+    canManageCatalog: isCatalogEditor_(session),
+    canReconcileInventory: isAdmin_(session)
+  };
+}
+
+function requireCatalogEditor_(session) {
+  if (!isCatalogEditor_(session)) throw new Error("No tienes permiso para crear o editar accesorios");
+}
+
+function ensureInventoryCostColumn_(sheet) {
+  var header = clean_(sheet.getRange(1, CONFIG.inventoryCostColumn).getValue(), 100);
+  if (!header) {
+    sheet.getRange(1, CONFIG.inventoryCostColumn).setValue("Costo_Unitario_COP");
+    return;
+  }
+  if (header !== "Costo_Unitario_COP") throw new Error("La columna K debe estar libre para Costo_Unitario_COP");
+}
+
+function requestSheet_() {
+  var spreadsheet = mainSpreadsheet_();
+  var sheet = spreadsheet.getSheetByName(CONFIG.requestsSheet);
+  if (!sheet) sheet = spreadsheet.insertSheet(CONFIG.requestsSheet);
+  if (sheet.getLastRow() === 0) {
+    sheet.getRange(1, 1, 1, CONFIG.requestHeaders.length).setValues([CONFIG.requestHeaders]);
+    return sheet;
+  }
+  var headers = sheet.getRange(1, 1, 1, CONFIG.requestHeaders.length).getValues()[0];
+  for (var i = 0; i < CONFIG.requestHeaders.length; i++) {
+    if (String(headers[i] || "").trim() !== CONFIG.requestHeaders[i]) {
+      if (i === CONFIG.requestHeaders.length - 1 && !String(headers[i] || "").trim()) {
+        sheet.getRange(1, i + 1).setValue(CONFIG.requestHeaders[i]);
+        continue;
+      }
+      throw new Error("La hoja Solicitudes existe con encabezados incompatibles");
+    }
+  }
+  return sheet;
+}
+
+function buildReceiptMovements_(requestRows, session, provider, transactionId, now) {
+  var totals = requestTotals_(requestRows);
+  return Object.keys(totals).map(function(id) {
+    return [transactionId, now, id, "Entrada", totals[id], session.usuario, "", provider, "Bogota", "Confirmado", "",
+      "Recepcion de solicitud " + clean_(requestRows[0].values[0], 100), "", "Comunicaciones"];
+  });
+}
+
+function buildDeliveryMovements_(requestRows, session, transactionId, now) {
+  return requestRows.map(function(requestRow) {
+    var row = requestRow.values;
+    return [transactionId, now, clean_(row[6], 100), "Salida", number_(row[8]), session.usuario,
+      clean_(row[5], 150), clean_(row[3], 150), clean_(row[4], 100), "Confirmado", "",
+      "Entrega de solicitud " + clean_(row[0], 100), "", ""];
+  });
+}
+
+function requestTotals_(requestRows) {
+  var totals = Object.create(null);
+  requestRows.forEach(function(requestRow) {
+    var row = requestRow.values;
+    var id = clean_(row[6], 100);
+    totals[id] = (totals[id] || 0) + number_(row[8]);
+  });
+  return totals;
+}
+
+function validateRequestStock_(requestRows) {
+  var inventory = inventorySheet_();
+  var inventoryRows = inventory.getDataRange().getValues();
+  var ledger = calculateStockLedger_(inventoryRows, movementSheet_().getDataRange().getValues());
+  var totals = requestTotals_(requestRows);
+  var stockChanges = Object.create(null);
+  Object.keys(totals).forEach(function(id) {
+    if (!Object.prototype.hasOwnProperty.call(ledger.balances, id)) throw new Error("Articulo no existe: " + id);
+    stockChanges[id] = -totals[id];
+  });
+  validateStockChanges_(stockChanges, ledger, "entregar solicitud");
+}
+
+function ensureRequestTransaction_(movements, transactionId, movementRows) {
+  ensureMovementHeaders_(movements);
+  var values = movements.getDataRange().getValues();
+  var existing = 0;
+  for (var i = 1; i < values.length; i++) {
+    if (String(values[i][0]) === transactionId) existing++;
+  }
+  if (existing && existing !== movementRows.length) {
+    throw new Error("La transaccion de solicitud esta incompleta; requiere revision administrativa");
+  }
+  if (!existing) {
+    movements.getRange(movements.getLastRow() + 1, 1, movementRows.length, movementRows[0].length).setValues(movementRows);
+  }
 }
 
 function inventorySheet_() {
