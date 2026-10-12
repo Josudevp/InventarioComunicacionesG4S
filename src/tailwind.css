@@ -148,12 +148,35 @@
     background: radial-gradient(circle at top right, #fff1f2, transparent 42%), #f8fafc;
   }
 
+  #login-screen::before {
+    position: fixed;
+    z-index: 0;
+    inset: 0;
+    background-image: radial-gradient(circle, rgb(15 23 42 / 78%) 1.8px, transparent 2.2px);
+    background-size: 22px 22px;
+    content: "";
+    opacity: 0;
+    pointer-events: none;
+    mask-image: radial-gradient(circle 200px at var(--pointer-x, -500px) var(--pointer-y, -500px), #000 0%, transparent 100%);
+    transition: opacity 180ms ease-out;
+  }
+
+  #login-screen.pointer-active::before {
+    opacity: 0.9;
+  }
+
   .login-card {
-    @apply w-full max-w-100 rounded-xl border border-slate-300 bg-white px-6 py-7.5 text-center shadow-2xl;
+    @apply relative z-1 w-full max-w-100 rounded-xl border border-slate-300 bg-white px-6 py-7.5 text-center shadow-2xl;
   }
 
   .login-card h1 {
     @apply mb-1 mt-0 text-center text-2xl font-black text-black;
+  }
+
+  @media (hover: none), (pointer: coarse), (prefers-reduced-motion: reduce) {
+    #login-screen::before {
+      display: none;
+    }
   }
 
   .login-card p {

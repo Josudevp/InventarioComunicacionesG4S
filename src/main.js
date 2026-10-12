@@ -13,6 +13,17 @@ import { apiRequest } from "./services/api.js";
 
         if ('serviceWorker' in navigator) { navigator.serviceWorker.register('sw.js').then(() => console.log("PWA SW Registrado v11")); }
 
+        const loginScreen = document.getElementById('login-screen');
+        loginScreen.addEventListener('pointermove', event => {
+            if (event.pointerType !== 'mouse') return;
+            loginScreen.style.setProperty('--pointer-x', `${event.clientX}px`);
+            loginScreen.style.setProperty('--pointer-y', `${event.clientY}px`);
+            loginScreen.classList.add('pointer-active');
+        });
+        loginScreen.addEventListener('pointerleave', () => {
+            loginScreen.classList.remove('pointer-active');
+        });
+
             let choicesInstance = null;
             let editChoicesInstance = null;
             let requestChoiceInstances = [];
