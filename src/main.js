@@ -958,11 +958,13 @@ import { apiRequest } from "./services/api.js";
                 }).join('');
                 let action = '';
                 if (request.estado === 'Registrada') {
-                    action = `<label class="request-provider-field">Proveedor<input type="text" data-provider-for="${safeId}" placeholder="Proveedor solicitado" maxlength="150"></label><button type="button" class="btn-primary request-transition" onclick="window.actualizarEstadoSolicitud('${safeId}', 'Solicitada', this)">Marcar solicitada</button>`;
+                    action = `<label class="request-provider-field">Proveedor<input type="text" data-provider-for="${safeId}" placeholder="Proveedor solicitado" maxlength="150"></label><button type="button" class="btn-primary request-transition" onclick="window.actualizarEstadoSolicitud('${safeId}', 'Solicitada', this)">Marcar solicitada</button><button type="button" class="btn-secondary request-transition" onclick="window.actualizarEstadoSolicitud('${safeId}', 'Anulada', this)">Anular solicitud</button>`;
                 } else if (request.estado === 'Solicitada') {
-                    action = '<button type="button" class="btn-primary request-transition" onclick="window.actualizarEstadoSolicitud(\'' + safeId + '\', \'Recibida\', this)">Registrar recepción</button>';
+                    action = '<button type="button" class="btn-primary request-transition" onclick="window.actualizarEstadoSolicitud(\'' + safeId + '\', \'Recibida\', this)">Registrar recepción</button><button type="button" class="btn-secondary request-transition" onclick="window.actualizarEstadoSolicitud(\'' + safeId + '\', \'Anulada\', this)">Anular solicitud</button>';
                 } else if (request.estado === 'Recibida') {
                     action = '<button type="button" class="btn-black request-transition" onclick="window.actualizarEstadoSolicitud(\'' + safeId + '\', \'Entregada\', this)">Marcar entregada</button>';
+                } else if (request.estado === 'Anulada') {
+                    action = '<span class="request-cancelled"><i class="fa-solid fa-ban"></i> Solicitud anulada</span>';
                 } else {
                     action = '<span class="request-complete"><i class="fa-solid fa-circle-check"></i> Entregada</span>';
                 }
@@ -976,8 +978,16 @@ import { apiRequest } from "./services/api.js";
         };
 
         window.actualizarEstadoSolicitud = async function(idSolicitud, estado, button) {
-            const confirmation = estado === 'Recibida' ? 'La recepción sumará las unidades al inventario. ¿Confirmar?' : estado === 'Entregada' ? 'La entrega descontará las unidades del inventario. ¿Confirmar?' : '';
-            if (confirmation && !(await window.confirmarAccion(confirmation, { titulo: estado === 'Recibida' ? 'Confirmar recepción' : 'Confirmar entrega' }))) return;
+            const confirmation = estado === 'Recibida'
+                ? 'La recepción sumará las unidades al inventario. ¿Confirmar?'
+                : estado === 'Entregada'
+                    ? 'La entrega descontará las unidades del inventario. ¿Confirmar?'
+                    : estado === 'Anulada'
+                        ? 'La solicitud se anulará y no podrá avanzar a recepción o entrega. ¿Continuar?'
+                        : '';
+            if (confirmation && !(await window.confirmarAccion(confirmation, {
+                titulo: estado === 'Recibida' ? 'Confirmar recepción' : estado === 'Entregada' ? 'Confirmar entrega' : 'Anular solicitud'
+            }))) return;
             let proveedor = '';
             if (estado === 'Solicitada') {
                 const field = document.querySelector(`[data-provider-for="${idSolicitud}"]`);
@@ -1031,7 +1041,7 @@ import { apiRequest } from "./services/api.js";
                         : 'Captura costos al solicitar al proveedor';
                     const states = data.solicitudesPorEstado || {};
                     const total = Object.values(states).reduce((sum, value) => sum + Number(value || 0), 0);
-                    const labels = [['Registrada', 'Registradas'], ['Solicitada', 'Solicitadas'], ['Recibida', 'Recibidas'], ['Entregada', 'Entregadas']];
+                    const labels = [['Registrada', 'Registradas'], ['Solicitada', 'Solicitadas'], ['Recibida', 'Recibidas'], ['Entregada', 'Entregadas'], ['Anulada', 'Anuladas']];
                     document.getElementById('dashboard-request-states').innerHTML = labels.map(([key, label]) => {
                         const count = Number(states[key] || 0);
                         const width = total ? count / total * 100 : 0;

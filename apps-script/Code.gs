@@ -33,7 +33,7 @@ var CONFIG = {
   movementsSheet: "Registro de Movimientos",
   requestsSheet: "Solicitudes",
   requestHeaders: ["ID_Solicitud", "Fecha_Registro", "Registrado_Por", "Cliente", "Regional", "Entregado_A", "ID_Articulo", "Descripcion", "Cantidad", "Estado", "Proveedor", "Fecha_Solicitud_Proveedor", "Fecha_Recepcion", "Fecha_Entrega", "ID_Transaccion_Recepcion", "ID_Transaccion_Entrega", "Observaciones", "Actualizado_Por", "Fecha_Actualizacion", "Costo_Unitario_COP"],
-  requestStatuses: ["Registrada", "Solicitada", "Recibida", "Entregada"],
+  requestStatuses: ["Registrada", "Solicitada", "Recibida", "Entregada", "Anulada"],
   movementHeaders: ["ID_Transaccion", "Fecha_Hora", "ID_Articulo", "Tipo_Movimiento", "Cantidad", "Registrado_Por", "Entregado_A_Usuario", "Cliente_Proveedor", "Regional", "Estado", "ID_Transaccion_Relacionada", "Motivo", "Regional_Origen", "Regional_Destino"],
   movementTypes: ["Entrada", "Salida", "Devolucion", "Ajuste positivo", "Ajuste negativo", "Baja por daño"],
   inventoryActiveColumn: 10,
@@ -402,7 +402,7 @@ function getDashboard_(session) {
     }
     requests[requestId].lineas.push({ cantidad: number_(requestRow[8]), costoUnitario: number_(requestRow[19]) });
   }
-  var states = { Registrada: 0, Solicitada: 0, Recibida: 0, Entregada: 0 };
+  var states = { Registrada: 0, Solicitada: 0, Recibida: 0, Entregada: 0, Anulada: 0 };
   Object.keys(requests).forEach(function(id) { states[requests[id].estado] = (states[requests[id].estado] || 0) + 1; });
 
   var now = new Date();
@@ -423,18 +423,20 @@ function getDashboard_(session) {
   var costedLinesThisMonth = 0;
   Object.keys(requests).forEach(function(id) {
     var request = requests[id];
-    var purchased = request.fechaCompra instanceof Date ? request.fechaCompra : new Date(request.fechaCompra);
-    var purchaseDateIsValid = !isNaN(purchased.getTime());
-    var purchasedMonth = purchaseDateIsValid ? Utilities.formatDate(purchased, Session.getScriptTimeZone(), "yyyy-MM") : "";
-    if (purchaseMonthKeys.indexOf(purchasedMonth) >= 0) purchaseCounts[purchasedMonth]++;
-    if (purchasedMonth === monthKey) {
-      request.lineas.forEach(function(line) {
-        purchaseLinesThisMonth++;
-        if (line.costoUnitario > 0) {
-          purchaseValueThisMonth += line.cantidad * line.costoUnitario;
-          costedLinesThisMonth++;
-        }
-      });
+    if (request.estado !== "Anulada") {
+      var purchased = request.fechaCompra instanceof Date ? request.fechaCompra : new Date(request.fechaCompra);
+      var purchaseDateIsValid = !isNaN(purchased.getTime());
+      var purchasedMonth = purchaseDateIsValid ? Utilities.formatDate(purchased, Session.getScriptTimeZone(), "yyyy-MM") : "";
+      if (purchaseMonthKeys.indexOf(purchasedMonth) >= 0) purchaseCounts[purchasedMonth]++;
+      if (purchasedMonth === monthKey) {
+        request.lineas.forEach(function(line) {
+          purchaseLinesThisMonth++;
+          if (line.costoUnitario > 0) {
+            purchaseValueThisMonth += line.cantidad * line.costoUnitario;
+            costedLinesThisMonth++;
+          }
+        });
+      }
     }
     if (request.estado === "Entregada") {
       var delivered = request.fechaEntrega instanceof Date ? request.fechaEntrega : new Date(request.fechaEntrega);
@@ -777,7 +779,7 @@ function normalizeArticle_(value) {
 function updateRequestStatus_(data, session) {
   var requestId = clean_(data.idSolicitud, 100);
   var nextStatus = clean_(data.estado, 30);
-  if (!requestId || ["Solicitada", "Recibida", "Entregada"].indexOf(nextStatus) < 0) throw new Error("Solicitud o estado invalido");
+  if (!requestId || ["Solicitada", "Recibida", "Entregada", "Anulada"].indexOf(nextStatus) < 0) throw new Error("Solicitud o estado invalido");
   var lock = LockService.getScriptLock();
   lock.waitLock(30000);
   try {
@@ -793,7 +795,10 @@ function updateRequestStatus_(data, session) {
       throw new Error("La solicitud tiene estados inconsistentes; requiere revision administrativa");
     }
     var allowed = { Registrada: "Solicitada", Solicitada: "Recibida", Recibida: "Entregada" };
-    if (allowed[currentStatus] !== nextStatus) throw new Error("Transicion invalida: " + currentStatus + " a " + nextStatus);
+    var canCancel = nextStatus === "Anulada" && ["Registrada", "Solicitada"].indexOf(currentStatus) >= 0;
+    if (!canCancel && allowed[currentStatus] !== nextStatus) {
+      throw new Error("Transicion invalida: " + currentStatus + " a " + nextStatus);
+    }
     if (rows.some(function(row, index) { return index && row.row !== rows[index - 1].row + 1; })) {
       throw new Error("Las lineas de la solicitud no son contiguas; requiere revision administrativa");
     }

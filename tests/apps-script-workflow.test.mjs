@@ -216,6 +216,7 @@ test('request receipt adds stock and delivery removes it exactly once', () => {
   assert.equal(stockFor(spreadsheet, 'CARG-USB'), 32);
   const receiptCount = spreadsheet.getSheetByName('Registro de Movimientos').getLastRow();
   assert.throws(() => context.updateRequestStatus_({ ...request, estado: 'Recibida' }, session));
+  assert.throws(() => context.updateRequestStatus_({ ...request, estado: 'Anulada' }, session), /Transicion invalida/);
   assert.equal(spreadsheet.getSheetByName('Registro de Movimientos').getLastRow(), receiptCount);
 
   context.registerMovement_({
@@ -231,6 +232,7 @@ test('request receipt adds stock and delivery removes it exactly once', () => {
   assert.equal(stockFor(spreadsheet, 'CARG-USB'), 0);
   const deliveryCount = spreadsheet.getSheetByName('Registro de Movimientos').getLastRow();
   assert.throws(() => context.updateRequestStatus_({ ...request, estado: 'Entregada' }, session));
+  assert.throws(() => context.updateRequestStatus_({ ...request, estado: 'Anulada' }, session), /Transicion invalida/);
   assert.equal(spreadsheet.getSheetByName('Registro de Movimientos').getLastRow(), deliveryCount);
 
   const dashboard = response(context.getDashboard_(session));
@@ -243,6 +245,42 @@ test('request receipt adds stock and delivery removes it exactly once', () => {
   assert.equal(dashboard.data.lineasCompraConCostoMes, 1);
   assert.equal(dashboard.data.solicitudesEntregadasMes, 1);
   assert.equal(dashboard.data.tiempoPromedioEntregaHoras, 0);
+});
+
+test('registered or ordered requests can be annulled before receipt without inventory movements', () => {
+  const { context, spreadsheet } = createRuntime();
+  const session = { usuario: 'operador', rol: 'usuario' };
+  const registered = response(context.createRequest_({ items: [{
+    idArticulo: 'CARG-USB', cantidad: 3, cliente: 'Cliente A', regional: 'Bogota', entregadoA: 'Ana'
+  }] }, session));
+  const requestSheet = spreadsheet.getSheetByName('Solicitudes');
+  const movements = spreadsheet.getSheetByName('Registro de Movimientos');
+
+  const cancelled = response(context.updateRequestStatus_({
+    idSolicitud: registered.idSolicitud, estado: 'Anulada'
+  }, session));
+  assert.equal(cancelled.estado, 'Anulada');
+  assert.equal(requestSheet.rows[1][9], 'Anulada');
+  assert.equal(requestSheet.rows[1][17], 'operador');
+  assert.equal(movements.getLastRow(), 1);
+  assert.throws(() => context.updateRequestStatus_({
+    idSolicitud: registered.idSolicitud, estado: 'Solicitada', proveedor: 'Proveedor'
+  }, session), /Transicion invalida/);
+
+  const ordered = response(context.createRequest_({ items: [{
+    idArticulo: 'CARG-USB', cantidad: 1, cliente: 'Cliente B', regional: 'Bogota', entregadoA: 'Luis'
+  }] }, session));
+  context.updateRequestStatus_({
+    idSolicitud: ordered.idSolicitud, estado: 'Solicitada', proveedor: 'Proveedor'
+  }, session);
+  context.updateRequestStatus_({ idSolicitud: ordered.idSolicitud, estado: 'Anulada' }, session);
+
+  const dashboard = response(context.getDashboard_(session));
+  assert.equal(dashboard.data.solicitudesPorEstado.Anulada, 2);
+  assert.equal(dashboard.data.solicitudesPendientes, 0);
+  assert.equal(dashboard.data.comprasProveedorMes, 0);
+  assert.equal(dashboard.data.valorComprasMes, null);
+  assert.equal(movements.getLastRow(), 1);
 });
 
 test('AI extraction requests JSON and maps an email request to inventory exactly once', () => {

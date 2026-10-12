@@ -785,6 +785,10 @@
     @apply text-xs font-bold text-emerald-700;
   }
 
+  .request-cancelled {
+    @apply text-xs font-bold text-red-700;
+  }
+
   .empty-state {
     @apply py-5 text-center text-sm text-slate-500;
   }
