@@ -113,6 +113,22 @@ El backend registra un mismo lote para varios clientes mediante varias filas con
 
 El frontend envía el token en el JSON porque los web apps de Apps Script no exponen siempre los encabezados HTTP al evento `doPost`.
 
+### Procesamiento automático de solicitudes por correo
+
+El trabajador de correo corre en Apps Script; no agrega credenciales al frontend ni requiere un servidor Node adicional. La cuenta de Google que ejecuta el proyecto debe tener acceso a la bandeja corporativa configurada en Gmail (por ejemplo, mediante delegación o reenvío a esa cuenta). El trabajador busca mensajes no leídos y acepta el cuerpo de texto plano, con una conversión sencilla desde HTML como alternativa.
+
+En **Configuración del proyecto → Propiedades del script**, define:
+
+```text
+GEMINI_API_KEY=clave_de_Google_AI_Studio
+GEMINI_MODEL=gemini-3.8-flash
+INVENTORY_EMAIL_ACCOUNT=sol.comunicaciones.g4s@gmail.com
+```
+
+`GEMINI_MODEL` es opcional. Crea la clave en Google AI Studio y guárdala únicamente como propiedad privada del script; nunca uses una variable `VITE_*`. La disponibilidad y cuota gratuita dependen de las condiciones vigentes de Google. El trabajador exige que la cuenta efectiva que ejecuta la función coincida con `INVENTORY_EMAIL_ACCOUNT` y busca únicamente no leídos de la bandeja de entrada de esa cuenta (`in:inbox is:unread`). Si ejecutas el código desde otra cuenta, se detiene sin consultar Gmail. El catálogo activo se incluye en el prompt; Gemini debe elegir el SKU exacto. Si no hay coincidencia clara, el correo se envía a revisión en lugar de inventar un producto.
+
+Para activar el proceso, abre el proyecto Apps Script con la cuenta autorizada, ejecuta manualmente `configurarProcesamientoCorreos` y concede los permisos solicitados para Gmail, hojas de cálculo y solicitudes externas. Esa función instala (o reemplaza) un único trigger para `procesarCorreosInventario` cada cinco minutos. Los registros quedan en `Solicitudes` con estado `Registrada`, visible en Seguimiento. Cada mensaje usa un ID determinista para evitar inserciones duplicadas si el trigger se interrumpe antes de marcarlo leído. Los errores temporales de Gemini (5xx o fallo de red) se reintentan hasta tres veces en la misma ejecución y, si persisten, el correo queda sin leer para la próxima ejecución. Si Gemini indica que se agotó la cuota (429), el sistema guarda el tiempo de reintento indicado por Google (o espera 24 horas si no lo informa) y no vuelve a llamar a Gemini durante ese periodo; el correo queda sin leer. Si la extracción no encuentra artículos o falla una validación definitiva, el mensaje se marca leído, se añade la etiqueta `Inventario/Error de procesamiento` y el error queda en el registro de Apps Script; revisa esa etiqueta periódicamente.
+
 ## Despliegue
 El despliegue principal es GitHub Pages mediante el workflow que publica `dist/` al hacer push a `main`. Netlify continúa disponible como alternativa y también publica `dist/`.
 

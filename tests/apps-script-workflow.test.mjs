@@ -113,7 +113,10 @@ function createRuntime() {
   const properties = {
     MAIN_SHEET: '',
     ADMIN_USERS: 'legacy-admin',
-    CATALOG_EDITOR_USERS: 'catalog-editor'
+    CATALOG_EDITOR_USERS: 'catalog-editor',
+    GEMINI_API_KEY: 'test-key',
+    GEMINI_MODEL: 'gemini-3.8-flash',
+    INVENTORY_EMAIL_ACCOUNT: 'sol.comunicaciones.g4s@gmail.com'
   };
   const context = {
     console,
@@ -127,13 +130,26 @@ function createRuntime() {
         build() { return {}; }
       })
     },
-    PropertiesService: { getScriptProperties: () => ({ getProperty: key => properties[key] || '' }) },
+    PropertiesService: {
+      getScriptProperties: () => ({
+        getProperty: key => properties[key] || '',
+        setProperty: (key, value) => { properties[key] = value; },
+        deleteProperty: key => { delete properties[key]; }
+      })
+    },
     LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
     Utilities: {
       getUuid: () => `test-id-${++uuid}`,
+      DigestAlgorithm: { SHA_256: 'SHA_256' },
+      computeDigest: (_algorithm, value) => Array.from(value).map(character => character.charCodeAt(0)),
+      base64EncodeWebSafe: bytes => bytes.join(''),
+      sleep() {},
       formatDate: date => date.toISOString().slice(0, 7)
     },
-    Session: { getScriptTimeZone: () => 'UTC' },
+    Session: {
+      getScriptTimeZone: () => 'UTC',
+      getEffectiveUser: () => ({ getEmail: () => 'sol.comunicaciones.g4s@gmail.com' })
+    },
     ContentService: {
       MimeType: { JSON: 'application/json' },
       createTextOutput(content) { return { content, setMimeType() { return this; } }; }
@@ -141,6 +157,22 @@ function createRuntime() {
   };
   runInNewContext(code, context, { filename: 'Code.gs' });
   return { context, spreadsheet };
+}
+
+function mockAi(context, content) {
+  let request;
+  context.UrlFetchApp = {
+    fetch(url, options) {
+      request = { url, options };
+      return {
+        getResponseCode: () => 200,
+        getContentText: () => JSON.stringify({
+          candidates: [{ content: { parts: [{ text: JSON.stringify(content) }] } }]
+        })
+      };
+    }
+  };
+  return () => request;
 }
 
 function response(output) {
@@ -169,6 +201,7 @@ test('request receipt adds stock and delivery removes it exactly once', () => {
   context.updateAccessory_({ idArticulo: 'CARG-USB', costoUnitario: 30000 }, {
     usuario: 'catalog-editor', rol: 'usuario'
   });
+
   const catalog = response(context.getCatalog_(session));
   assert.equal(catalog.data[0].costoUnitario, 30000);
   context.updateRequestStatus_({
@@ -210,6 +243,236 @@ test('request receipt adds stock and delivery removes it exactly once', () => {
   assert.equal(dashboard.data.lineasCompraConCostoMes, 1);
   assert.equal(dashboard.data.solicitudesEntregadasMes, 1);
   assert.equal(dashboard.data.tiempoPromedioEntregaHoras, 0);
+});
+
+test('AI extraction requests JSON and maps an email request to inventory exactly once', () => {
+  const { context, spreadsheet } = createRuntime();
+  const getRequest = mockAi(context, {
+    articulo: 'CARG-USB',
+    cliente: 'Cliente de correo',
+    regional: 'Bogota',
+    entregado_a: 'Ana Perez',
+    cantidad: 2
+  });
+  const extracted = context.extractInventoryRequest_('Solicito dos cargadores para Ana.');
+  assert.equal(getRequest().url, 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent');
+  assert.equal(getRequest().options.headers['x-goog-api-key'], 'test-key');
+  const payload = JSON.parse(getRequest().options.payload);
+  assert.equal(payload.generationConfig.responseMimeType, 'application/json');
+  assert.match(payload.systemInstruction.parts[0].text, /sin Markdown/);
+  assert.match(payload.systemInstruction.parts[0].text, /SKU exacto/);
+  assert.match(payload.contents[0].parts[0].text, /Correo a procesar/);
+  assert.match(payload.contents[0].parts[0].text, /CARG-USB/);
+
+  const requestId = context.insertEmailRequest_(extracted, 'gmail-message-1');
+  const sheet = spreadsheet.getSheetByName('Solicitudes');
+  assert.equal(sheet.rows.length, 2);
+  assert.equal(sheet.rows[1][0], requestId);
+  assert.equal(sheet.rows[1][2], 'Correo automatico');
+  assert.equal(sheet.rows[1][6], 'CARG-USB');
+  assert.equal(sheet.rows[1][8], 2);
+  assert.equal(sheet.rows[1][9], 'Registrada');
+  assert.match(sheet.rows[1][16], /generada automaticamente desde correo/);
+  assert.equal(context.insertEmailRequest_(extracted, 'gmail-message-1'), requestId);
+  assert.throws(
+    () => context.insertEmailRequest_([], 'empty-result'),
+    /Gemini no identifico articulos/
+  );
+  assert.equal(sheet.rows.length, 2);
+});
+
+test('email processing isolates invalid messages and labels them for review', () => {
+  const { context, spreadsheet } = createRuntime();
+  const goodMessage = {
+    isUnread: () => true,
+    getId: () => 'good-message',
+    getPlainBody: () => 'Solicito cargador para Ana',
+    markRead() { this.read = true; }
+  };
+  const invalidMessage = {
+    isUnread: () => true,
+    getId: () => 'invalid-message',
+    getPlainBody: () => 'Mensaje sin articulo en catalogo',
+    markRead() { this.read = true; }
+  };
+  const thread = {
+    getMessages: () => [goodMessage, invalidMessage],
+    addLabel(label) { this.label = label; }
+  };
+  const extractedByBody = {
+    'Solicito cargador para Ana': {
+      articulo: 'CARG-USB', cliente: 'Cliente A', regional: 'Bogota',
+      entregado_a: 'Ana', cantidad: 1
+    },
+    'Mensaje sin articulo en catalogo': {
+      articulo: 'Articulo desconocido', cliente: 'Cliente A', regional: 'Bogota',
+      entregado_a: 'Ana', cantidad: 1
+    }
+  };
+  context.UrlFetchApp = {
+    fetch(_url, options) {
+      const prompt = JSON.parse(options.payload).contents[0].parts[0].text;
+      const body = Object.keys(extractedByBody).find(text => prompt.endsWith(text));
+      return {
+        getResponseCode: () => 200,
+        getContentText: () => JSON.stringify({
+          candidates: [{ content: { parts: [{ text: JSON.stringify(extractedByBody[body]) }] } }]
+        })
+      };
+    }
+  };
+  let createdLabel = '';
+  let searchArguments;
+  context.GmailApp = {
+    search(...args) { searchArguments = args; return [thread]; },
+    getUserLabelByName: () => null,
+    createLabel(name) { createdLabel = name; return { name }; }
+  };
+
+  const result = context.procesarCorreosInventario();
+  assert.deepEqual(JSON.parse(JSON.stringify(result)), {
+    procesados: 1, errores: 1, reintentosPendientes: 0
+  });
+  assert.equal(goodMessage.read, true);
+  assert.equal(invalidMessage.read, true);
+  assert.equal(createdLabel, 'Inventario/Error de procesamiento');
+  assert.equal(thread.label.name, createdLabel);
+  assert.equal(spreadsheet.getSheetByName('Solicitudes').rows.length, 2);
+  assert.deepEqual(searchArguments, ['in:inbox is:unread', 0, 50]);
+});
+
+test('mail worker refuses to scan when executed by an account other than the dedicated mailbox', () => {
+  const { context } = createRuntime();
+  context.Session.getEffectiveUser = () => ({ getEmail: () => 'owner@example.com' });
+  let searched = false;
+  context.GmailApp = { search() { searched = true; return []; } };
+
+  assert.throws(
+    () => context.procesarCorreosInventario(),
+    /debe ejecutarse como sol\.comunicaciones\.g4s@gmail\.com/
+  );
+  assert.equal(searched, false);
+});
+
+test('temporary Gemini 503 retries and leaves email unread until a later run succeeds', () => {
+  const { context, spreadsheet } = createRuntime();
+  let unread = true;
+  const message = {
+    isUnread: () => unread,
+    getId: () => 'temporary-outage-message',
+    getPlainBody: () => 'Solicito cargador para Ana',
+    markRead() { unread = false; }
+  };
+  const thread = { getMessages: () => [message], addLabel() { throw new Error('Should not label transient failures'); } };
+  context.GmailApp = { search: () => [thread] };
+  let fetchCalls = 0;
+  context.UrlFetchApp = {
+    fetch() {
+      fetchCalls++;
+      if (fetchCalls <= 3) {
+        return {
+          getResponseCode: () => 503,
+          getContentText: () => '{"error":{"message":"temporary overload"}}'
+        };
+      }
+      return {
+        getResponseCode: () => 200,
+        getContentText: () => JSON.stringify({
+          candidates: [{
+            content: {
+              parts: [{
+                text: JSON.stringify({
+                    articulo: 'CARG-USB', cliente: 'Cliente A', regional: 'Bogota',
+                  entregado_a: 'Ana', cantidad: 1
+                })
+              }]
+            }
+          }]
+        })
+      };
+    }
+  };
+
+  const failedRun = context.procesarCorreosInventario();
+  assert.deepEqual(JSON.parse(JSON.stringify(failedRun)), {
+    procesados: 0, errores: 1, reintentosPendientes: 1
+  });
+  assert.equal(unread, true);
+  assert.equal(fetchCalls, 3);
+  assert.equal(spreadsheet.getSheetByName('Solicitudes'), null);
+
+  const successfulRun = context.procesarCorreosInventario();
+  assert.deepEqual(JSON.parse(JSON.stringify(successfulRun)), {
+    procesados: 1, errores: 0, reintentosPendientes: 0
+  });
+  assert.equal(unread, false);
+  assert.equal(spreadsheet.getSheetByName('Solicitudes').rows.length, 2);
+});
+
+test('Gemini quota 429 observes retry time and does not spend quota again before reset', () => {
+  const { context } = createRuntime();
+  let unread = true;
+  const message = {
+    isUnread: () => unread,
+    getId: () => 'quota-message',
+    getPlainBody: () => 'Solicitud de inventario',
+    markRead() { unread = false; }
+  };
+  const thread = {
+    getMessages: () => [message],
+    addLabel() { throw new Error('Quota errors should remain unread for retry'); }
+  };
+  context.GmailApp = { search: () => [thread] };
+  let fetchCalls = 0;
+  context.UrlFetchApp = {
+    fetch() {
+      fetchCalls++;
+      return {
+        getResponseCode: () => 429,
+        getContentText: () => JSON.stringify({
+          error: {
+            message: 'You exceeded your current quota. Quota exceeded for metric: generate_content_free_tier_requests. Please retry in 21h30m35.2s.',
+            status: 'RESOURCE_EXHAUSTED'
+          }
+        })
+      };
+    }
+  };
+
+  const firstRun = context.procesarCorreosInventario();
+  assert.deepEqual(JSON.parse(JSON.stringify(firstRun)), {
+    procesados: 0, errores: 1, reintentosPendientes: 1
+  });
+  assert.equal(fetchCalls, 1);
+  assert.equal(unread, true);
+
+  const secondRun = context.procesarCorreosInventario();
+  assert.deepEqual(JSON.parse(JSON.stringify(secondRun)), {
+    procesados: 0, errores: 1, reintentosPendientes: 1
+  });
+  assert.equal(fetchCalls, 1);
+  assert.equal(unread, true);
+});
+
+test('email worker setup replaces its trigger with a five-minute schedule', () => {
+  const { context } = createRuntime();
+  const removed = [];
+  const intervals = [];
+  const oldTrigger = { getHandlerFunction: () => 'procesarCorreosInventario' };
+  const unrelatedTrigger = { getHandlerFunction: () => 'otraTarea' };
+  context.ScriptApp = {
+    getProjectTriggers: () => [oldTrigger, unrelatedTrigger],
+    deleteTrigger: trigger => removed.push(trigger),
+    newTrigger: handler => ({
+      timeBased() { return this; },
+      everyMinutes(minutes) { intervals.push({ handler, minutes }); return this; },
+      create() {}
+    })
+  };
+
+  context.configurarProcesamientoCorreos();
+  assert.deepEqual(removed, [oldTrigger]);
+  assert.deepEqual(intervals, [{ handler: 'procesarCorreosInventario', minutes: 5 }]);
 });
 
 test('catalog write permissions are enforced for selected users on the server', () => {
