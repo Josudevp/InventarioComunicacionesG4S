@@ -1127,7 +1127,7 @@ import { apiRequest } from "./services/api.js";
                 })
                 .catch(error => window.mostrarAlerta(error.message, 'error'))
                 .finally(() => {
-                    button.innerHTML = '<i class="fa-solid fa-envelope-open-text"></i> Leer correos ahora';
+                    button.innerHTML = '<i class="fa-solid fa-envelope-open-text"></i> Leer correo';
                     button.disabled = false;
                 });
         };

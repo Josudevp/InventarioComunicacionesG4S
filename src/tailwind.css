@@ -656,7 +656,15 @@
   }
 
   .request-list-controls {
-    @apply flex flex-wrap items-center gap-2.5;
+    @apply flex flex-nowrap items-center gap-2.5;
+  }
+
+  .request-list-controls #request-status-filter {
+    @apply w-auto min-w-0;
+  }
+
+  .request-list-controls #btn-process-email-requests {
+    @apply m-0 w-auto shrink-0 px-2.5 py-2 text-xs;
   }
 
   .request-draft-rows {
@@ -1008,6 +1016,18 @@
 
   .request-list-heading select {
     @apply w-full;
+  }
+
+  .request-list-controls {
+    @apply min-w-0 gap-1.5;
+  }
+
+  .request-list-controls #request-status-filter {
+    @apply min-w-0 flex-1;
+  }
+
+  .request-list-controls #btn-process-email-requests {
+    @apply px-2 py-2;
   }
 
   .request-card-header,
