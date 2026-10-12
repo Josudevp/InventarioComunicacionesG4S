@@ -144,6 +144,7 @@ function doPost(e) {
     if (action === "obtener_solicitudes") return getRequests_(data, session);
     if (action === "crear_solicitud") return createRequest_(data, session);
     if (action === "actualizar_estado_solicitud") return updateRequestStatus_(data, session);
+    if (action === "procesar_correos_inventario") return processEmailRequests_(session);
     if (action === "registrar_movimiento") return registerMovement_(data, session);
     if (action === "reversar_movimiento") return reverseMovement_(data, session, "Reversado");
     if (action === "anular_movimiento") return reverseMovement_(data, session, "Anulado");
@@ -155,6 +156,11 @@ function doPost(e) {
     console.error(error);
     return json_({ status: "error", message: error.message || String(error) });
   }
+}
+
+function processEmailRequests_(session) {
+  if (!isAdmin_(session)) throw new Error("Solo un administrador puede procesar correos");
+  return json_({ status: "success", data: procesarCorreosInventario() });
 }
 
 function login_(data) {

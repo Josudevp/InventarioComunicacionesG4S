@@ -202,14 +202,19 @@
                 <div class="card">
                     <div class="section-heading request-list-heading">
                         <h2>Seguimiento</h2>
-                        <select id="request-status-filter" aria-label="Filtrar solicitudes por estado">
-                            <option value="">Todos los estados</option>
-                            <option value="Registrada">Registradas</option>
-                            <option value="Solicitada">Solicitadas al proveedor</option>
-                            <option value="Recibida">Recibidas</option>
-                            <option value="Entregada">Entregadas</option>
-                            <option value="Anulada">Anuladas</option>
-                        </select>
+                        <div class="request-list-controls">
+                            <select id="request-status-filter" aria-label="Filtrar solicitudes por estado">
+                                <option value="">Todos los estados</option>
+                                <option value="Registrada">Registradas</option>
+                                <option value="Solicitada">Solicitadas al proveedor</option>
+                                <option value="Recibida">Recibidas</option>
+                                <option value="Entregada">Entregadas</option>
+                                <option value="Anulada">Anuladas</option>
+                            </select>
+                            <button type="button" class="btn-secondary" id="btn-process-email-requests" data-admin-only hidden>
+                                <i class="fa-solid fa-envelope-open-text"></i> Leer correos ahora
+                            </button>
+                        </div>
                     </div>
                     <div id="requests-list" class="requests-list" aria-live="polite"><p class="empty-state">Cargando solicitudes...</p></div>
                 </div>

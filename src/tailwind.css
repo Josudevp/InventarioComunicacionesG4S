@@ -655,6 +655,10 @@
     @apply w-auto min-w-48;
   }
 
+  .request-list-controls {
+    @apply flex flex-wrap items-center gap-2.5;
+  }
+
   .request-draft-rows {
     @apply grid gap-2.5;
   }

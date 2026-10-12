@@ -513,6 +513,28 @@ test('email worker setup replaces its trigger with a five-minute schedule', () =
   assert.deepEqual(intervals, [{ handler: 'procesarCorreosInventario', minutes: 5 }]);
 });
 
+test('manual email processing is restricted to admins and returns worker counts', () => {
+  const { context } = createRuntime();
+  let runs = 0;
+  context.procesarCorreosInventario = () => {
+    runs++;
+    return { procesados: 2, errores: 1, reintentosPendientes: 1 };
+  };
+
+  assert.throws(
+    () => context.processEmailRequests_({ usuario: 'operador', rol: 'usuario' }),
+    /Solo un administrador/
+  );
+  assert.equal(runs, 0);
+
+  const result = response(context.processEmailRequests_({ usuario: 'administrador', rol: 'admin' }));
+  assert.deepEqual(result, {
+    status: 'success',
+    data: { procesados: 2, errores: 1, reintentosPendientes: 1 }
+  });
+  assert.equal(runs, 1);
+});
+
 test('catalog write permissions are enforced for selected users on the server', () => {
   const { context } = createRuntime();
   const selected = { usuario: 'catalog-editor', rol: 'usuario' };

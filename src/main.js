@@ -1113,10 +1113,30 @@ import { apiRequest } from "./services/api.js";
                 .finally(() => { button.disabled = false; });
         };
 
+        window.procesarCorreosInventario = function() {
+            const button = document.getElementById('btn-process-email-requests');
+            button.disabled = true;
+            button.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Leyendo correos...';
+            apiRequest({ action: 'procesar_correos_inventario' })
+                .then(response => response.json()).then(result => {
+                    if (result.status !== 'success') throw new Error(result.message || 'No se pudieron procesar los correos');
+                    const stats = result.data || {};
+                    const summary = `Correos procesados: ${Number(stats.procesados) || 0}; errores: ${Number(stats.errores) || 0}; reintentos pendientes: ${Number(stats.reintentosPendientes) || 0}.`;
+                    window.mostrarAlerta(summary, stats.errores ? 'warning' : 'success');
+                    if (stats.procesados) window.cargarSolicitudes();
+                })
+                .catch(error => window.mostrarAlerta(error.message, 'error'))
+                .finally(() => {
+                    button.innerHTML = '<i class="fa-solid fa-envelope-open-text"></i> Leer correos ahora';
+                    button.disabled = false;
+                });
+        };
+
         document.getElementById('btn-add-request-line').addEventListener('click', window.agregarLineaSolicitud);
         document.getElementById('btn-save-request').addEventListener('click', window.guardarSolicitud);
         document.getElementById('request-status-filter').addEventListener('change', window.cargarSolicitudes);
         document.getElementById('btn-dashboard-refresh').addEventListener('click', window.cargarDashboard);
+        document.getElementById('btn-process-email-requests').addEventListener('click', window.procesarCorreosInventario);
     document.getElementById('btn-audit-inventory').addEventListener('click', window.auditarInventario);
     document.getElementById('btn-repair-inventory-formulas').addEventListener('click', window.repararFormulasInventario);
 
