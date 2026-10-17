@@ -719,6 +719,48 @@
     @apply flex items-center justify-between gap-3 px-4 py-3;
   }
 
+  .request-card-toggle {
+    @apply m-0 flex w-full flex-col items-stretch gap-2 border-0 bg-white px-4 py-3 text-left text-slate-800;
+  }
+
+  .request-card-toggle-main,
+  .request-card-parties {
+    @apply flex w-full min-w-0 items-center justify-between gap-3;
+  }
+
+  .request-card-identity {
+    @apply grid min-w-0 gap-1;
+  }
+
+  .request-card-identity small,
+  .request-card-parties small {
+    @apply text-[11px] font-medium text-slate-500;
+  }
+
+  .request-card-parties > span {
+    @apply grid min-w-0 flex-1 gap-0.5;
+  }
+
+  .request-card-parties strong {
+    @apply truncate text-xs font-bold text-slate-700;
+  }
+
+  .request-card-chevron {
+    @apply shrink-0 text-xs text-slate-500 transition-transform;
+  }
+
+  .request-card-toggle[aria-expanded="true"] .request-card-chevron {
+    transform: rotate(180deg);
+  }
+
+  .request-card-details[hidden] {
+    display: none;
+  }
+
+  .request-card-details {
+    @apply border-t border-slate-100;
+  }
+
   .request-card-header {
     @apply border-b border-slate-100;
   }

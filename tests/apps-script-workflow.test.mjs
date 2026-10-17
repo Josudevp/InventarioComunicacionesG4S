@@ -492,25 +492,21 @@ test('Gemini quota 429 observes retry time and does not spend quota again before
   assert.equal(unread, true);
 });
 
-test('email worker setup replaces its trigger with a five-minute schedule', () => {
+test('email worker configuration removes old triggers without creating new ones', () => {
   const { context } = createRuntime();
   const removed = [];
-  const intervals = [];
   const oldTrigger = { getHandlerFunction: () => 'procesarCorreosInventario' };
   const unrelatedTrigger = { getHandlerFunction: () => 'otraTarea' };
   context.ScriptApp = {
     getProjectTriggers: () => [oldTrigger, unrelatedTrigger],
     deleteTrigger: trigger => removed.push(trigger),
-    newTrigger: handler => ({
-      timeBased() { return this; },
-      everyMinutes(minutes) { intervals.push({ handler, minutes }); return this; },
-      create() {}
-    })
+    newTrigger() { assert.fail('Manual-only setup must not create a trigger'); }
   };
 
-  context.configurarProcesamientoCorreos();
+  const result = context.configurarProcesamientoCorreos();
   assert.deepEqual(removed, [oldTrigger]);
-  assert.deepEqual(intervals, [{ handler: 'procesarCorreosInventario', minutes: 5 }]);
+  assert.match(result, /desactivado/);
+  assert.match(result, /1$/);
 });
 
 test('manual email processing is restricted to admins and returns worker counts', () => {

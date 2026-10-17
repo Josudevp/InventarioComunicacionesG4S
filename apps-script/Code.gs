@@ -60,17 +60,21 @@ function doGet() {
   return json_({ status: "success", message: "API Enterprise activa" });
 }
 
-// Ejecuta esta funcion manualmente una vez para instalar el trigger cada 5 minutos.
+// Compatibilidad: desactiva el trigger automatico creado por versiones anteriores.
 function configurarProcesamientoCorreos() {
-  assertInventoryEmailAccount_();
+  return desactivarProcesamientoAutomaticoCorreos();
+}
+
+function desactivarProcesamientoAutomaticoCorreos() {
   var triggers = ScriptApp.getProjectTriggers();
+  var removed = 0;
   triggers.forEach(function(trigger) {
     if (trigger.getHandlerFunction() === "procesarCorreosInventario") {
       ScriptApp.deleteTrigger(trigger);
+      removed++;
     }
   });
-  ScriptApp.newTrigger("procesarCorreosInventario").timeBased().everyMinutes(5).create();
-  return "Procesamiento de correos configurado cada 5 minutos";
+  return "Procesamiento automatico desactivado; activadores eliminados: " + removed;
 }
 
 function procesarCorreosInventario() {

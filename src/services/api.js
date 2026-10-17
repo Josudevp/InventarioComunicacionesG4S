@@ -1,4 +1,4 @@
-const API_URL = import.meta.env.VITE_API_URL || 'https://script.google.com/macros/s/AKfycbzyTIFs8HDZMQrYUW4uJq7fjBgLBkKfNozbQAciNxigXrbh0l0WZ9iKnizSKmQw7C7e/exec';
+const API_URL = import.meta.env.VITE_API_URL || 'https://script.google.com/macros/s/AKfycbwC7rK6eopoEO1BikWDCEUnDZCyhP0RGrGmBxZFZQcgPqXt6KwHf77JF6B66ve0xtW_/exec';
 
 function apiHeaders() {
   return { 'Content-Type': 'text/plain;charset=utf-8' };

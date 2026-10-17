@@ -957,11 +957,23 @@ import { apiRequest } from "./services/api.js";
                 list.innerHTML = '<p class="empty-state">No hay solicitudes para este filtro.</p>';
                 return;
             }
+            list.onclick = event => {
+                const toggle = event.target.closest('[data-request-toggle]');
+                if (!toggle || !list.contains(toggle)) return;
+                const details = document.getElementById(toggle.getAttribute('aria-controls'));
+                if (!details) return;
+                const expanded = toggle.getAttribute('aria-expanded') === 'true';
+                toggle.setAttribute('aria-expanded', String(!expanded));
+                details.hidden = expanded;
+            };
             list.innerHTML = requests.map(request => {
                 const safeId = request.idSolicitud.replace(/[^A-Za-z0-9_-]/g, '');
+                const detailsId = `request-details-${safeId}`;
                 const shortId = window.escapeHtml(request.idSolicitud.slice(0, 8).toUpperCase());
                 const date = request.fechaRegistro ? new Date(request.fechaRegistro).toLocaleDateString('es-CO') : '';
                 const total = request.items.reduce((sum, item) => sum + Number(item.cantidad || 0), 0);
+                const clients = [...new Set(request.items.map(item => String(item.cliente || '').trim()).filter(Boolean))];
+                const regions = [...new Set(request.items.map(item => String(item.regional || '').trim()).filter(Boolean))];
                 const lines = request.items.map((item, index) => {
                     const cost = Number(item.costoUnitario) || 0;
                     const itemCost = cost > 0 ? `<small>Costo base: ${new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(cost)}</small>` : '';
@@ -980,10 +992,22 @@ import { apiRequest } from "./services/api.js";
                     action = '<span class="request-complete"><i class="fa-solid fa-circle-check"></i> Entregada</span>';
                 }
                 return `<article class="request-card">
-                    <header class="request-card-header"><div><span class="request-reference">SOL-${shortId}</span><time>${window.escapeHtml(date)} · ${window.escapeHtml(request.registradoPor)}</time></div><span class="request-status status-${request.estado.toLowerCase()}">${window.escapeHtml(request.estado)}</span></header>
-                    <div class="request-card-summary"><span>${request.items.length} líneas</span><strong>${total} unidades</strong>${request.proveedor ? `<span>Proveedor: ${window.escapeHtml(request.proveedor)}</span>` : ''}</div>
-                    <div class="request-item-list">${lines}</div>
-                    <footer class="request-card-actions">${action}</footer>
+                    <button type="button" class="request-card-toggle" data-request-toggle aria-expanded="false" aria-controls="${detailsId}">
+                        <span class="request-card-toggle-main">
+                            <span class="request-card-identity"><strong class="request-reference">SOL-${shortId}</strong><small>${window.escapeHtml(date)} · ${window.escapeHtml(request.registradoPor)}</small></span>
+                            <span class="request-status status-${request.estado.toLowerCase()}">${window.escapeHtml(request.estado)}</span>
+                        </span>
+                        <span class="request-card-parties">
+                            <span><small>Cliente</small><strong>${window.escapeHtml(clients.join(', ') || 'Sin cliente')}</strong></span>
+                            <span><small>Regional</small><strong>${window.escapeHtml(regions.join(', ') || 'Sin regional')}</strong></span>
+                            <i class="fa-solid fa-chevron-down request-card-chevron" aria-hidden="true"></i>
+                        </span>
+                    </button>
+                    <div class="request-card-details" id="${detailsId}" hidden>
+                        <div class="request-card-summary"><span>${request.items.length} líneas</span><strong>${total} unidades</strong>${request.proveedor ? `<span>Proveedor: ${window.escapeHtml(request.proveedor)}</span>` : ''}</div>
+                        <div class="request-item-list">${lines}</div>
+                        <footer class="request-card-actions">${action}</footer>
+                    </div>
                 </article>`;
             }).join('');
         };
