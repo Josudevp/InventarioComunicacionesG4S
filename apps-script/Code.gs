@@ -80,11 +80,25 @@ function desactivarProcesamientoAutomaticoCorreos() {
 function procesarCorreosInventario() {
   assertInventoryEmailAccount_();
   var threads = GmailApp.search("in:inbox is:unread", 0, 50);
-  var result = { procesados: 0, errores: 0, reintentosPendientes: 0 };
+  var result = {
+    hilosEncontrados: threads.length,
+    correosRevisados: 0,
+    correosSinProcesar: 0,
+    procesados: 0,
+    errores: 0,
+    reintentosPendientes: 0,
+    lecturaDetenida: false,
+    detalleErrores: []
+  };
 
   threads.forEach(function(thread) {
     thread.getMessages().forEach(function(message) {
       if (!message.isUnread()) return;
+      if (result.lecturaDetenida) {
+        result.correosSinProcesar++;
+        return;
+      }
+      result.correosRevisados++;
       try {
         var extracted = extractInventoryRequest_(emailBody_(message));
         insertEmailRequest_(extracted, message.getId());
@@ -92,7 +106,20 @@ function procesarCorreosInventario() {
         result.procesados++;
       } catch (error) {
         result.errores++;
+        var errorDetail = {
+          id: message.getId(),
+          mensaje: error.message || String(error),
+          reintentoPendiente: Boolean(error.retryable || error.serviceFailure),
+          errorServicio: Boolean(error.serviceFailure)
+        };
+        result.detalleErrores.push(errorDetail);
         console.error("Error procesando correo " + message.getId() + ": " + (error.message || error));
+        if (error.serviceFailure) {
+          result.lecturaDetenida = true;
+          result.reintentosPendientes++;
+          console.error("Lectura detenida por un error de acceso al servicio Gemini; los correos permanecen sin leer");
+          return;
+        }
         if (error.retryable) {
           result.reintentosPendientes++;
           console.warn("El correo " + message.getId() +
@@ -104,7 +131,9 @@ function procesarCorreosInventario() {
             GmailApp.createLabel(CONFIG.emailErrorLabel);
           thread.addLabel(errorLabel);
           message.markRead();
+          errorDetail.etiquetadoParaRevision = true;
         } catch (labelError) {
+          errorDetail.errorAlEtiquetar = labelError.message || String(labelError);
           console.error("No se pudo etiquetar el correo " + message.getId() + ": " +
             (labelError.message || labelError));
         }
@@ -688,6 +717,10 @@ function fetchGeminiWithRetry_(url, options) {
       var responseBody = response.getContentText();
       var message = "Gemini devolvio HTTP " + status + ": " + responseBody.slice(0, 500);
       lastError = new Error(message);
+      if (status === 401 || status === 403) {
+        lastError.serviceFailure = true;
+        throw lastError;
+      }
       if (status === 429 && isGeminiQuotaExhausted_(responseBody)) {
         var retryDelayMs = geminiRetryDelayMs_(responseBody) || 24 * 60 * 60 * 1000;
         properties.setProperty(CONFIG.geminiRetryAfterProperty, String(Date.now() + retryDelayMs));

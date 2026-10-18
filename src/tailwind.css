@@ -709,6 +709,22 @@
     @apply grid gap-3;
   }
 
+  .email-processing-result {
+    @apply mb-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900;
+  }
+
+  .email-processing-result.has-errors {
+    @apply border-red-200 bg-red-50 text-red-900;
+  }
+
+  .email-processing-result ul {
+    @apply mb-0 mt-2 grid gap-1 pl-5;
+  }
+
+  .email-processing-result p {
+    @apply mb-0 mt-2;
+  }
+
   .request-card {
     @apply overflow-hidden rounded-md border border-slate-200 border-l-4 border-l-slate-400 bg-white shadow-sm;
   }

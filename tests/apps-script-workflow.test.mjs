@@ -369,7 +369,20 @@ test('email processing isolates invalid messages and labels them for review', ()
 
   const result = context.procesarCorreosInventario();
   assert.deepEqual(JSON.parse(JSON.stringify(result)), {
-    procesados: 1, errores: 1, reintentosPendientes: 0
+    hilosEncontrados: 1,
+    correosRevisados: 2,
+    correosSinProcesar: 0,
+    procesados: 1,
+    errores: 1,
+    reintentosPendientes: 0,
+    lecturaDetenida: false,
+    detalleErrores: [{
+      id: 'invalid-message',
+      mensaje: 'Articulo inexistente o inactivo en el inventario: Articulo desconocido',
+      reintentoPendiente: false,
+      errorServicio: false,
+      etiquetadoParaRevision: true
+    }]
   });
   assert.equal(goodMessage.read, true);
   assert.equal(invalidMessage.read, true);
@@ -432,16 +445,31 @@ test('temporary Gemini 503 retries and leaves email unread until a later run suc
   };
 
   const failedRun = context.procesarCorreosInventario();
-  assert.deepEqual(JSON.parse(JSON.stringify(failedRun)), {
-    procesados: 0, errores: 1, reintentosPendientes: 1
-  });
+  const failedResult = JSON.parse(JSON.stringify(failedRun));
+  assert.equal(failedResult.hilosEncontrados, 1);
+  assert.equal(failedResult.correosRevisados, 1);
+  assert.equal(failedResult.procesados, 0);
+  assert.equal(failedResult.errores, 1);
+  assert.equal(failedResult.reintentosPendientes, 1);
+  assert.equal(failedResult.lecturaDetenida, false);
+  assert.equal(failedResult.detalleErrores[0].id, 'temporary-outage-message');
+  assert.match(failedResult.detalleErrores[0].mensaje, /HTTP 503/);
+  assert.equal(failedResult.detalleErrores[0].reintentoPendiente, true);
+  assert.equal(failedResult.detalleErrores[0].errorServicio, false);
   assert.equal(unread, true);
   assert.equal(fetchCalls, 3);
   assert.equal(spreadsheet.getSheetByName('Solicitudes'), null);
 
   const successfulRun = context.procesarCorreosInventario();
   assert.deepEqual(JSON.parse(JSON.stringify(successfulRun)), {
-    procesados: 1, errores: 0, reintentosPendientes: 0
+    hilosEncontrados: 1,
+    correosRevisados: 1,
+    correosSinProcesar: 0,
+    procesados: 1,
+    errores: 0,
+    reintentosPendientes: 0,
+    lecturaDetenida: false,
+    detalleErrores: []
   });
   assert.equal(unread, false);
   assert.equal(spreadsheet.getSheetByName('Solicitudes').rows.length, 2);
@@ -478,18 +506,93 @@ test('Gemini quota 429 observes retry time and does not spend quota again before
   };
 
   const firstRun = context.procesarCorreosInventario();
-  assert.deepEqual(JSON.parse(JSON.stringify(firstRun)), {
-    procesados: 0, errores: 1, reintentosPendientes: 1
-  });
+  const firstResult = JSON.parse(JSON.stringify(firstRun));
+  assert.equal(firstResult.correosRevisados, 1);
+  assert.equal(firstResult.errores, 1);
+  assert.equal(firstResult.reintentosPendientes, 1);
+  assert.equal(firstResult.lecturaDetenida, false);
+  assert.match(firstResult.detalleErrores[0].mensaje, /HTTP 429/);
+  assert.equal(firstResult.detalleErrores[0].errorServicio, false);
   assert.equal(fetchCalls, 1);
   assert.equal(unread, true);
 
   const secondRun = context.procesarCorreosInventario();
-  assert.deepEqual(JSON.parse(JSON.stringify(secondRun)), {
-    procesados: 0, errores: 1, reintentosPendientes: 1
-  });
+  const secondResult = JSON.parse(JSON.stringify(secondRun));
+  assert.equal(secondResult.correosRevisados, 1);
+  assert.equal(secondResult.errores, 1);
+  assert.equal(secondResult.reintentosPendientes, 1);
+  assert.equal(secondResult.lecturaDetenida, false);
+  assert.match(secondResult.detalleErrores[0].mensaje, /Gemini alcanzo la cuota/);
+  assert.equal(secondResult.detalleErrores[0].errorServicio, false);
   assert.equal(fetchCalls, 1);
   assert.equal(unread, true);
+});
+
+test('email worker reports zero unread emails explicitly', () => {
+  const { context } = createRuntime();
+  context.GmailApp = { search: () => [] };
+
+  assert.deepEqual(JSON.parse(JSON.stringify(context.procesarCorreosInventario())), {
+    hilosEncontrados: 0,
+    correosRevisados: 0,
+    correosSinProcesar: 0,
+    procesados: 0,
+    errores: 0,
+    reintentosPendientes: 0,
+    lecturaDetenida: false,
+    detalleErrores: []
+  });
+});
+
+test('Gemini permission denial stops the batch and leaves all affected emails unread', () => {
+  const { context } = createRuntime();
+  let firstUnread = true;
+  let secondUnread = true;
+  let fetchCalls = 0;
+  let labelsCreated = 0;
+  const firstMessage = {
+    isUnread: () => firstUnread,
+    getId: () => 'permission-denied-first',
+    getPlainBody: () => 'Solicitud uno',
+    markRead() { firstUnread = false; }
+  };
+  const secondMessage = {
+    isUnread: () => secondUnread,
+    getId: () => 'permission-denied-second',
+    getPlainBody: () => 'Solicitud dos',
+    markRead() { secondUnread = false; }
+  };
+  const threads = [
+    { getMessages: () => [firstMessage], addLabel() { assert.fail('Service errors must not label mail'); } },
+    { getMessages: () => [secondMessage], addLabel() { assert.fail('Skipped mail must not be labeled'); } }
+  ];
+  context.GmailApp = {
+    search: () => threads,
+    getUserLabelByName: () => null,
+    createLabel() { labelsCreated++; }
+  };
+  context.UrlFetchApp = {
+    fetch() {
+      fetchCalls++;
+      return {
+        getResponseCode: () => 403,
+        getContentText: () => '{"error":{"message":"Your project has been denied access.","status":"PERMISSION_DENIED"}}'
+      };
+    }
+  };
+
+  const result = JSON.parse(JSON.stringify(context.procesarCorreosInventario()));
+  assert.equal(result.correosRevisados, 1);
+  assert.equal(result.correosSinProcesar, 1);
+  assert.equal(result.errores, 1);
+  assert.equal(result.reintentosPendientes, 1);
+  assert.equal(result.lecturaDetenida, true);
+  assert.equal(result.detalleErrores[0].errorServicio, true);
+  assert.equal(result.detalleErrores[0].reintentoPendiente, true);
+  assert.equal(fetchCalls, 1);
+  assert.equal(labelsCreated, 0);
+  assert.equal(firstUnread, true);
+  assert.equal(secondUnread, true);
 });
 
 test('email worker configuration removes old triggers without creating new ones', () => {

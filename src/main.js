@@ -1139,17 +1139,36 @@ import { apiRequest } from "./services/api.js";
 
         window.procesarCorreosInventario = function() {
             const button = document.getElementById('btn-process-email-requests');
+            const resultPanel = document.getElementById('email-processing-result');
             button.disabled = true;
             button.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Leyendo correos...';
             apiRequest({ action: 'procesar_correos_inventario' })
                 .then(response => response.json()).then(result => {
                     if (result.status !== 'success') throw new Error(result.message || 'No se pudieron procesar los correos');
                     const stats = result.data || {};
-                    const summary = `Correos procesados: ${Number(stats.procesados) || 0}; errores: ${Number(stats.errores) || 0}; reintentos pendientes: ${Number(stats.reintentosPendientes) || 0}.`;
-                    window.mostrarAlerta(summary, stats.errores ? 'warning' : 'success');
+                    const reviewed = Number(stats.correosRevisados) || 0;
+                    const failures = Array.isArray(stats.detalleErrores) ? stats.detalleErrores : [];
+                    const summary = reviewed
+                        ? `Correos revisados: ${reviewed}; procesados: ${Number(stats.procesados) || 0}; errores: ${Number(stats.errores) || 0}; reintentos pendientes: ${Number(stats.reintentosPendientes) || 0}; sin procesar: ${Number(stats.correosSinProcesar) || 0}.`
+                        : 'No se encontraron correos sin leer en la bandeja de entrada.';
+                    const failureDetails = failures.length
+                        ? `<ul>${failures.map(failure => `<li><strong>${window.escapeHtml(failure.id)}</strong>: ${window.escapeHtml(failure.mensaje)}${failure.errorServicio ? ' (lectura detenida; este correo y los pendientes quedan sin leer. Revisa el acceso del proyecto a Gemini.)' : failure.reintentoPendiente ? ' (queda sin leer para reintentar)' : failure.etiquetadoParaRevision ? ' (se marcó como leído y se etiquetó para revisión)' : ''}${failure.errorAlEtiquetar ? ` (también falló el etiquetado: ${window.escapeHtml(failure.errorAlEtiquetar)})` : ''}</li>`).join('')}</ul>`
+                        : '';
+                    const alreadyTaggedNote = !reviewed && !failures.length
+                        ? '<p>Los mensajes etiquetados en una lectura anterior pueden estar marcados como leídos y por eso no se vuelven a procesar. Para reintentarlos, márcalos como no leídos en Gmail y pulsa de nuevo.</p>'
+                        : '';
+                    resultPanel.innerHTML = `<strong>${window.escapeHtml(summary)}</strong>${failureDetails}${alreadyTaggedNote}`;
+                    resultPanel.classList.toggle('has-errors', failures.length > 0);
+                    resultPanel.hidden = false;
+                    window.mostrarAlerta(summary, failures.length ? 'error' : reviewed ? 'success' : 'info');
                     if (stats.procesados) window.cargarSolicitudes();
                 })
-                .catch(error => window.mostrarAlerta(error.message, 'error'))
+                .catch(error => {
+                    resultPanel.textContent = error.message;
+                    resultPanel.classList.add('has-errors');
+                    resultPanel.hidden = false;
+                    window.mostrarAlerta(error.message, 'error');
+                })
                 .finally(() => {
                     button.innerHTML = '<i class="fa-solid fa-envelope-open-text"></i> Leer correo';
                     button.disabled = false;
