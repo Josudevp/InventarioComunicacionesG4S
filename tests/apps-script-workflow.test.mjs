@@ -31,7 +31,10 @@ class Range {
     return this;
   }
 
-  setFormulas() { return this; }
+  setFormulas(formulas) {
+    this.sheet.lastFormulas = formulas;
+    return this;
+  }
   setDataValidation() { return this; }
 }
 
@@ -67,9 +70,9 @@ class Sheet {
     if (this.name !== 'Maestro de inventario' || row === 1 || column < 5 || column > 7) return raw;
     const sku = this.rows[row - 1][0];
     const movements = this.spreadsheet.getSheetByName('Registro de Movimientos').rows.slice(1);
-    const incoming = movements.filter(item => item[2] === sku && ['Entrada', 'Ajuste positivo'].includes(item[3]) && (!item[9] || item[9] === 'Confirmado'))
+    const incoming = movements.filter(item => item[2] === sku && ['Entrada', 'Ajuste positivo'].includes(item[3]) && ['Confirmado', 'Reversado'].includes(item[9] || 'Confirmado'))
       .reduce((sum, item) => sum + Number(item[4] || 0), 0);
-    const outgoing = movements.filter(item => item[2] === sku && ['Salida', 'Devolucion', 'Ajuste negativo', 'Baja por daño'].includes(item[3]) && (!item[9] || item[9] === 'Confirmado'))
+    const outgoing = movements.filter(item => item[2] === sku && ['Salida', 'Devolucion', 'Ajuste negativo', 'Baja por daño'].includes(item[3]) && ['Confirmado', 'Reversado'].includes(item[9] || 'Confirmado'))
       .reduce((sum, item) => sum + Number(item[4] || 0), 0);
     return column === 5 ? incoming : column === 6 ? outgoing : Number(this.rows[row - 1][3] || 0) + incoming - outgoing;
   }
@@ -109,6 +112,8 @@ class Spreadsheet {
 
 function createRuntime() {
   const spreadsheet = new Spreadsheet();
+  const sessionEntries = new Map();
+  const cacheWrites = [];
   let uuid = 0;
   const properties = {
     MAIN_SHEET: '',
@@ -137,10 +142,20 @@ function createRuntime() {
         deleteProperty: key => { delete properties[key]; }
       })
     },
+    CacheService: {
+      getScriptCache: () => ({
+        get: key => sessionEntries.get(key) || null,
+        put(key, value, ttl) {
+          sessionEntries.set(key, value);
+          cacheWrites.push({ key, value, ttl });
+        }
+      })
+    },
     LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
     Utilities: {
       getUuid: () => `test-id-${++uuid}`,
       DigestAlgorithm: { SHA_256: 'SHA_256' },
+      Charset: { UTF_8: 'UTF-8' },
       computeDigest: (_algorithm, value) => Array.from(value).map(character => character.charCodeAt(0)),
       base64EncodeWebSafe: bytes => bytes.join(''),
       sleep() {},
@@ -156,7 +171,7 @@ function createRuntime() {
     }
   };
   runInNewContext(code, context, { filename: 'Code.gs' });
-  return { context, spreadsheet };
+  return { context, spreadsheet, sessionEntries, cacheWrites };
 }
 
 function mockAi(context, content) {
@@ -184,6 +199,173 @@ function stockFor(spreadsheet, sku) {
   const row = inventory.rows.findIndex(values => values[0] === sku) + 1;
   return inventory.getRange(row, 7).getValue();
 }
+
+test('authenticated activity renews the server-side session lifetime', () => {
+  const { context, sessionEntries, cacheWrites } = createRuntime();
+  const token = 'active-session-token';
+  const key = context.sessionKey_(token);
+  const rawSession = JSON.stringify({ usuario: 'operador', rol: 'usuario' });
+  sessionEntries.set(key, rawSession);
+
+  assert.equal(context.requireSession_({ token }).usuario, 'operador');
+  assert.deepEqual(cacheWrites, [{
+    key,
+    value: rawSession,
+    ttl: context.CONFIG.sessionTtlSeconds
+  }]);
+});
+
+test('movement retries with the same idempotency key do not duplicate inventory rows', () => {
+  const { context, spreadsheet } = createRuntime();
+  const session = { usuario: 'operador', rol: 'usuario' };
+  const movement = {
+    tipoMovimiento: 'Entrada',
+    proveedor: 'Proveedor A',
+    claveIdempotencia: 'request-key-001',
+    items: [{ idArticulo: 'CARG-USB', cantidad: 6 }]
+  };
+
+  const first = response(context.registerMovement_(movement, session));
+  const retried = response(context.registerMovement_(movement, session));
+  const rows = spreadsheet.getSheetByName('Registro de Movimientos').rows;
+
+  assert.equal(first.idTransaccion, retried.idTransaccion);
+  assert.equal(retried.duplicado, true);
+  assert.equal(rows.length, 2);
+  assert.equal(rows[1][14], 'request-key-001');
+  assert.equal(stockFor(spreadsheet, 'CARG-USB'), 6);
+  assert.throws(() => context.registerMovement_({
+    ...movement,
+    items: [{ idArticulo: 'CARG-USB', cantidad: 7 }]
+  }, session), /clave de registro ya fue usada/);
+  assert.equal(stockFor(spreadsheet, 'CARG-USB'), 6);
+});
+
+test('inventory formulas retain both sides of corrected movements', () => {
+  const { context, spreadsheet } = createRuntime();
+  const inventory = spreadsheet.getSheetByName('Maestro de inventario');
+
+  context.refreshInventoryFormulas_(inventory, 2);
+
+  assert.match(inventory.lastFormulas[0][0], /"Confirmado"/);
+  assert.match(inventory.lastFormulas[0][1], /"Confirmado"/);
+  assert.match(inventory.lastFormulas[0][0], /"Reversado"/);
+  assert.match(inventory.lastFormulas[0][1], /"Reversado"/);
+  assert.doesNotMatch(inventory.lastFormulas[0][0], /"Anulado"/);
+  assert.doesNotMatch(inventory.lastFormulas[0][1], /"Anulado"/);
+});
+
+test('legacy annulment inverse is neutralized without deleting its audit row', () => {
+  const { context, spreadsheet } = createRuntime();
+  const movements = spreadsheet.getSheetByName('Registro de Movimientos');
+  movements.getRange(2, 1, 2, 14).setValues([
+    ['old-annulled', new Date(), 'CARG-USB', 'Salida', 4, 'operador', '', 'Cliente A', 'Bogota', 'Anulado', 'old-inverse', '', '', ''],
+    ['old-inverse', new Date(), 'CARG-USB', 'Entrada', 4, 'operador', '', 'Cliente A', 'Bogota', 'Confirmado', 'old-annulled', 'Anulacion de old-annulled', '', '']
+  ]);
+
+  assert.equal(context.neutralizeLegacyAnnulmentInverses_(movements), 1);
+  assert.equal(movements.rows.length, 3);
+  assert.equal(movements.rows[1][9], 'Anulado');
+  assert.equal(movements.rows[2][9], 'Anulado');
+  assert.equal(stockFor(spreadsheet, 'CARG-USB'), 0);
+  assert.equal(context.neutralizeLegacyAnnulmentInverses_(movements), 0);
+});
+
+test('dashboard includes the last twelve months of incoming and outgoing unit totals', () => {
+  const { context, spreadsheet } = createRuntime();
+  const session = { usuario: 'operador', rol: 'usuario' };
+  const now = new Date();
+  const movements = spreadsheet.getSheetByName('Registro de Movimientos');
+  movements.getRange(2, 1, 2, 14).setValues([
+    ['incoming-test', now, 'CARG-USB', 'Entrada', 5, 'operador', '', 'Proveedor A', 'Bogota', 'Confirmado', '', '', '', ''],
+    ['outgoing-test', now, 'CARG-USB', 'Salida', 2, 'operador', 'Ana', 'Cliente A', 'Bogota', 'Confirmado', '', '', '', '']
+  ]);
+
+  const dashboard = response(context.getDashboard_(session));
+  const currentMonth = now.toISOString().slice(0, 7);
+  const currentMonthTotals = dashboard.data.unidadesPorMes.find(item => item.mes === currentMonth);
+
+  assert.equal(dashboard.data.unidadesPorMes.length, 12);
+  assert.equal(currentMonthTotals.entradas, 5);
+  assert.equal(currentMonthTotals.salidas, 2);
+});
+
+test('dashboard groups confirmed deliveries by regional and excludes corrected movements', () => {
+  const { context, spreadsheet } = createRuntime();
+  const session = { usuario: 'operador', rol: 'usuario' };
+  const movements = spreadsheet.getSheetByName('Registro de Movimientos');
+  movements.getRange(2, 1, 4, 14).setValues([
+    ['sale-bogota-1', new Date(), 'CARG-USB', 'Salida', 5, 'operador', 'Ana', 'Cliente A', 'Bogota', 'Confirmado', '', '', '', ''],
+    ['sale-bogota-2', new Date(), 'CARG-USB', 'Salida', 3, 'operador', 'Luis', 'Cliente B', 'Bogota', 'Confirmado', '', '', '', ''],
+    ['sale-cali', new Date(), 'CARG-USB', 'Salida', 4, 'operador', 'Eva', 'Cliente C', 'Cali', 'Confirmado', '', '', '', ''],
+    ['sale-reversed', new Date(), 'CARG-USB', 'Salida', 9, 'operador', 'Mia', 'Cliente D', 'Cali', 'Reversado', '', '', '', '']
+  ]);
+
+  const dashboard = response(context.getDashboard_(session));
+
+  assert.deepEqual(JSON.parse(JSON.stringify(dashboard.data.entregasPorRegional)), [
+    { regional: 'Bogota', unidades: 8 },
+    { regional: 'Cali', unidades: 4 }
+  ]);
+});
+
+test('monthly purchases count only confirmed Entrada movements and preserve supplier names', () => {
+  const { context, spreadsheet } = createRuntime();
+  const session = { usuario: 'operador', rol: 'usuario' };
+  const now = new Date();
+  const movements = spreadsheet.getSheetByName('Registro de Movimientos');
+  movements.getRange(2, 1, 5, 14).setValues([
+    ['entry-alpha', now, 'CARG-USB', 'Entrada', 12, 'operador', '', 'CAPMOVIL', 'Bogota', 'Confirmado', '', '', '', ''],
+    ['entry-beta', now, 'CARG-USB', 'Entrada', 7, 'operador', '', 'CAP', 'Bogota', 'Confirmado', '', '', '', ''],
+    ['entry-legacy', now, 'CARG-USB', 'Entrada', 3, 'operador', '', '', 'Bogota', '', '', '', '', ''],
+    ['entry-reversed', now, 'CARG-USB', 'Entrada', 40, 'operador', '', 'Proveedor Anulado', 'Bogota', 'Reversado', '', '', '', ''],
+    ['positive-adjustment', now, 'CARG-USB', 'Ajuste positivo', 80, 'operador', '', 'Proveedor Ignorado', 'Bogota', 'Confirmado', '', '', '', '']
+  ]);
+
+  const dashboard = response(context.getDashboard_(session));
+  const currentMonth = now.toISOString().slice(0, 7);
+  const currentPurchases = dashboard.data.comprasPorMesProveedor.find(item => item.mes === currentMonth);
+
+  assert.deepEqual(JSON.parse(JSON.stringify(currentPurchases.proveedores)), [
+    { proveedor: 'CAPMOVIL', unidades: 19 },
+    { proveedor: 'Sin proveedor', unidades: 3 }
+  ]);
+  assert.deepEqual(JSON.parse(JSON.stringify(dashboard.data.proveedoresCompras)), [
+    { proveedor: 'CAPMOVIL', unidades: 19 },
+    { proveedor: 'Sin proveedor', unidades: 3 }
+  ]);
+});
+
+test('anular marks the original movement, creates no inverse, and is idempotent', () => {
+    const { context, spreadsheet } = createRuntime();
+    const session = { usuario: 'operador', rol: 'usuario' };
+    const original = response(context.registerMovement_({
+      tipoMovimiento: 'Entrada',
+      proveedor: 'Proveedor A',
+      claveIdempotencia: 'anular-source',
+      items: [{ idArticulo: 'CARG-USB', cantidad: 6 }]
+    }, session));
+    const correction = response(context.annulMovement_({
+      idTransaccion: original.idTransaccion
+    }));
+    const retry = response(context.annulMovement_({
+      idTransaccion: original.idTransaccion
+    }));
+    const movementSheet = spreadsheet.getSheetByName('Registro de Movimientos');
+    const history = response(context.getMovements_({}, session)).data;
+
+    assert.equal(retry.duplicado, true);
+    assert.equal(correction.anulada, true);
+    assert.equal(correction.idTransaccionOriginal, original.idTransaccion);
+    assert.equal(movementSheet.rows.length, 2);
+    assert.equal(movementSheet.rows[1][9], 'Anulado');
+    assert.equal(movementSheet.rows[1][10], '');
+    assert.equal(stockFor(spreadsheet, 'CARG-USB'), 0);
+    assert.equal(history.length, 1);
+    assert.equal(history[0].estado, 'Anulado');
+    assert.equal(movementSheet.rows.length, 2);
+    assert.equal(stockFor(spreadsheet, 'CARG-USB'), 0);
+});
 
 test('request receipt adds stock and delivery removes it exactly once', () => {
   const { context, spreadsheet } = createRuntime();
@@ -245,6 +427,23 @@ test('request receipt adds stock and delivery removes it exactly once', () => {
   assert.equal(dashboard.data.lineasCompraConCostoMes, 1);
   assert.equal(dashboard.data.solicitudesEntregadasMes, 1);
   assert.equal(dashboard.data.tiempoPromedioEntregaHoras, 0);
+});
+
+test('request response summarizes accessory quantities across separate lines', () => {
+  const { context } = createRuntime();
+  const session = { usuario: 'solicitante', rol: 'usuario' };
+  const created = response(context.createRequest_({ items: [
+    { idArticulo: 'CARG-USB', cantidad: 7, cliente: 'Cliente A', regional: 'Bogota', entregadoA: 'Ana' },
+    { idArticulo: 'CARG-USB', cantidad: 5, cliente: 'Cliente B', regional: 'Cali', entregadoA: 'Luis' },
+    { idArticulo: 'CARG-USB', cantidad: 3, cliente: 'Cliente C', regional: 'Cali', entregadoA: 'Mia' }
+  ] }, session));
+  const requests = response(context.getRequests_({}, session));
+
+  assert.equal(requests.data.length, 1);
+  assert.equal(requests.data[0].items.length, 3);
+  assert.deepEqual(JSON.parse(JSON.stringify(requests.data[0].resumenAccesorios)), [
+    { nombre: 'Cargador USB', cantidad: 15 }
+  ]);
 });
 
 test('registered or ordered requests can be annulled before receipt without inventory movements', () => {

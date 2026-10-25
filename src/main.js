@@ -39,6 +39,85 @@ import { apiRequest } from "./services/api.js";
         let requestDraft = [];
         let alertTimer = null;
         let catalogRequest = null;
+        let historyMovementRows = [];
+        let historyDateSortDirection = -1;
+        let historyFilters = {
+            fecha: [], articulo: [], tipo: [], cantidad: [],
+            cliente: [], regional: [], estado: [], usuario: []
+        };
+        let activeHistoryFilter = '';
+        let activeHistoryFilterTrigger = null;
+        const historyFilterColumns = [
+            { key: 'fecha', label: 'Fecha', emptyLabel: 'Sin fechas disponibles', value: row => {
+                const date = new Date(row.fechaHora);
+                if (Number.isNaN(date.getTime())) return null;
+                return {
+                    value: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`,
+                    label: date.toLocaleDateString('es-CO')
+                };
+            } },
+            { key: 'articulo', label: 'Artículo', emptyLabel: 'Sin artículos disponibles', value: row => ({ value: String(row.idArticulo || ''), label: `${window.nombreArticulo(row.idArticulo)} (${row.idArticulo || ''})` }) },
+            { key: 'tipo', label: 'Tipo', emptyLabel: 'Sin tipos disponibles', value: row => ({ value: String(row.tipoMovimiento || ''), label: String(row.tipoMovimiento || '') }) },
+            { key: 'cantidad', label: 'Cantidad', emptyLabel: 'Sin cantidades disponibles', value: row => ({ value: String(Number(row.cantidad) || 0), label: `${Number(row.cantidad) || 0} unidades` }) },
+            { key: 'cliente', label: 'Cliente/Proveedor', emptyLabel: 'Sin clientes o proveedores disponibles', value: row => {
+                const value = row.clienteProveedor || row.entregadoA || '—';
+                return { value: String(value), label: String(value) };
+            } },
+            { key: 'regional', label: 'Regional', emptyLabel: 'Sin regionales disponibles', value: row => {
+                const value = row.regional || row.regionalOrigen || row.regionalDestino || '—';
+                return { value: String(value), label: String(value) };
+            } },
+            { key: 'estado', label: 'Estado', emptyLabel: 'Sin estados disponibles', value: row => ({ value: String(row.estado || 'Confirmado'), label: String(row.estado || 'Confirmado') }) },
+            { key: 'usuario', label: 'Usuario', emptyLabel: 'Sin usuarios disponibles', value: row => ({ value: String(row.registradoPor || ''), label: String(row.registradoPor || '') }) }
+        ];
+        let dashboardChartData = null;
+        let dashboardRequestStates = {};
+        let dashboardRegionalData = [];
+        let dashboardPurchaseData = [];
+        let dashboardPurchaseSuppliers = [];
+        let dashboardVisibleSuppliers = {};
+        let dashboardChartMonths = 6;
+        let dashboardVisibleSeries = { entradas: true, salidas: true };
+        let dashboardSelectedRequestState = '';
+        let dashboardSelectedRegional = '';
+        let inactivityTimer = null;
+        const storedUserActivity = sessionStorage.getItem("g4sLastActivity");
+        let lastUserActivity = storedUserActivity ? Number(storedUserActivity) : Date.now();
+        const INACTIVITY_TIMEOUT_MS = 60 * 60 * 1000;
+
+        function resetInactivityTimer() {
+            if (!sessionStorage.getItem("g4sSessionToken")) return;
+            lastUserActivity = Date.now();
+            sessionStorage.setItem("g4sLastActivity", String(lastUserActivity));
+            clearTimeout(inactivityTimer);
+            inactivityTimer = setTimeout(() => {
+                const remaining = INACTIVITY_TIMEOUT_MS - (Date.now() - lastUserActivity);
+                if (remaining > 0) {
+                    inactivityTimer = setTimeout(window.verificarInactividad, remaining);
+                    return;
+                }
+                window.cerrarSesion();
+                window.mostrarAlerta("La sesión se cerró por una hora de inactividad. Inicia sesión para continuar.", "info");
+            }, INACTIVITY_TIMEOUT_MS);
+        }
+
+        window.verificarInactividad = function() {
+            const remaining = INACTIVITY_TIMEOUT_MS - (Date.now() - lastUserActivity);
+            if (remaining <= 0) {
+                window.cerrarSesion();
+                window.mostrarAlerta("La sesión se cerró por una hora de inactividad. Inicia sesión para continuar.", "info");
+            } else {
+                clearTimeout(inactivityTimer);
+                inactivityTimer = setTimeout(window.verificarInactividad, remaining);
+            }
+        };
+
+        ["pointerdown", "keydown", "touchstart", "input"].forEach(eventName => {
+            document.addEventListener(eventName, resetInactivityTimer, { passive: true });
+        });
+        document.addEventListener("visibilitychange", () => {
+            if (!document.hidden) window.verificarInactividad();
+        });
 
         document.querySelectorAll('[data-app-logo]').forEach(image => {
             image.src = LOGO_URL;
@@ -128,10 +207,16 @@ import { apiRequest } from "./services/api.js";
             let loggedUser = sessionStorage.getItem("g4sLoggedUser");
             let sessionToken = sessionStorage.getItem("g4sSessionToken");
             if (loggedUser && sessionToken) {
+                if (Date.now() - lastUserActivity >= INACTIVITY_TIMEOUT_MS) {
+                    window.cerrarSesion();
+                    window.mostrarAlerta("La sesión se cerró por una hora de inactividad. Inicia sesión para continuar.", "info");
+                    return;
+                }
                 window.mostrarApp(loggedUser);
             } else {
                 sessionStorage.removeItem("g4sLoggedUser");
                 sessionStorage.removeItem("g4sSessionToken");
+                sessionStorage.removeItem("g4sLastActivity");
                 document.getElementById('login-screen').style.display = 'flex';
             }
         };
@@ -213,6 +298,8 @@ import { apiRequest } from "./services/api.js";
         }
 
         window.cerrarSesion = function() {
+            clearTimeout(inactivityTimer);
+            inactivityTimer = null;
             sessionStorage.removeItem("g4sLoggedUser");
             sessionStorage.removeItem("g4sSessionToken");
             canManageCatalog = false;
@@ -247,6 +334,7 @@ import { apiRequest } from "./services/api.js";
         };
 
         window.mostrarApp = function(nombreUsuario) {
+            resetInactivityTimer();
             document.getElementById('login-screen').style.display = 'none';
             document.getElementById('change-pass-screen').style.display = 'none';
             document.getElementById('app-screen').style.display = 'block';
@@ -786,8 +874,23 @@ import { apiRequest } from "./services/api.js";
                 }
                 distribution = distributionRows.map(row => ({ cliente: row.cliente.trim(), idArticulo: row.idArticulo, regional: row.regional, usuario: row.usuario.trim(), cantidad: Number(row.cantidad) }));
             }
-            let payload = { action: "registrar_movimiento", tipoMovimiento: tipoMov, cliente, proveedor: provider, motivo: reason, items: carrito, distribution: tipoMov === 'Salida' ? distribution : null };
             let btn = document.getElementById('btn-submit');
+            if (btn.disabled) return;
+            let payload = { action: "registrar_movimiento", tipoMovimiento: tipoMov, cliente, proveedor: provider, motivo: reason, items: carrito, distribution: tipoMov === 'Salida' ? distribution : null };
+            const fingerprint = JSON.stringify({
+                usuario: sessionStorage.getItem("g4sLoggedUser"),
+                payload
+            });
+            const savedFingerprint = sessionStorage.getItem("g4sPendingMovementFingerprint");
+            let idempotencyKey = sessionStorage.getItem("g4sPendingMovementKey");
+            if (!idempotencyKey || savedFingerprint !== fingerprint) {
+                idempotencyKey = window.crypto && typeof window.crypto.randomUUID === 'function'
+                    ? window.crypto.randomUUID()
+                    : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+                sessionStorage.setItem("g4sPendingMovementFingerprint", fingerprint);
+                sessionStorage.setItem("g4sPendingMovementKey", idempotencyKey);
+            }
+            payload.claveIdempotencia = idempotencyKey;
             btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Guardando...';
             btn.disabled = true;
 
@@ -795,6 +898,8 @@ import { apiRequest } from "./services/api.js";
             .then(res => res.json()).then(res => {
                 if(res.status === "success") {
                     window.mostrarAlerta("🎉 Movimiento guardado con éxito", "success");
+                    sessionStorage.removeItem("g4sPendingMovementFingerprint");
+                    sessionStorage.removeItem("g4sPendingMovementKey");
                     carrito = [];
                     distributionRows = [];
                     distributionConfirmed = false;
@@ -972,8 +1077,12 @@ import { apiRequest } from "./services/api.js";
                 const shortId = window.escapeHtml(request.idSolicitud.slice(0, 8).toUpperCase());
                 const date = request.fechaRegistro ? new Date(request.fechaRegistro).toLocaleDateString('es-CO') : '';
                 const total = request.items.reduce((sum, item) => sum + Number(item.cantidad || 0), 0);
+                const accessoryTotals = Array.isArray(request.resumenAccesorios) ? request.resumenAccesorios : [];
                 const clients = [...new Set(request.items.map(item => String(item.cliente || '').trim()).filter(Boolean))];
                 const regions = [...new Set(request.items.map(item => String(item.regional || '').trim()).filter(Boolean))];
+                const accessorySummary = accessoryTotals.length
+                    ? `<section class="request-accessory-summary" aria-label="Totales por accesorio"><strong>Totales por accesorio</strong><div>${accessoryTotals.map(item => `<span><b>${window.escapeHtml(item.nombre)}</b><small>${Number(item.cantidad).toLocaleString('es-CO')} u.</small></span>`).join('')}</div></section>`
+                    : '';
                 const lines = request.items.map((item, index) => {
                     const cost = Number(item.costoUnitario) || 0;
                     const itemCost = cost > 0 ? `<small>Costo base: ${new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(cost)}</small>` : '';
@@ -1005,6 +1114,7 @@ import { apiRequest } from "./services/api.js";
                     </button>
                     <div class="request-card-details" id="${detailsId}" hidden>
                         <div class="request-card-summary"><span>${request.items.length} líneas</span><strong>${total} unidades</strong>${request.proveedor ? `<span>Proveedor: ${window.escapeHtml(request.proveedor)}</span>` : ''}</div>
+                        ${accessorySummary}
                         <div class="request-item-list">${lines}</div>
                         <footer class="request-card-actions">${action}</footer>
                     </div>
@@ -1044,6 +1154,280 @@ import { apiRequest } from "./services/api.js";
                 .finally(() => { button.disabled = false; });
         };
 
+        window.renderizarGraficoUnidades = function() {
+            const container = document.getElementById('dashboard-movement-chart');
+            if (!container || !dashboardChartData) return;
+            const rows = dashboardChartData.slice(-dashboardChartMonths);
+            const width = 640;
+            const height = 260;
+            const margin = { top: 16, right: 16, bottom: 38, left: 42 };
+            const chartWidth = width - margin.left - margin.right;
+            const chartHeight = height - margin.top - margin.bottom;
+            const visibleValues = rows.flatMap(row => [
+                dashboardVisibleSeries.entradas ? Number(row.entradas) || 0 : 0,
+                dashboardVisibleSeries.salidas ? Number(row.salidas) || 0 : 0
+            ]);
+            const maxValue = Math.max(...visibleValues, 1);
+            const step = Math.max(1, Math.ceil(maxValue / 4));
+            const axisMax = step * 4;
+            const groupWidth = chartWidth / rows.length;
+            const barWidth = Math.min(24, groupWidth * 0.28);
+            const y = value => margin.top + chartHeight - (value / axisMax) * chartHeight;
+            const grid = Array.from({ length: 5 }, (_, index) => {
+                const value = axisMax - step * index;
+                const lineY = y(value);
+                return `<g class="chart-grid-line"><line x1="${margin.left}" y1="${lineY}" x2="${width - margin.right}" y2="${lineY}"></line><text x="${margin.left - 8}" y="${lineY + 4}" text-anchor="end">${value.toLocaleString('es-CO')}</text></g>`;
+            }).join('');
+            const bars = rows.map((row, index) => {
+                const center = margin.left + groupWidth * (index + 0.5);
+                const monthLabel = new Intl.DateTimeFormat('es-CO', { month: 'short' })
+                    .format(new Date(`${row.mes}-01T12:00:00`))
+                    .replace('.', '');
+                const entryValue = Number(row.entradas) || 0;
+                const exitValue = Number(row.salidas) || 0;
+                const entryHeight = dashboardVisibleSeries.entradas ? (entryValue / axisMax) * chartHeight : 0;
+                const exitHeight = dashboardVisibleSeries.salidas ? (exitValue / axisMax) * chartHeight : 0;
+                return `<g class="chart-month">
+                    ${dashboardVisibleSeries.entradas ? `<rect class="chart-bar chart-entry-bar" x="${center - barWidth - 2}" y="${y(entryValue)}" width="${barWidth}" height="${Math.max(entryHeight, entryValue ? 1 : 0)}" rx="3"><title>${monthLabel}: ${entryValue.toLocaleString('es-CO')} unidades ingresadas</title></rect>` : ''}
+                    ${dashboardVisibleSeries.salidas ? `<rect class="chart-bar chart-exit-bar" x="${center + 2}" y="${y(exitValue)}" width="${barWidth}" height="${Math.max(exitHeight, exitValue ? 1 : 0)}" rx="3"><title>${monthLabel}: ${exitValue.toLocaleString('es-CO')} unidades retiradas</title></rect>` : ''}
+                    <text class="chart-month-label" x="${center}" y="${height - 12}" text-anchor="middle">${monthLabel}</text>
+                </g>`;
+            }).join('');
+            const hasActivity = visibleValues.some(value => value > 0);
+            container.innerHTML = `<svg viewBox="0 0 ${width} ${height}" class="movement-chart-svg" role="img" aria-label="Unidades ingresadas y retiradas en los últimos ${dashboardChartMonths} meses">
+                ${grid}${bars}
+                ${hasActivity ? '' : `<text class="chart-empty-label" x="${width / 2}" y="${margin.top + chartHeight / 2}" text-anchor="middle">Sin movimientos en este periodo</text>`}
+            </svg>`;
+        };
+
+        window.seleccionarEstadoDashboard = function(state) {
+            const states = dashboardRequestStates;
+            if (!states || !Object.prototype.hasOwnProperty.call(states, state)) return;
+            dashboardSelectedRequestState = state;
+            const label = {
+                Registrada: 'Registradas',
+                Solicitada: 'Solicitadas',
+                Recibida: 'Recibidas',
+                Entregada: 'Entregadas',
+                Anulada: 'Anuladas'
+            }[state];
+            document.getElementById('dashboard-request-detail').textContent =
+                `${label}: ${Number(states[state] || 0).toLocaleString('es-CO')} solicitudes`;
+            document.querySelectorAll('[data-request-state]').forEach(button => {
+                button.setAttribute('aria-pressed', String(button.dataset.requestState === state));
+                button.classList.toggle('is-selected', button.dataset.requestState === state);
+            });
+            document.querySelectorAll('[data-request-state-segment]').forEach(segment => {
+                segment.classList.toggle('is-selected', segment.dataset.requestStateSegment === state);
+            });
+        };
+
+        window.renderizarGraficoSolicitudes = function(states) {
+            const chart = document.getElementById('dashboard-request-chart');
+            const legend = document.getElementById('dashboard-request-states');
+            if (!chart || !legend) return;
+            const categories = [
+                ['Registrada', 'Registradas', '#2563eb'],
+                ['Solicitada', 'Solicitadas', '#f59e0b'],
+                ['Recibida', 'Recibidas', '#8b5cf6'],
+                ['Entregada', 'Entregadas', '#10b981'],
+                ['Anulada', 'Anuladas', '#94a3b8']
+            ];
+            const total = categories.reduce((sum, [key]) => sum + (Number(states[key]) || 0), 0);
+            const radius = 43;
+            const circumference = 2 * Math.PI * radius;
+            let consumed = 0;
+            const segments = categories.map(([key, label, color]) => {
+                const count = Number(states[key]) || 0;
+                const length = total ? count / total * circumference : 0;
+                const offset = -consumed;
+                consumed += length;
+                return count
+                    ? `<circle class="request-donut-segment${dashboardSelectedRequestState === key ? ' is-selected' : ''}" data-request-state-segment="${key}" cx="60" cy="60" r="${radius}" fill="none" stroke="${color}" stroke-width="17" stroke-dasharray="${length} ${circumference - length}" stroke-dashoffset="${offset}" transform="rotate(-90 60 60)"><title>${label}: ${count} solicitudes</title></circle>`
+                    : '';
+            }).join('');
+            chart.innerHTML = `<svg viewBox="0 0 120 120" class="request-donut-svg" aria-hidden="true">
+                <circle cx="60" cy="60" r="${radius}" fill="none" stroke="#e2e8f0" stroke-width="17"></circle>${segments}
+                <text class="request-donut-total" x="60" y="57" text-anchor="middle">${total.toLocaleString('es-CO')}</text>
+                <text class="request-donut-caption" x="60" y="71" text-anchor="middle">solicitudes</text>
+            </svg>`;
+            legend.innerHTML = categories.map(([key, label, color]) => {
+                const count = Number(states[key]) || 0;
+                return `<button type="button" class="request-state-legend${dashboardSelectedRequestState === key ? ' is-selected' : ''}" data-request-state="${key}" aria-pressed="${dashboardSelectedRequestState === key}" onclick="window.seleccionarEstadoDashboard('${key}')">
+                    <span class="chart-legend-dot" style="--legend-color:${color}"></span><span>${label}</span><strong>${count.toLocaleString('es-CO')}</strong>
+                </button>`;
+            }).join('');
+            if (dashboardSelectedRequestState) window.seleccionarEstadoDashboard(dashboardSelectedRequestState);
+        };
+
+        window.seleccionarRegionalDashboard = function(index) {
+            const item = dashboardRegionalData[index];
+            if (!item) return;
+            dashboardSelectedRegional = item.regional;
+            document.getElementById('dashboard-regional-detail').textContent =
+                `${item.regional}: ${Number(item.unidades || 0).toLocaleString('es-CO')} unidades entregadas`;
+            document.querySelectorAll('[data-regional-index]').forEach(bar => {
+                const selected = Number(bar.dataset.regionalIndex) === index;
+                bar.setAttribute('aria-pressed', String(selected));
+                bar.classList.toggle('is-selected', selected);
+            });
+        };
+
+        window.renderizarGraficoRegional = function(regionalData) {
+            const container = document.getElementById('dashboard-regional-chart');
+            if (!container) return;
+            dashboardRegionalData = Array.isArray(regionalData)
+                ? regionalData.filter(item => item && item.regional)
+                : [];
+            if (!dashboardRegionalData.length) {
+                container.innerHTML = '<p class="chart-empty-label">Sin entregas registradas</p>';
+                document.getElementById('dashboard-regional-detail').textContent =
+                    'No hay unidades entregadas por regional para mostrar.';
+                return;
+            }
+            const width = 640;
+            const rowHeight = 34;
+            const height = Math.max(150, dashboardRegionalData.length * rowHeight + 12);
+            const labelWidth = 170;
+            const chartWidth = width - labelWidth - 30;
+            const maxValue = Math.max(...dashboardRegionalData.map(item => Number(item.unidades) || 0), 1);
+            const bars = dashboardRegionalData.map((item, index) => {
+                const value = Number(item.unidades) || 0;
+                const y = index * rowHeight + 6;
+                const barWidth = value / maxValue * chartWidth;
+                const selected = dashboardSelectedRegional === item.regional;
+                const label = String(item.regional);
+                const displayLabel = label.length > 24 ? `${label.slice(0, 22)}…` : label;
+                return `<g class="regional-bar-group${selected ? ' is-selected' : ''}" data-regional-index="${index}" role="button" tabindex="0" aria-pressed="${selected}" aria-label="${window.escapeHtml(label)}: ${value.toLocaleString('es-CO')} unidades de salida">
+                    <title>${window.escapeHtml(label)}: ${value.toLocaleString('es-CO')} unidades de salida</title>
+                    <text class="regional-bar-label" x="${labelWidth - 10}" y="${y + 16}" text-anchor="end">${window.escapeHtml(displayLabel)}</text>
+                    <rect class="regional-bar-track" x="${labelWidth}" y="${y}" width="${chartWidth}" height="22" rx="4"></rect>
+                    <rect class="regional-bar" x="${labelWidth}" y="${y}" width="${Math.max(barWidth, value ? 2 : 0)}" height="22" rx="4"></rect>
+                    <text class="regional-bar-value" x="${Math.min(labelWidth + barWidth + 8, width - 8)}" y="${y + 16}" text-anchor="${labelWidth + barWidth + 8 > width - 8 ? 'end' : 'start'}">${value.toLocaleString('es-CO')}</text>
+                </g>`;
+            }).join('');
+            container.innerHTML = `<svg class="regional-chart-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="Unidades entregadas por regional">${bars}</svg>`;
+            container.querySelectorAll('[data-regional-index]').forEach(bar => {
+                const select = () => window.seleccionarRegionalDashboard(Number(bar.dataset.regionalIndex));
+                bar.addEventListener('click', select);
+                bar.addEventListener('keydown', event => {
+                    if (event.key !== 'Enter' && event.key !== ' ') return;
+                    event.preventDefault();
+                    select();
+                });
+            });
+            if (dashboardSelectedRegional && !dashboardRegionalData.some(item => item.regional === dashboardSelectedRegional)) {
+                dashboardSelectedRegional = '';
+            }
+            const selectedIndex = dashboardRegionalData.findIndex(item => item.regional === dashboardSelectedRegional);
+            if (selectedIndex >= 0) window.seleccionarRegionalDashboard(selectedIndex);
+            else document.getElementById('dashboard-regional-detail').textContent =
+                'Selecciona una regional para ver el detalle.';
+        };
+
+        window.seleccionarCompraDashboard = function(month, supplier, units) {
+            const monthLabel = new Intl.DateTimeFormat('es-CO', { month: 'long', year: 'numeric' })
+                .format(new Date(`${month}-01T12:00:00`));
+            document.getElementById('dashboard-purchases-detail').textContent =
+                `${supplier} · ${monthLabel}: ${Number(units || 0).toLocaleString('es-CO')} unidades recibidas`;
+        };
+
+        window.renderizarGraficoCompras = function(monthlyData, supplierData) {
+            const container = document.getElementById('dashboard-purchases-chart');
+            const legend = document.getElementById('dashboard-purchases-legend');
+            if (!container || !legend) return;
+            dashboardPurchaseData = Array.isArray(monthlyData) ? monthlyData.slice(-12) : [];
+            dashboardPurchaseSuppliers = Array.isArray(supplierData) ? supplierData : [];
+            const supplierNames = dashboardPurchaseSuppliers.map(item => item.proveedor);
+            dashboardVisibleSuppliers = Object.fromEntries(
+                supplierNames.map(name => [name, dashboardVisibleSuppliers[name] !== false])
+            );
+            const colors = ['#e11d48', '#142c46', '#0f9f6e', '#7c3aed', '#d97706', '#0284c7', '#be185d', '#4d7c0f', '#475569', '#0891b2'];
+            const colorFor = supplier => {
+                const index = supplierNames.indexOf(supplier);
+                return colors[(index < 0 ? 0 : index) % colors.length];
+            };
+            if (!supplierNames.length || !dashboardPurchaseData.length) {
+                container.innerHTML = '<p class="chart-empty-label">Sin entradas registradas en los últimos 12 meses</p>';
+                legend.innerHTML = '';
+                document.getElementById('dashboard-purchases-detail').textContent =
+                    'Las compras se calculan únicamente con movimientos de tipo Entrada.';
+                return;
+            }
+            const width = 640;
+            const height = 240;
+            const margin = { top: 14, right: 20, bottom: 32, left: 42 };
+            const chartWidth = width - margin.left - margin.right;
+            const chartHeight = height - margin.top - margin.bottom;
+            const rows = dashboardPurchaseData;
+            const visibleSuppliers = supplierNames.filter(name => dashboardVisibleSuppliers[name]);
+            const totals = rows.map(row => (row.proveedores || [])
+                .filter(item => dashboardVisibleSuppliers[item.proveedor])
+                .reduce((sum, item) => sum + (Number(item.unidades) || 0), 0));
+            const maxTotal = Math.max(...totals, 1);
+            const step = Math.max(1, Math.ceil(maxTotal / 4));
+            const axisMax = step * 4;
+            const y = value => margin.top + chartHeight - (value / axisMax) * chartHeight;
+            const grid = Array.from({ length: 5 }, (_, index) => {
+                const value = axisMax - step * index;
+                const lineY = y(value);
+                return `<g class="chart-grid-line"><line x1="${margin.left}" y1="${lineY}" x2="${width - margin.right}" y2="${lineY}"></line><text x="${margin.left - 8}" y="${lineY + 4}" text-anchor="end">${value.toLocaleString('es-CO')}</text></g>`;
+            }).join('');
+            const groupWidth = chartWidth / rows.length;
+            const barWidth = Math.min(28, groupWidth * 0.55);
+            const bars = rows.map((row, rowIndex) => {
+                const center = margin.left + groupWidth * (rowIndex + 0.5);
+                let accumulated = 0;
+                const segments = (row.proveedores || [])
+                    .filter(item => dashboardVisibleSuppliers[item.proveedor])
+                    .map(item => {
+                        const amount = Number(item.unidades) || 0;
+                        const segmentHeight = amount / axisMax * chartHeight;
+                        const segmentY = y(accumulated + amount);
+                        const segment = `<rect class="purchase-bar-segment" data-purchase-month="${window.escapeHtml(row.mes)}" data-purchase-supplier="${window.escapeHtml(item.proveedor)}" data-purchase-units="${amount}" x="${center - barWidth / 2}" y="${segmentY}" width="${barWidth}" height="${Math.max(segmentHeight, amount ? 1 : 0)}" fill="${colorFor(item.proveedor)}" rx="2" tabindex="0" role="button" aria-label="${window.escapeHtml(item.proveedor)}, ${row.mes}: ${amount.toLocaleString('es-CO')} unidades recibidas">
+                            <title>${window.escapeHtml(item.proveedor)} · ${row.mes}: ${amount.toLocaleString('es-CO')} unidades recibidas</title>
+                        </rect>`;
+                        accumulated += amount;
+                        return segment;
+                    }).join('');
+                const monthLabel = new Intl.DateTimeFormat('es-CO', { month: 'short' })
+                    .format(new Date(`${row.mes}-01T12:00:00`))
+                    .replace('.', '');
+                return `<g>${segments}<text class="chart-month-label" x="${center}" y="${height - 10}" text-anchor="middle">${monthLabel}</text></g>`;
+            }).join('');
+            const emptyMessage = visibleSuppliers.length && totals.some(total => total > 0)
+                ? ''
+                : '<text class="chart-empty-label" x="320" y="110" text-anchor="middle">Sin entradas de los proveedores seleccionados</text>';
+            container.innerHTML = `<svg class="purchase-chart-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="Unidades compradas por proveedor en los últimos doce meses">${grid}${bars}${emptyMessage}</svg>`;
+            container.querySelectorAll('.purchase-bar-segment').forEach(segment => {
+                segment.addEventListener('click', () => {
+                    window.seleccionarCompraDashboard(
+                        segment.dataset.purchaseMonth,
+                        segment.dataset.purchaseSupplier,
+                        segment.dataset.purchaseUnits
+                    );
+                });
+                segment.addEventListener('keydown', event => {
+                    if (event.key !== 'Enter' && event.key !== ' ') return;
+                    event.preventDefault();
+                    segment.click();
+                });
+            });
+            legend.innerHTML = supplierNames.map((supplier, index) => {
+                const active = dashboardVisibleSuppliers[supplier];
+                return `<button type="button" class="purchase-legend-button${active ? '' : ' is-muted'}" data-purchase-supplier-index="${index}" aria-pressed="${active}">
+                    <span class="chart-legend-dot" style="--legend-color:${colorFor(supplier)}"></span>${window.escapeHtml(supplier)}
+                </button>`;
+            }).join('');
+            legend.querySelectorAll('[data-purchase-supplier-index]').forEach(button => {
+                button.addEventListener('click', () => {
+                    const supplier = supplierNames[Number(button.dataset.purchaseSupplierIndex)];
+                    dashboardVisibleSuppliers[supplier] = !dashboardVisibleSuppliers[supplier];
+                    window.renderizarGraficoCompras(dashboardPurchaseData, dashboardPurchaseSuppliers);
+                });
+            });
+        };
+
         window.cargarDashboard = function() {
             const feedback = document.getElementById('dashboard-feedback');
             feedback.hidden = true;
@@ -1064,24 +1448,13 @@ import { apiRequest } from "./services/api.js";
                         : averageHours >= 24 ? `${(averageHours / 24).toFixed(1)} días` : `${averageHours.toLocaleString('es-CO', { maximumFractionDigits: 1 })} h`;
                     document.getElementById('kpi-entrega-promedio').textContent = averageDelivery;
                     document.getElementById('kpi-entregadas-mes').textContent = Number(data.solicitudesEntregadasMes || 0).toLocaleString('es-CO');
-                    document.getElementById('kpi-compras-promedio').textContent = Number(data.comprasPromedioMensual || 0).toLocaleString('es-CO', { maximumFractionDigits: 1 });
-                    const purchaseValue = data.valorComprasMes;
-                    document.getElementById('kpi-compras-valor').textContent = purchaseValue == null
-                        ? 'Sin datos'
-                        : new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(purchaseValue);
-                    const costCoverage = Number(data.lineasCompraConCostoMes || 0);
-                    const purchaseLines = Number(data.lineasCompraMes || 0);
-                    document.getElementById('kpi-compras-cobertura').textContent = costCoverage
-                        ? `${costCoverage} de ${purchaseLines} líneas con costo`
-                        : 'Captura costos al solicitar al proveedor';
                     const states = data.solicitudesPorEstado || {};
-                    const total = Object.values(states).reduce((sum, value) => sum + Number(value || 0), 0);
-                    const labels = [['Registrada', 'Registradas'], ['Solicitada', 'Solicitadas'], ['Recibida', 'Recibidas'], ['Entregada', 'Entregadas'], ['Anulada', 'Anuladas']];
-                    document.getElementById('dashboard-request-states').innerHTML = labels.map(([key, label]) => {
-                        const count = Number(states[key] || 0);
-                        const width = total ? count / total * 100 : 0;
-                        return `<div class="request-state-row"><div><span>${label}</span><strong>${count}</strong></div><div class="request-state-track"><span class="state-${key.toLowerCase()}" style="width:${width}%"></span></div></div>`;
-                    }).join('');
+                    dashboardChartData = Array.isArray(data.unidadesPorMes) ? data.unidadesPorMes : [];
+                    dashboardRequestStates = states;
+                    window.renderizarGraficoUnidades();
+                    window.renderizarGraficoSolicitudes(states);
+                    window.renderizarGraficoRegional(data.entregasPorRegional);
+                    window.renderizarGraficoCompras(data.comprasPorMesProveedor, data.proveedoresCompras);
                     feedback.hidden = true;
                 }).catch(error => {
                     console.error('Dashboard no disponible:', error);
@@ -1179,6 +1552,27 @@ import { apiRequest } from "./services/api.js";
         document.getElementById('btn-save-request').addEventListener('click', window.guardarSolicitud);
         document.getElementById('request-status-filter').addEventListener('change', window.cargarSolicitudes);
         document.getElementById('btn-dashboard-refresh').addEventListener('click', window.cargarDashboard);
+        document.querySelectorAll('[data-dashboard-months]').forEach(button => {
+            button.addEventListener('click', () => {
+                dashboardChartMonths = Number(button.dataset.dashboardMonths) === 12 ? 12 : 6;
+                document.querySelectorAll('[data-dashboard-months]').forEach(option => {
+                    const active = option === button;
+                    option.classList.toggle('is-active', active);
+                    option.setAttribute('aria-pressed', String(active));
+                });
+                window.renderizarGraficoUnidades();
+            });
+        });
+        document.querySelectorAll('[data-dashboard-series]').forEach(button => {
+            button.addEventListener('click', () => {
+                const series = button.dataset.dashboardSeries;
+                if (!Object.prototype.hasOwnProperty.call(dashboardVisibleSeries, series)) return;
+                dashboardVisibleSeries[series] = !dashboardVisibleSeries[series];
+                button.setAttribute('aria-pressed', String(dashboardVisibleSeries[series]));
+                button.classList.toggle('is-muted', !dashboardVisibleSeries[series]);
+                window.renderizarGraficoUnidades();
+            });
+        });
         document.getElementById('btn-process-email-requests').addEventListener('click', window.procesarCorreosInventario);
     document.getElementById('btn-audit-inventory').addEventListener('click', window.auditarInventario);
     document.getElementById('btn-repair-inventory-formulas').addEventListener('click', window.repararFormulasInventario);
@@ -1194,59 +1588,164 @@ import { apiRequest } from "./services/api.js";
             if (tabName === 'historial') window.cargarHistorial();
         }
 
+        const historyMatchesColumn = (row, column) => {
+            const selected = historyFilters[column.key];
+            if (!selected.length) return true;
+            const option = column.value(row);
+            return Boolean(option && selected.includes(option.value));
+        };
+
+        const getHistoryFilterOptions = columnKey => {
+            const otherColumns = historyFilterColumns.filter(column => column.key !== columnKey);
+            const options = new Map();
+            historyMovementRows.forEach(row => {
+                if (!otherColumns.every(column => historyMatchesColumn(row, column))) return;
+                const option = historyFilterColumns.find(column => column.key === columnKey).value(row);
+                if (option && option.value && !options.has(option.value)) options.set(option.value, option.label);
+            });
+            return [...options.entries()].sort((first, second) =>
+                first[1].localeCompare(second[1], 'es', { numeric: true, sensitivity: 'base' })
+            );
+        };
+
+        const pruneHistoryFilters = startAtIndex => {
+            historyFilterColumns.slice(startAtIndex).forEach(column => {
+                const allowedValues = new Set(getHistoryFilterOptions(column.key).map(([value]) => value));
+                historyFilters[column.key] = historyFilters[column.key].filter(value => allowedValues.has(value));
+            });
+        };
+
+        const renderHistoryFilterPopover = () => {
+            if (!activeHistoryFilter) return;
+            const column = historyFilterColumns.find(item => item.key === activeHistoryFilter);
+            const options = getHistoryFilterOptions(column.key);
+            const selectedValues = historyFilters[column.key];
+            const container = document.getElementById('history-filter-options');
+            document.getElementById('history-filter-title').textContent = `Filtrar por ${column.label.toLocaleLowerCase('es')}`;
+            document.getElementById('history-filter-count').textContent =
+                selectedValues.length ? `${selectedValues.length} seleccionada${selectedValues.length === 1 ? '' : 's'}` : `${options.length} opciones`;
+            container.innerHTML = options.length
+                ? options.map(([value, label], index) => {
+                    const id = `history-filter-${column.key}-${index}`;
+                    const checked = selectedValues.includes(value);
+                    return `<label class="history-filter-option" for="${id}">
+                        <input id="${id}" type="checkbox" value="${window.escapeHtml(value)}" ${checked ? 'checked' : ''}>
+                        <span>${window.escapeHtml(label)}</span>
+                    </label>`;
+                }).join('')
+                : `<p class="history-filter-empty">${window.escapeHtml(column.emptyLabel)}</p>`;
+        };
+
+        const positionHistoryFilterPopover = () => {
+            const popover = document.getElementById('history-filter-popover');
+            if (!activeHistoryFilterTrigger || popover.hidden) return;
+            const anchor = activeHistoryFilterTrigger.getBoundingClientRect();
+            const margin = 12;
+            const width = Math.min(340, window.innerWidth - margin * 2);
+            popover.style.width = `${width}px`;
+            popover.style.left = `${Math.max(margin, Math.min(anchor.left, window.innerWidth - width - margin))}px`;
+            popover.style.top = `${Math.min(anchor.bottom + 8, window.innerHeight - popover.offsetHeight - margin)}px`;
+            if (popover.getBoundingClientRect().top < margin) popover.style.top = `${margin}px`;
+        };
+
+        const updateHistoryFilterIndicators = () => {
+            let activeColumns = 0;
+            let activeSelections = 0;
+            historyFilterColumns.forEach(column => {
+                const count = historyFilters[column.key].length;
+                if (count) activeColumns++;
+                activeSelections += count;
+                const trigger = document.querySelector(`[data-history-filter-trigger="${column.key}"]`);
+                trigger.classList.toggle('is-active', count > 0);
+                trigger.setAttribute('aria-label', count ? `Filtrar por ${column.label}; ${count} seleccionada${count === 1 ? '' : 's'}` : `Filtrar por ${column.label}`);
+                trigger.dataset.selectedCount = count ? String(count) : '';
+            });
+            const clearButton = document.getElementById('history-clear-column-filters');
+            clearButton.hidden = activeSelections === 0;
+            document.getElementById('history-filter-summary').textContent =
+                activeSelections
+                    ? `${activeColumns} columna${activeColumns === 1 ? '' : 's'} · ${activeSelections} opción${activeSelections === 1 ? '' : 'es'} seleccionada${activeSelections === 1 ? '' : 's'}`
+                    : 'Filtra seleccionando una o varias opciones por columna';
+        };
+
+        window.renderizarHistorial = function() {
+            const body = document.getElementById('history-table-body');
+            const rows = historyMovementRows.filter(row =>
+                historyFilterColumns.every(column => historyMatchesColumn(row, column))
+            ).sort((first, second) => {
+                const firstTime = new Date(first.fechaHora).getTime() || 0;
+                const secondTime = new Date(second.fechaHora).getTime() || 0;
+                return (firstTime - secondTime) * historyDateSortDirection;
+            });
+            const sortButton = document.getElementById('history-date-sort');
+            if (!sortButton || !body) throw new Error('No se encontró la tabla de historial o su control de orden');
+            sortButton.closest('th').setAttribute('aria-sort', historyDateSortDirection === 1 ? 'ascending' : 'descending');
+            sortButton.innerHTML = `Fecha <i class="fa-solid ${historyDateSortDirection === 1 ? 'fa-arrow-up-short-wide' : 'fa-arrow-down-wide-short'}" aria-hidden="true"></i>`;
+            updateHistoryFilterIndicators();
+            if (activeHistoryFilter) {
+                renderHistoryFilterPopover();
+                positionHistoryFilterPopover();
+            }
+            const resultCount = document.getElementById('history-result-count');
+            if (resultCount) resultCount.textContent = `${rows.length.toLocaleString('es-CO')} movimientos`;
+            if (!rows.length) {
+                body.innerHTML = '<tr><td colspan="9">No hay movimientos para los filtros seleccionados.</td></tr>';
+                return;
+            }
+            body.innerHTML = rows.map(row => {
+                const date = row.fechaHora ? new Date(row.fechaHora).toLocaleString('es-CO') : '';
+                const canAnnul = row.estado === 'Confirmado' && !row.relacionada;
+                const statusClass = String(row.estado || '').toLowerCase().replace(/[^a-z0-9]+/g, '-');
+                const actions = canAnnul
+                    ? `<button type="button" class="btn-secondary photo-button" onclick="window.anularMovimiento('${window.escapeHtml(row.idTransaccion)}')">Anular</button>`
+                    : window.escapeHtml(row.relacionada || 'Sin acciones');
+                return `<tr class="history-row">
+                    <td data-label="Fecha">${window.escapeHtml(date)}</td>
+                    <td data-label="Artículo"><strong>${window.escapeHtml(window.nombreArticulo(row.idArticulo))}</strong></td>
+                    <td data-label="Tipo"><span class="movement-type">${window.escapeHtml(row.tipoMovimiento)}</span></td>
+                    <td data-label="Cantidad"><span class="movement-quantity">${Number(row.cantidad) || 0}</span></td>
+                    <td data-label="Cliente/Proveedor">${window.escapeHtml(row.clienteProveedor || row.entregadoA || '—')}</td>
+                    <td data-label="Regional">${window.escapeHtml(row.regional || row.regionalOrigen || row.regionalDestino || '—')}</td>
+                    <td data-label="Estado"><span class="movement-status status-${statusClass}">${window.escapeHtml(row.estado)}</span></td>
+                    <td data-label="Usuario">${window.escapeHtml(row.registradoPor)}</td>
+                    <td data-label="Acción"><div class="history-actions">${actions}</div></td>
+                </tr>`;
+            }).join('');
+        };
+
         window.cargarHistorial = function() {
             const body = document.getElementById('history-table-body');
+            if (!body) {
+                window.mostrarAlerta('No se encontró la tabla del historial. Recarga la aplicación para actualizar su interfaz.', 'error');
+                return;
+            }
             body.innerHTML = '<tr><td colspan="9">Cargando movimientos...</td></tr>';
             const payload = {
                 action: 'obtener_movimientos',
-                desde: document.getElementById('history-from').value,
-                hasta: document.getElementById('history-to').value,
-                filtro: document.getElementById('history-filter').value.trim()
+                desde: document.getElementById('history-from')?.value || '',
+                hasta: document.getElementById('history-to')?.value || '',
+                filtro: document.getElementById('history-filter')?.value.trim() || ''
             };
             apiRequest(payload)
                 .then(response => response.json()).then(result => {
                     if (result.status !== 'success') throw new Error(result.message || 'No se pudo cargar el historial');
-                    const rows = Array.isArray(result.data) ? result.data : [];
-                    if (!rows.length) {
-                        body.innerHTML = '<tr><td colspan="9">No hay movimientos para los filtros seleccionados.</td></tr>';
-                        return;
-                    }
-                    body.innerHTML = rows.map(row => {
-                        const date = row.fechaHora ? new Date(row.fechaHora).toLocaleString('es-CO') : '';
-                        const canReverse = row.estado === 'Confirmado';
-                        const statusClass = String(row.estado || '').toLowerCase().replace(/[^a-z0-9]+/g, '-');
-                        const actions = canReverse
-                            ? `<button type="button" class="btn-secondary photo-button" onclick="window.reversarMovimiento('${window.escapeHtml(row.idTransaccion)}')">Reversar</button><button type="button" class="btn-secondary photo-button" onclick="window.anularMovimiento('${window.escapeHtml(row.idTransaccion)}')">Anular</button>`
-                            : window.escapeHtml(row.relacionada || 'Sin acciones');
-                        return `<tr class="history-row">
-                            <td data-label="Fecha">${window.escapeHtml(date)}</td>
-                            <td data-label="Artículo"><strong>${window.escapeHtml(window.nombreArticulo(row.idArticulo))}</strong></td>
-                            <td data-label="Tipo"><span class="movement-type">${window.escapeHtml(row.tipoMovimiento)}</span></td>
-                            <td data-label="Cantidad"><span class="movement-quantity">${Number(row.cantidad) || 0}</span></td>
-                            <td data-label="Cliente/Proveedor">${window.escapeHtml(row.clienteProveedor || row.entregadoA || '—')}</td>
-                            <td data-label="Regional">${window.escapeHtml(row.regional || row.regionalOrigen || row.regionalDestino || '—')}</td>
-                            <td data-label="Estado"><span class="movement-status status-${statusClass}">${window.escapeHtml(row.estado)}</span></td>
-                            <td data-label="Usuario">${window.escapeHtml(row.registradoPor)}</td>
-                            <td data-label="Acción"><div class="history-actions">${actions}</div></td>
-                        </tr>`;
-                    }).join('');
+                    historyMovementRows = Array.isArray(result.data) ? result.data : [];
+                    pruneHistoryFilters(0);
+                    window.renderizarHistorial();
                 }).catch(error => { body.innerHTML = `<tr><td colspan="9">${window.escapeHtml(error.message)}</td></tr>`; });
         };
 
-        window.reversarMovimiento = function(idTransaccion) {
-            window.procesarCorreccionMovimiento(idTransaccion, 'reversar_movimiento', 'Se creará una transacción inversa y el original quedará como reversado. ¿Continuar?');
-        };
-
         window.anularMovimiento = function(idTransaccion) {
-            window.procesarCorreccionMovimiento(idTransaccion, 'anular_movimiento', 'Se creará una transacción inversa y el original quedará como anulado. ¿Continuar?');
+            window.procesarAnulacionMovimiento(idTransaccion);
         };
 
-        window.procesarCorreccionMovimiento = async function(idTransaccion, action, confirmation) {
-            if (!(await window.confirmarAccion(confirmation, { titulo: action === 'anular_movimiento' ? 'Anular movimiento' : 'Reversar movimiento', danger: true, confirmLabel: action === 'anular_movimiento' ? 'Anular' : 'Reversar' }))) return;
-            apiRequest({ action, idTransaccion })
+        window.procesarAnulacionMovimiento = async function(idTransaccion) {
+            const confirmation = 'El movimiento quedará marcado como anulado, no afectará el saldo y se conservará en el historial. No se creará una transacción inversa.';
+            if (!(await window.confirmarAccion(confirmation, { titulo: 'Anular movimiento', danger: true, confirmLabel: 'Anular' }))) return;
+            apiRequest({ action: 'anular_movimiento', idTransaccion })
                 .then(response => response.json()).then(result => {
-                    if (result.status !== 'success') throw new Error(result.message || 'No se pudo reversar');
-                    window.mostrarAlerta('Movimiento reversado correctamente', 'success');
+                    if (result.status !== 'success') throw new Error(result.message || 'No se pudo anular el movimiento');
+                    window.mostrarAlerta('Movimiento anulado correctamente; no se creó una transacción inversa.', 'success');
                     window.cargarHistorial();
                     window.cargarCatalogo();
                     window.cargarDashboard();
@@ -1254,6 +1753,69 @@ import { apiRequest } from "./services/api.js";
         };
 
         document.getElementById('btn-history-search').addEventListener('click', window.cargarHistorial);
+        document.getElementById('history-date-sort').addEventListener('click', () => {
+            historyDateSortDirection *= -1;
+            window.renderizarHistorial();
+        });
+        const historyPopover = document.getElementById('history-filter-popover');
+        const closeHistoryFilterPopover = () => {
+            historyPopover.hidden = true;
+            activeHistoryFilter = '';
+            activeHistoryFilterTrigger?.setAttribute('aria-expanded', 'false');
+            activeHistoryFilterTrigger = null;
+        };
+        const openHistoryFilterPopover = trigger => {
+            const column = trigger.dataset.historyFilterTrigger;
+            if (activeHistoryFilter === column && !historyPopover.hidden) {
+                closeHistoryFilterPopover();
+                return;
+            }
+            activeHistoryFilterTrigger?.setAttribute('aria-expanded', 'false');
+            activeHistoryFilter = column;
+            activeHistoryFilterTrigger = trigger;
+            trigger.setAttribute('aria-expanded', 'true');
+            renderHistoryFilterPopover();
+            historyPopover.hidden = false;
+            positionHistoryFilterPopover();
+        };
+        document.querySelectorAll('[data-history-filter-trigger]').forEach(trigger => {
+            trigger.setAttribute('aria-expanded', 'false');
+            trigger.addEventListener('click', () => openHistoryFilterPopover(trigger));
+        });
+        historyPopover.addEventListener('change', event => {
+            if (!event.target.matches('input[type="checkbox"]') || !activeHistoryFilter) return;
+            const selectedValues = historyFilters[activeHistoryFilter];
+            if (event.target.checked) {
+                if (!selectedValues.includes(event.target.value)) selectedValues.push(event.target.value);
+            } else {
+                historyFilters[activeHistoryFilter] = selectedValues.filter(value => value !== event.target.value);
+            }
+            pruneHistoryFilters(0);
+            window.renderizarHistorial();
+        });
+        document.getElementById('history-clear-column-filters').addEventListener('click', () => {
+            historyFilterColumns.forEach(column => { historyFilters[column.key] = []; });
+            closeHistoryFilterPopover();
+            window.renderizarHistorial();
+        });
+        document.getElementById('history-filter-clear').addEventListener('click', () => {
+            if (!activeHistoryFilter) return;
+            const columnIndex = historyFilterColumns.findIndex(column => column.key === activeHistoryFilter);
+            historyFilters[activeHistoryFilter] = [];
+            pruneHistoryFilters(columnIndex + 1);
+            window.renderizarHistorial();
+        });
+        document.getElementById('history-filter-done').addEventListener('click', closeHistoryFilterPopover);
+        document.getElementById('history-filter-close').addEventListener('click', closeHistoryFilterPopover);
+        document.addEventListener('click', event => {
+            if (historyPopover.hidden || historyPopover.contains(event.target) || event.target.closest('[data-history-filter-trigger]')) return;
+            closeHistoryFilterPopover();
+        });
+        document.addEventListener('keydown', event => {
+            if (event.key === 'Escape' && !historyPopover.hidden) closeHistoryFilterPopover();
+        });
+        window.addEventListener('resize', positionHistoryFilterPopover);
+        window.addEventListener('scroll', positionHistoryFilterPopover, true);
 
         document.querySelectorAll('[role="tab"]').forEach(tab => {
             tab.addEventListener('keydown', event => {

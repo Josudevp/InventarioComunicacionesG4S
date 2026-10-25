@@ -107,14 +107,61 @@
                     <article class="kpi-card"><span>Movimientos del mes</span><strong id="kpi-movimientos">—</strong><small>Registros de inventario</small></article>
                     <article class="kpi-card kpi-efficiency"><span>Tiempo promedio de entrega</span><strong id="kpi-entrega-promedio">—</strong><small>Registro hasta entrega</small></article>
                     <article class="kpi-card kpi-efficiency"><span>Entregadas este mes</span><strong id="kpi-entregadas-mes">—</strong><small>Solicitudes completadas</small></article>
-                    <article class="kpi-card kpi-request"><span>Compras al proveedor / mes</span><strong id="kpi-compras-promedio">—</strong><small>Promedio de los últimos 6 meses</small></article>
-                    <article class="kpi-card kpi-economy"><span>Compras registradas este mes</span><strong id="kpi-compras-valor">—</strong><small id="kpi-compras-cobertura">Solo líneas con costo unitario capturado · COP</small></article>
+                </div>
+                <div class="dashboard-charts">
+                    <section class="dashboard-panel dashboard-chart-panel">
+                        <div class="dashboard-panel-heading">
+                            <div>
+                                <h2>Flujo de unidades</h2>
+                                <p>Unidades ingresadas y retiradas por mes</p>
+                            </div>
+                            <div class="chart-period" role="group" aria-label="Periodo del gráfico de unidades">
+                                <button type="button" class="chart-period-button is-active" data-dashboard-months="6" aria-pressed="true">6 meses</button>
+                                <button type="button" class="chart-period-button" data-dashboard-months="12" aria-pressed="false">12 meses</button>
+                            </div>
+                        </div>
+                        <div id="dashboard-movement-chart" class="dashboard-chart" role="img" aria-label="Gráfico mensual de unidades ingresadas y retiradas"></div>
+                        <div class="chart-legend" aria-label="Series del gráfico">
+                            <button type="button" class="chart-legend-button" data-dashboard-series="entradas" aria-pressed="true"><span class="chart-legend-dot chart-entry-dot"></span>Ingresadas</button>
+                            <button type="button" class="chart-legend-button" data-dashboard-series="salidas" aria-pressed="true"><span class="chart-legend-dot chart-exit-dot"></span>Retiradas</button>
+                        </div>
+                    </section>
+                    <section class="dashboard-panel dashboard-chart-panel">
+                        <div class="dashboard-panel-heading">
+                            <div>
+                                <h2>Solicitudes por estado</h2>
+                                <p>Distribución actual de solicitudes</p>
+                            </div>
+                        </div>
+                        <div class="request-chart-layout">
+                            <div id="dashboard-request-chart" class="request-chart" role="img" aria-label="Gráfico circular de solicitudes por estado"></div>
+                            <div id="dashboard-request-states" class="request-chart-legend"></div>
+                        </div>
+                        <p id="dashboard-request-detail" class="chart-detail" aria-live="polite">Selecciona un estado para ver el detalle.</p>
+                    </section>
+                    <section class="dashboard-panel dashboard-chart-panel dashboard-regional-panel">
+                        <div class="dashboard-panel-heading">
+                            <div>
+                                <h2>Salidas por regional</h2>
+                                <p>Unidades de salida confirmadas · histórico</p>
+                            </div>
+                        </div>
+                        <div id="dashboard-regional-chart" class="regional-chart" role="group" aria-label="Unidades entregadas por regional"></div>
+                        <p id="dashboard-regional-detail" class="chart-detail" aria-live="polite">Selecciona una regional para ver el detalle.</p>
+                    </section>
+                    <section class="dashboard-panel dashboard-chart-panel">
+                        <div class="dashboard-panel-heading">
+                            <div>
+                                <h2>Compras mensuales por proveedor</h2>
+                                <p>Unidades recibidas en movimientos de entrada · últimos 12 meses</p>
+                            </div>
+                        </div>
+                        <div id="dashboard-purchases-chart" class="purchases-chart" role="group" aria-label="Compras mensuales por proveedor"></div>
+                        <div id="dashboard-purchases-legend" class="purchases-legend" aria-label="Proveedores"></div>
+                        <p id="dashboard-purchases-detail" class="chart-detail" aria-live="polite">Selecciona una barra para ver el proveedor y el detalle.</p>
+                    </section>
                 </div>
                 <div class="dashboard-lower">
-                    <section class="dashboard-panel">
-                        <h2>Solicitudes por estado</h2>
-                        <div id="dashboard-request-states" class="request-state-bars"></div>
-                    </section>
                     <section class="dashboard-panel dashboard-shortcuts">
                         <h2>Accesos rápidos</h2>
                         <button type="button" class="btn-secondary" onclick="window.switchTab('solicitudes', document.querySelector('[aria-controls=tab-solicitudes]'))"><i class="fa-solid fa-file-circle-plus"></i> Nueva solicitud</button>
@@ -230,11 +277,31 @@
                         <input type="search" id="history-filter" placeholder="Artículo, cliente, regional o usuario" aria-label="Filtrar historial">
                         <button type="button" class="btn-secondary" id="btn-history-search" style="width:auto; margin:0;"><i class="fa-solid fa-filter"></i> Filtrar</button>
                     </div>
+                    <div class="history-filter-toolbar">
+                        <span id="history-filter-summary">Filtra seleccionando una o varias opciones por columna</span>
+                        <span id="history-result-count">0 movimientos</span>
+                        <button type="button" class="btn-secondary history-clear-column-filters" id="history-clear-column-filters" hidden><i class="fa-solid fa-filter-circle-xmark"></i> Limpiar filtros</button>
+                    </div>
                     <div class="catalog-table-wrap">
-                        <table class="catalog-table history-table"><thead><tr><th>Fecha</th><th>Artículo</th><th>Tipo</th><th>Cantidad</th><th>Cliente/Proveedor</th><th>Regional</th><th>Estado</th><th>Usuario</th><th>Acción</th></tr></thead>
+                        <table class="catalog-table history-table"><thead><tr>
+                            <th><div class="history-heading"><button type="button" id="history-date-sort" class="history-date-sort" aria-label="Fecha (mayor a menor)">Fecha <i class="fa-solid fa-arrow-down-wide-short" aria-hidden="true"></i></button><button type="button" class="history-filter-trigger" data-history-filter-trigger="fecha" aria-label="Filtrar por fecha" aria-haspopup="dialog"><i class="fa-solid fa-filter" aria-hidden="true"></i></button></div></th>
+                            <th><div class="history-heading">Artículo<button type="button" class="history-filter-trigger" data-history-filter-trigger="articulo" aria-label="Filtrar por artículo" aria-haspopup="dialog"><i class="fa-solid fa-filter" aria-hidden="true"></i></button></div></th>
+                            <th><div class="history-heading">Tipo<button type="button" class="history-filter-trigger" data-history-filter-trigger="tipo" aria-label="Filtrar por tipo" aria-haspopup="dialog"><i class="fa-solid fa-filter" aria-hidden="true"></i></button></div></th>
+                            <th><div class="history-heading">Cantidad<button type="button" class="history-filter-trigger" data-history-filter-trigger="cantidad" aria-label="Filtrar por cantidad" aria-haspopup="dialog"><i class="fa-solid fa-filter" aria-hidden="true"></i></button></div></th>
+                            <th><div class="history-heading">Cliente/Proveedor<button type="button" class="history-filter-trigger" data-history-filter-trigger="cliente" aria-label="Filtrar por cliente o proveedor" aria-haspopup="dialog"><i class="fa-solid fa-filter" aria-hidden="true"></i></button></div></th>
+                            <th><div class="history-heading">Regional<button type="button" class="history-filter-trigger" data-history-filter-trigger="regional" aria-label="Filtrar por regional" aria-haspopup="dialog"><i class="fa-solid fa-filter" aria-hidden="true"></i></button></div></th>
+                            <th><div class="history-heading">Estado<button type="button" class="history-filter-trigger" data-history-filter-trigger="estado" aria-label="Filtrar por estado" aria-haspopup="dialog"><i class="fa-solid fa-filter" aria-hidden="true"></i></button></div></th>
+                            <th><div class="history-heading">Usuario<button type="button" class="history-filter-trigger" data-history-filter-trigger="usuario" aria-label="Filtrar por usuario" aria-haspopup="dialog"><i class="fa-solid fa-filter" aria-hidden="true"></i></button></div></th>
+                            <th>Acción</th>
+                        </tr></thead>
                         <tbody id="history-table-body"><tr><td colspan="9">Carga el historial para consultar movimientos.</td></tr></tbody></table>
                     </div>
                 </div>
+                <section id="history-filter-popover" class="history-filter-popover" role="dialog" aria-modal="false" aria-labelledby="history-filter-title" hidden>
+                    <header><div><strong id="history-filter-title">Filtrar</strong><small id="history-filter-count"></small></div><button type="button" id="history-filter-close" aria-label="Cerrar filtros"><i class="fa-solid fa-xmark"></i></button></header>
+                    <div id="history-filter-options" class="history-filter-options"></div>
+                    <footer><button type="button" id="history-filter-clear">Limpiar columna</button><button type="button" id="history-filter-done">Listo</button></footer>
+                </section>
             </div>
 
             <!-- TAB CATÁLOGO (CRUD) -->

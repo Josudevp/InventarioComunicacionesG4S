@@ -5,7 +5,8 @@
 //   Registro de Movimientos: A=ID_Transaccion, B=Fecha_Hora, C=ID_Articulo,
 //   D=Tipo_Movimiento, E=Cantidad, F=Registrado_Por, G=Entregado_A_Usuario,
 //   H=Cliente_Proveedor, I=Regional, J=Estado, K=ID_Transaccion_Relacionada,
-//   L=Motivo, M=Regional_Origen, N=Regional_Destino.
+//   L=Motivo, M=Regional_Origen, N=Regional_Destino, O=Clave_Idempotencia,
+//   P=Huella_Solicitud.
 //
 // Propiedades recomendadas:
 //   SPREADSHEET_ID: ID del archivo principal (opcional si el script esta vinculado al Sheet).
@@ -34,7 +35,7 @@ var CONFIG = {
   requestsSheet: "Solicitudes",
   requestHeaders: ["ID_Solicitud", "Fecha_Registro", "Registrado_Por", "Cliente", "Regional", "Entregado_A", "ID_Articulo", "Descripcion", "Cantidad", "Estado", "Proveedor", "Fecha_Solicitud_Proveedor", "Fecha_Recepcion", "Fecha_Entrega", "ID_Transaccion_Recepcion", "ID_Transaccion_Entrega", "Observaciones", "Actualizado_Por", "Fecha_Actualizacion", "Costo_Unitario_COP"],
   requestStatuses: ["Registrada", "Solicitada", "Recibida", "Entregada", "Anulada"],
-  movementHeaders: ["ID_Transaccion", "Fecha_Hora", "ID_Articulo", "Tipo_Movimiento", "Cantidad", "Registrado_Por", "Entregado_A_Usuario", "Cliente_Proveedor", "Regional", "Estado", "ID_Transaccion_Relacionada", "Motivo", "Regional_Origen", "Regional_Destino"],
+  movementHeaders: ["ID_Transaccion", "Fecha_Hora", "ID_Articulo", "Tipo_Movimiento", "Cantidad", "Registrado_Por", "Entregado_A_Usuario", "Cliente_Proveedor", "Regional", "Estado", "ID_Transaccion_Relacionada", "Motivo", "Regional_Origen", "Regional_Destino", "Clave_Idempotencia", "Huella_Solicitud"],
   movementTypes: ["Entrada", "Salida", "Devolucion", "Ajuste positivo", "Ajuste negativo", "Baja por daño"],
   inventoryActiveColumn: 10,
   inventoryCostColumn: 11,
@@ -179,8 +180,7 @@ function doPost(e) {
     if (action === "actualizar_estado_solicitud") return updateRequestStatus_(data, session);
     if (action === "procesar_correos_inventario") return processEmailRequests_(session);
     if (action === "registrar_movimiento") return registerMovement_(data, session);
-    if (action === "reversar_movimiento") return reverseMovement_(data, session, "Reversado");
-    if (action === "anular_movimiento") return reverseMovement_(data, session, "Anulado");
+    if (action === "anular_movimiento") return annulMovement_(data);
     if (action === "crear_accesorio") return createAccessory_(data, session);
     if (action === "actualizar_accesorio") return updateAccessory_(data, session);
     if (action === "subir_fotografia") return uploadPhoto_(data, session);
@@ -250,6 +250,7 @@ function requireSession_(data) {
   if (!token) throw new Error("Sesion requerida");
   var raw = CacheService.getScriptCache().get(sessionKey_(token));
   if (!raw) throw new Error("Sesion expirada");
+  CacheService.getScriptCache().put(sessionKey_(token), raw, CONFIG.sessionTtlSeconds);
   return JSON.parse(raw);
 }
 
@@ -343,6 +344,7 @@ function rebuildInventoryFormulas_(session) {
   var lock = LockService.getScriptLock();
   lock.waitLock(30000);
   try {
+    neutralizeLegacyAnnulmentInverses_(movementSheet_());
     var inventory = inventorySheet_();
     refreshInventoryFormulas_(inventory, inventory.getLastRow());
     SpreadsheetApp.flush();
@@ -352,11 +354,29 @@ function rebuildInventoryFormulas_(session) {
   return auditInventory_(session);
 }
 
+function neutralizeLegacyAnnulmentInverses_(movements) {
+  var rows = movements.getDataRange().getValues();
+  var annulledIds = Object.create(null);
+  for (var i = 1; i < rows.length; i++) {
+    if (String(rows[i][9] || "") === "Anulado") annulledIds[String(rows[i][0])] = true;
+  }
+  var updated = 0;
+  for (var j = 1; j < rows.length; j++) {
+    var relatedId = String(rows[j][10] || "");
+    if (!relatedId || !annulledIds[relatedId] ||
+        String(rows[j][9] || "Confirmado") !== "Confirmado" ||
+        String(rows[j][11] || "").indexOf("Anulacion de ") !== 0) continue;
+    movements.getRange(j + 1, 10).setValue("Anulado");
+    updated++;
+  }
+  return updated;
+}
+
 function findFirstNegativeMovement_(id, openingStock, movementRows) {
   var balance = openingStock;
   for (var i = 1; i < movementRows.length; i++) {
     var row = movementRows[i];
-    if (clean_(row[2], 100) !== id || (clean_(row[9], 50) || "Confirmado") !== "Confirmado") continue;
+    if (clean_(row[2], 100) !== id || !isCountedMovementStatus_(row[9])) continue;
     var type = clean_(row[3], 100);
     if (CONFIG.movementTypes.indexOf(type) < 0) continue;
     var quantity = Number(row[4]);
@@ -446,6 +466,18 @@ function getDashboard_(session) {
 
   var now = new Date();
   var monthKey = Utilities.formatDate(now, Session.getScriptTimeZone(), "yyyy-MM");
+  var movementMonths = [];
+  var movementMonthTotals = Object.create(null);
+  var deliveriesByRegional = Object.create(null);
+  var purchasesByMonthSupplier = Object.create(null);
+  var purchasesBySupplier = Object.create(null);
+  for (var monthOffset = 11; monthOffset >= 0; monthOffset--) {
+    var monthDate = new Date(now.getFullYear(), now.getMonth() - monthOffset, 1);
+    var movementMonthKey = Utilities.formatDate(monthDate, Session.getScriptTimeZone(), "yyyy-MM");
+    movementMonths.push(movementMonthKey);
+    movementMonthTotals[movementMonthKey] = { entradas: 0, salidas: 0 };
+    purchasesByMonthSupplier[movementMonthKey] = Object.create(null);
+  }
   var purchaseMonthKeys = [];
   var purchaseCounts = Object.create(null);
   for (var monthOffset = 0; monthOffset < 6; monthOffset++) {
@@ -491,9 +523,33 @@ function getDashboard_(session) {
   var movementRows = movementSheet_().getDataRange().getValues();
   var movementsThisMonth = 0;
   for (var k = 1; k < movementRows.length; k++) {
-    if (!movementRows[k][0]) continue;
-    var movementDate = movementRows[k][1] instanceof Date ? movementRows[k][1] : new Date(movementRows[k][1]);
-    if (!isNaN(movementDate.getTime()) && Utilities.formatDate(movementDate, Session.getScriptTimeZone(), "yyyy-MM") === monthKey) movementsThisMonth++;
+    var movementRow = movementRows[k];
+    var movementStatus = clean_(movementRow[9], 50);
+    if (!movementRow[0] || (movementStatus && ["Confirmado", "Reversado"].indexOf(movementStatus) < 0)) continue;
+    var movementType = clean_(movementRow[3], 100);
+    var movementDate = movementRow[1] instanceof Date ? movementRow[1] : new Date(movementRow[1]);
+    var quantity = number_(movementRow[4]);
+    var isConfirmedSalida = movementType === "Salida" && (!movementStatus || movementStatus === "Confirmado");
+    var isConfirmedEntrada = movementType === "Entrada" && (!movementStatus || movementStatus === "Confirmado");
+    if (!isNaN(movementDate.getTime())) {
+      var movementDateKey = Utilities.formatDate(movementDate, Session.getScriptTimeZone(), "yyyy-MM");
+      if (movementDateKey === monthKey) movementsThisMonth++;
+      if (Object.prototype.hasOwnProperty.call(movementMonthTotals, movementDateKey)) {
+        var effect = movementEffect_(movementType);
+        if (effect > 0) movementMonthTotals[movementDateKey].entradas += quantity;
+        if (effect < 0) movementMonthTotals[movementDateKey].salidas += quantity;
+        if (isConfirmedEntrada) {
+          var supplier = dashboardSupplierName_(movementRow[7]);
+          purchasesByMonthSupplier[movementDateKey][supplier] =
+            (purchasesByMonthSupplier[movementDateKey][supplier] || 0) + quantity;
+          purchasesBySupplier[supplier] = (purchasesBySupplier[supplier] || 0) + quantity;
+        }
+      }
+    }
+    if (isConfirmedSalida) {
+      var regional = clean_(movementRow[8], 100) || "Sin regional";
+      deliveriesByRegional[regional] = (deliveriesByRegional[regional] || 0) + quantity;
+    }
   }
 
   return json_({
@@ -505,6 +561,31 @@ function getDashboard_(session) {
       agotados: metrics.agotados,
       solicitudesPendientes: states.Registrada + states.Solicitada + states.Recibida,
       solicitudesPorEstado: states,
+      unidadesPorMes: movementMonths.map(function(key) {
+        return {
+          mes: key,
+          entradas: movementMonthTotals[key].entradas,
+          salidas: movementMonthTotals[key].salidas
+        };
+      }),
+      entregasPorRegional: Object.keys(deliveriesByRegional).map(function(regional) {
+        return { regional: regional, unidades: deliveriesByRegional[regional] };
+      }).sort(function(first, second) {
+        return second.unidades - first.unidades || first.regional.localeCompare(second.regional);
+      }),
+      comprasPorMesProveedor: movementMonths.map(function(key) {
+        return {
+          mes: key,
+          proveedores: Object.keys(purchasesByMonthSupplier[key]).map(function(supplier) {
+            return { proveedor: supplier, unidades: purchasesByMonthSupplier[key][supplier] };
+          })
+        };
+      }),
+      proveedoresCompras: Object.keys(purchasesBySupplier).map(function(supplier) {
+        return { proveedor: supplier, unidades: purchasesBySupplier[supplier] };
+      }).sort(function(first, second) {
+        return second.unidades - first.unidades || first.proveedor.localeCompare(second.proveedor);
+      }),
       movimientosMes: movementsThisMonth,
       tiempoPromedioEntregaHoras: completedDurationCount ? Math.round(completedDurationHours / completedDurationCount * 10) / 10 : null,
       solicitudesEntregadasMes: deliveredCount,
@@ -552,6 +633,18 @@ function getRequests_(data, session) {
       costoUnitario: number_(row[19])
     });
   }
+  Object.keys(grouped).forEach(function(id) {
+    var totals = Object.create(null);
+    grouped[id].items.forEach(function(item) {
+      var name = item.descripcion || item.idArticulo;
+      var key = String(name).trim().toLocaleLowerCase();
+      if (!totals[key]) totals[key] = { nombre: name, cantidad: 0 };
+      totals[key].cantidad += item.cantidad;
+    });
+    grouped[id].resumenAccesorios = Object.keys(totals).map(function(key) {
+      return totals[key];
+    });
+  });
   var result = Object.keys(grouped).map(function(id) { return grouped[id]; });
   result.sort(function(first, second) { return new Date(second.fechaRegistro).getTime() - new Date(first.fechaRegistro).getTime(); });
   return json_({ status: "success", usuario: session.usuario, data: result.slice(0, 300) });
@@ -916,16 +1009,49 @@ function registerMovement_(data, session) {
     throw new Error("Las entradas no usan distribucion por cliente");
   }
   var provider = clean_(data.proveedor, 150);
+  var idempotencyKey = clean_(data.claveIdempotencia, 100);
   if (["Entrada", "Devolucion"].indexOf(type) >= 0 && !provider) throw new Error("El proveedor es obligatorio");
   if (["Ajuste positivo", "Ajuste negativo", "Baja por daño"].indexOf(type) >= 0 && !clean_(data.motivo, 200)) throw new Error("El motivo es obligatorio");
+  var fingerprint = JSON.stringify({
+    usuario: session.usuario,
+    tipoMovimiento: type,
+    items: items,
+    distribution: distribution,
+    proveedor: provider,
+    motivo: clean_(data.motivo, 200),
+    regional: clean_(data.regional || "Bogota", 100),
+    regionalOrigen: clean_(data.regionalOrigen, 100),
+    regionalDestino: clean_(data.regionalDestino, 100)
+  });
   var lock = LockService.getScriptLock();
   lock.waitLock(30000);
   try {
-    var inventory = inventorySheet_();
-    var rows = inventory.getDataRange().getValues();
     var movements = movementSheet_();
     ensureMovementHeaders_(movements);
-    var ledger = calculateStockLedger_(rows, movements.getDataRange().getValues());
+    var movementData = movements.getDataRange().getValues();
+    if (idempotencyKey) {
+      var previous = movementData.slice(1).filter(function(row) {
+        return String(row[14] || "") === idempotencyKey;
+      });
+      if (previous.length) {
+        if (previous.some(function(row) { return String(row[15] || "") !== fingerprint; })) {
+          throw new Error("La clave de registro ya fue usada para otros datos");
+        }
+        if (previous.length !== (distribution.length || items.length) ||
+            previous.some(function(row) { return String(row[0]) !== String(previous[0][0]); })) {
+          throw new Error("El registro previo está incompleto; requiere revision administrativa");
+        }
+        return json_({
+          status: "success",
+          idTransaccion: String(previous[0][0]),
+          count: previous.length,
+          duplicado: true
+        });
+      }
+    }
+    var inventory = inventorySheet_();
+    var rows = inventory.getDataRange().getValues();
+    var ledger = calculateStockLedger_(rows, movementData);
     var index = {};
     for (var i = 1; i < rows.length; i++) index[clean_(rows[i][0], 100)] = i + 1;
     var requested = {};
@@ -944,12 +1070,12 @@ function registerMovement_(data, session) {
       validateDistribution_(distribution, requested, type);
       distribution.forEach(function(row) {
         movementRows.push([transactionId, now, row.idArticulo, type, row.cantidad,
-          session.usuario, clean_(row.usuario, 150), clean_(row.cliente, 150), clean_(row.regional || data.regional, 100), "Confirmado", "", clean_(data.motivo, 200), "", ""]);
+          session.usuario, clean_(row.usuario, 150), clean_(row.cliente, 150), clean_(row.regional || data.regional, 100), "Confirmado", "", clean_(data.motivo, 200), "", "", idempotencyKey, idempotencyKey ? fingerprint : ""]);
       });
     } else {
       items.forEach(function(item) {
         movementRows.push([transactionId, now, item.idArticulo, type, item.cantidad,
-          session.usuario, "", provider, clean_(data.regional || "Bogota", 100), "Confirmado", "", clean_(data.motivo, 200), clean_(data.regionalOrigen, 100), clean_(data.regionalDestino, 100)]);
+          session.usuario, "", provider, clean_(data.regional || "Bogota", 100), "Confirmado", "", clean_(data.motivo, 200), clean_(data.regionalOrigen, 100), clean_(data.regionalDestino, 100), idempotencyKey, idempotencyKey ? fingerprint : ""]);
       });
     }
     movements.getRange(movements.getLastRow() + 1, 1, movementRows.length, movementRows[0].length).setValues(movementRows);
@@ -959,69 +1085,50 @@ function registerMovement_(data, session) {
   }
 }
 
-function reverseMovement_(data, session, finalStatus) {
+function annulMovement_(data) {
   var originalId = clean_(data.idTransaccion, 100);
   if (!originalId) throw new Error("Falta la transaccion original");
   var lock = LockService.getScriptLock();
   lock.waitLock(30000);
   try {
     var movements = movementSheet_();
+    neutralizeLegacyAnnulmentInverses_(movements);
     var rows = movements.getDataRange().getValues();
     var originals = [];
     for (var i = 1; i < rows.length; i++) {
       if (String(rows[i][0]) === originalId) originals.push({ row: i + 1, values: rows[i] });
     }
     if (!originals.length) throw new Error("Transaccion original no encontrada");
-    if (originals.some(function(item) { return String(item.values[9] || "Confirmado") !== "Confirmado"; })) {
-      throw new Error("La transaccion ya fue anulada o reversada");
+    if (originals.every(function(item) { return String(item.values[9] || "Confirmado") === "Anulado"; })) {
+      return json_({ status: "success", idTransaccionOriginal: originalId, anulada: true, duplicado: true });
     }
-    var inverseItems = originals.map(function(item) {
-      return { idArticulo: clean_(item.values[2], 100), cantidad: number_(item.values[4]), type: inverseMovementType_(String(item.values[3])) };
-    });
+    if (originals.some(function(item) {
+      return String(item.values[9] || "Confirmado") !== "Confirmado" ||
+        clean_(item.values[10], 100) !== "";
+    })) {
+      throw new Error("Solo se pueden anular movimientos confirmados que no sean transacciones relacionadas");
+    }
     var inventory = inventorySheet_();
     var inventoryRows = inventory.getDataRange().getValues();
     var ledger = calculateStockLedger_(inventoryRows, rows);
     var index = {};
     for (var j = 1; j < inventoryRows.length; j++) index[clean_(inventoryRows[j][0], 100)] = j + 1;
-    var requested = {};
-    var stockChanges = {};
-    inverseItems.forEach(function(item) {
-      var delta = movementEffect_(item.type) * item.cantidad;
-      requested[item.idArticulo] = (requested[item.idArticulo] || 0) + delta;
-      stockChanges[item.idArticulo] = (stockChanges[item.idArticulo] || 0) + delta;
-    });
-    Object.keys(requested).forEach(function(id) {
-      if (!index[id]) throw new Error("Articulo no existe: " + id);
-    });
-    validateStockChanges_(stockChanges, ledger, "reversar");
-    var reverseId = Utilities.getUuid();
-    var now = new Date();
-    var reverseRows = originals.map(function(item) {
-      var values = item.values;
-      return [reverseId, now, values[2], inverseMovementType_(String(values[3])), values[4], session.usuario,
-        values[6], values[7], values[8], "Confirmado", originalId, finalStatus === "Anulado" ? "Anulacion de " + originalId : "Reversion de " + originalId, values[12], values[13]];
-    });
-    ensureMovementHeaders_(movements);
-    movements.getRange(movements.getLastRow() + 1, 1, reverseRows.length, reverseRows[0].length).setValues(reverseRows);
+    var stockChanges = Object.create(null);
     originals.forEach(function(item) {
-      movements.getRange(item.row, 10, 1, 2).setValues([[finalStatus, reverseId]]);
+      var id = clean_(item.values[2], 100);
+      var type = clean_(item.values[3], 100);
+      var quantity = number_(item.values[4]);
+      if (!index[id]) throw new Error("Articulo no existe: " + id);
+      stockChanges[id] = (stockChanges[id] || 0) - movementEffect_(type) * quantity;
     });
-    return json_({ status: "success", idTransaccion: reverseId, idTransaccionOriginal: originalId });
+    validateStockChanges_(stockChanges, ledger, "anular");
+    originals.forEach(function(item) {
+      movements.getRange(item.row, 10, 1, 2).setValues([["Anulado", ""]]);
+    });
+    return json_({ status: "success", idTransaccionOriginal: originalId, anulada: true });
   } finally {
     lock.releaseLock();
   }
-}
-
-function inverseMovementType_(type) {
-  var inverses = {
-    "Entrada": "Salida",
-    "Salida": "Entrada",
-    "Devolucion": "Entrada",
-    "Ajuste positivo": "Ajuste negativo",
-    "Ajuste negativo": "Ajuste positivo",
-    "Baja por daño": "Ajuste positivo"
-  };
-  return inverses[type] || type;
 }
 
 function createAccessory_(data, session) {
@@ -1071,6 +1178,17 @@ function movementEffect_(type) {
   return 0;
 }
 
+function isCountedMovementStatus_(status) {
+  var value = clean_(status, 50) || "Confirmado";
+  return ["Confirmado", "Reversado"].indexOf(value) >= 0;
+}
+
+function dashboardSupplierName_(supplier) {
+  var name = clean_(supplier, 150);
+  var key = name.toUpperCase().replace(/\s+/g, "");
+  return key === "CAP" || key === "CAPMOVIL" ? "CAPMOVIL" : name || "Sin proveedor";
+}
+
 function calculateStockLedger_(inventoryRows, movementRows) {
   var balances = Object.create(null);
   var unknownMovements = Object.create(null);
@@ -1082,8 +1200,7 @@ function calculateStockLedger_(inventoryRows, movementRows) {
     var movement = movementRows[j];
     var id = clean_(movement[2], 100);
     if (!id || !Object.prototype.hasOwnProperty.call(balances, id)) continue;
-    var status = clean_(movement[9], 50) || "Confirmado";
-    if (status !== "Confirmado") continue;
+    if (!isCountedMovementStatus_(movement[9])) continue;
     var type = clean_(movement[3], 100);
     if (CONFIG.movementTypes.indexOf(type) < 0) {
       unknownMovements[id] = true;
@@ -1132,8 +1249,9 @@ function refreshInventoryFormulas_(sheet, lastRow) {
   for (var row = 2; row <= lastRow; row++) {
     var confirmedMovement = function(type) {
       var criteria = "'Registro de Movimientos'!C:C;A" + row + ";'Registro de Movimientos'!D:D;\"" + type + "\";";
-      return "SUMIFS('Registro de Movimientos'!E:E;" + criteria + "'Registro de Movimientos'!J:J;\"Confirmado\")+" +
-        "SUMIFS('Registro de Movimientos'!E:E;" + criteria + "'Registro de Movimientos'!J:J;\"\")";
+      return ["Confirmado", "", "Reversado"].map(function(status) {
+        return "SUMIFS('Registro de Movimientos'!E:E;" + criteria + "'Registro de Movimientos'!J:J;\"" + status + "\")";
+      }).join("+");
     };
     formulas.push([
       "=" + confirmedMovement("Entrada") + "+" + confirmedMovement("Ajuste positivo"),

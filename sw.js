@@ -1,5 +1,5 @@
 
-const CACHE_NAME = 'inventario-v27';
+const CACHE_NAME = 'inventario-v29';
 const BUILD_ASSETS = [];
 const urlsToCache = [
     './',
