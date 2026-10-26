@@ -385,12 +385,16 @@ test('anular marks the original movement, creates no inverse, and is idempotent'
 test('request receipt adds stock and delivery removes it exactly once', () => {
   const { context, spreadsheet } = createRuntime();
   const session = { usuario: 'solicitante', rol: 'usuario' };
-  const created = response(context.createRequest_({ items: [{
+  const requestItems = [{
     idArticulo: 'CARG-USB', cantidad: 32, cliente: 'Cliente A', regional: 'Bogota', entregadoA: 'Ana'
-  }] }, session));
+  }];
+  assert.throws(() => context.createRequest_({ correoSolicitante: 'correo-invalido', items: requestItems }, session), /correo del solicitante/);
+  const created = response(context.createRequest_({ correoSolicitante: 'solicitante@example.com', items: requestItems }, session));
   const request = { idSolicitud: created.idSolicitud };
   const requestSheet = spreadsheet.getSheetByName('Solicitudes');
   assert.equal(requestSheet.rows[1][19], 25000);
+  assert.equal(requestSheet.rows[1][20], 'solicitante@example.com');
+  assert.equal(response(context.getRequests_({}, session)).data[0].correoSolicitante, 'solicitante@example.com');
 
   assert.equal(stockFor(spreadsheet, 'CARG-USB'), 0);
   assert.throws(() => context.updateRequestStatus_({ ...request, estado: 'Recibida' }, session));
@@ -442,6 +446,43 @@ test('request receipt adds stock and delivery removes it exactly once', () => {
   assert.equal(dashboard.data.lineasCompraConCostoMes, 1);
   assert.equal(dashboard.data.solicitudesEntregadasMes, 1);
   assert.equal(dashboard.data.tiempoPromedioEntregaHoras, 0);
+});
+
+test('linking a delivered request preserves the original Gmail URL for redirect', () => {
+  const { context, spreadsheet } = createRuntime();
+  context.Session.getEffectiveUser = () => ({ getEmail: () => 'teammate@example.com' });
+  const session = { usuario: 'solicitante', rol: 'usuario' };
+  const threadUrl = 'https://mail.google.com/mail/u/0/#inbox/thread-123456789';
+  assert.throws(() => context.createRequest_({
+    gmailThreadUrl: 'https://example.com/thread-123456789',
+    items: [{ idArticulo: 'CARG-USB', cantidad: 2, cliente: 'Cliente A', regional: 'Bogota', entregadoA: 'Ana' }]
+  }, session), /mail.google.com/);
+  const created = response(context.createRequest_({
+    items: [{ idArticulo: 'CARG-USB', cantidad: 2, cliente: 'Cliente A', regional: 'Bogota', entregadoA: 'Ana' }]
+  }, session));
+  const requestSheet = spreadsheet.getSheetByName('Solicitudes');
+  requestSheet.rows[1][9] = 'Entregada';
+  context.linkRequestThread_({ idSolicitud: created.idSolicitud, gmailThreadUrl: threadUrl }, session);
+  assert.equal(requestSheet.rows[1][22], threadUrl);
+  assert.equal(requestSheet.rows[1][21], 'thread-123456789');
+  assert.equal(response(context.getRequests_({}, session)).data[0].gmailThreadUrl, threadUrl);
+});
+
+test('request schema adds email and Gmail thread columns without shifting existing data', () => {
+  const { context, spreadsheet } = createRuntime();
+  const oldHeaders = context.CONFIG.requestHeaders.slice(0, 20);
+  const oldRow = ['legacy-request', new Date(), 'operador', 'Cliente A', 'Bogota', 'Ana', 'CARG-USB', 'Cargador USB', 1,
+    'Entregada', '', '', '', new Date(), '', '', '', 'operador', new Date(), 25000];
+  const sheet = spreadsheet.insertSheet('Solicitudes');
+  sheet.getRange(1, 1, 1, oldHeaders.length).setValues([oldHeaders]);
+  sheet.getRange(2, 1, 1, oldRow.length).setValues([oldRow]);
+
+  context.requestSheet_();
+
+  assert.equal(sheet.rows[0][20], 'Correo_Solicitante');
+  assert.equal(sheet.rows[0][21], 'Gmail_Thread_ID');
+  assert.equal(sheet.rows[0][22], 'Gmail_Thread_URL');
+  assert.deepEqual(JSON.parse(JSON.stringify(sheet.rows[1].slice(0, 20))), JSON.parse(JSON.stringify(oldRow)));
 });
 
 test('request response summarizes accessory quantities across separate lines', () => {

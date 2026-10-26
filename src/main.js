@@ -1018,6 +1018,8 @@ import { apiRequest } from "./services/api.js";
         };
 
         window.guardarSolicitud = function() {
+            const correoSolicitante = document.getElementById('requester-email').value.trim();
+            const gmailThreadUrl = document.getElementById('request-thread-url').value.trim();
             const items = requestDraft.map(line => ({
                 idArticulo: line.idArticulo,
                 cliente: line.cliente.trim(),
@@ -1029,13 +1031,19 @@ import { apiRequest } from "./services/api.js";
                 window.mostrarAlerta('Completa artículo, cliente, regional, destinatario y cantidad en cada línea', 'error');
                 return;
             }
+            if (correoSolicitante && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(correoSolicitante)) {
+                window.mostrarAlerta('Ingresa un correo válido para preparar el aviso de entrega', 'error');
+                return;
+            }
             const button = document.getElementById('btn-save-request');
             button.disabled = true;
-            apiRequest({ action: 'crear_solicitud', items })
+            apiRequest({ action: 'crear_solicitud', correoSolicitante, gmailThreadUrl, items })
                 .then(response => response.json()).then(result => {
                     if (result.status !== 'success') throw new Error(result.message || 'No se pudo registrar la solicitud');
                     window.mostrarAlerta(`Solicitud ${result.idSolicitud.slice(0, 8)} registrada`, 'success');
                     requestDraft = [];
+                    document.getElementById('requester-email').value = '';
+                    document.getElementById('request-thread-url').value = '';
                     window.agregarLineaSolicitud();
                     window.cargarSolicitudes();
                     window.cargarDashboard();
@@ -1077,6 +1085,23 @@ import { apiRequest } from "./services/api.js";
                 const accessoryTotals = Array.isArray(request.resumenAccesorios) ? request.resumenAccesorios : [];
                 const clients = [...new Set(request.items.map(item => String(item.cliente || '').trim()).filter(Boolean))];
                 const regions = [...new Set(request.items.map(item => String(item.regional || '').trim()).filter(Boolean))];
+                const deliverySubject = `Confirmación de entrega SOL-${shortId}`;
+                const deliveryBody = [
+                    'Buen día,',
+                    '',
+                    'Cordial saludo.',
+                    '',
+                    'Se confirma el despacho de los siguientes accesorios:',
+                    '',
+                    ...request.items.map(item => `- ${item.descripcion || item.idArticulo}: ${Number(item.cantidad)} unidades`),
+                    '',
+                    'Quedo atento a sus comentarios,',
+                    '',
+                    'Muchas gracias.'
+                ].join('\n');
+                const deliveryMailto = request.correoSolicitante
+                    ? `mailto:${encodeURIComponent(request.correoSolicitante)}?subject=${encodeURIComponent(deliverySubject)}&body=${encodeURIComponent(deliveryBody)}`
+                    : '';
                 const accessorySummary = accessoryTotals.length
                     ? `<section class="request-accessory-summary" aria-label="Totales por accesorio"><strong>Totales por accesorio</strong><div>${accessoryTotals.map(item => `<span><b>${window.escapeHtml(item.nombre)}</b><small>${Number(item.cantidad).toLocaleString('es-CO')} u.</small></span>`).join('')}</div></section>`
                     : '';
@@ -1094,6 +1119,17 @@ import { apiRequest } from "./services/api.js";
                     action = '<button type="button" class="btn-black request-transition" onclick="window.actualizarEstadoSolicitud(\'' + safeId + '\', \'Entregada\', this)">Marcar entregada</button>';
                 } else if (request.estado === 'Anulada') {
                     action = '<span class="request-cancelled"><i class="fa-solid fa-ban"></i> Solicitud anulada</span>';
+                } else if (request.estado === 'Entregada') {
+                    const composeButton = request.gmailThreadUrl
+                        ? `<a class="request-gmail-link" href="${window.escapeHtml(request.gmailThreadUrl)}" target="_blank" rel="noopener noreferrer"><i class="fa-solid fa-envelope-open-text" aria-hidden="true"></i><span>Abrir hilo de Gmail</span></a>`
+                        : deliveryMailto
+                        ? `<a class="btn-secondary request-transition" href="${window.escapeHtml(deliveryMailto)}"><i class="fa-solid fa-envelope"></i> Redactar aviso de entrega</a>`
+                        : '<span class="request-no-email">Sin correo o hilo vinculado</span>';
+                    const copyResponseButton = `<button type="button" class="btn-secondary request-transition" data-delivery-response="${window.escapeHtml(deliveryBody)}" onclick="window.copiarRespuestaEntrega(this)"><i class="fa-solid fa-copy" aria-hidden="true"></i> Copiar respuesta</button>`;
+                    const linkThreadControl = !request.gmailThreadUrl
+                        ? `<label class="request-thread-link-field">Enlace del hilo<input type="url" data-thread-url-for="${safeId}" placeholder="Pega aquí la URL de Gmail" maxlength="500"></label><button type="button" class="btn-secondary request-transition" onclick="window.vincularHiloSolicitud('${safeId}', this)">Vincular hilo</button>`
+                        : '';
+                    action = `<span class="request-complete"><i class="fa-solid fa-circle-check"></i> Entregada</span>${composeButton}${copyResponseButton}${linkThreadControl}`;
                 } else {
                     action = '<span class="request-complete"><i class="fa-solid fa-circle-check"></i> Entregada</span>';
                 }
@@ -1110,13 +1146,45 @@ import { apiRequest } from "./services/api.js";
                         </span>
                     </button>
                     <div class="request-card-details" id="${detailsId}" hidden>
-                        <div class="request-card-summary"><span>${request.items.length} líneas</span><strong>${total} unidades</strong>${request.proveedor ? `<span>Proveedor: ${window.escapeHtml(request.proveedor)}</span>` : ''}</div>
+                        <div class="request-card-summary"><span>${request.items.length} líneas</span><strong>${total} unidades</strong>${request.proveedor ? `<span>Proveedor: ${window.escapeHtml(request.proveedor)}</span>` : ''}${request.correoSolicitante ? `<span>Correo: ${window.escapeHtml(request.correoSolicitante)}</span>` : ''}</div>
                         ${accessorySummary}
                         <div class="request-item-list">${lines}</div>
                         <footer class="request-card-actions">${action}</footer>
                     </div>
                 </article>`;
             }).join('');
+        };
+
+        window.vincularHiloSolicitud = async function(idSolicitud, button) {
+            const field = document.querySelector(`[data-thread-url-for="${idSolicitud}"]`);
+            const gmailThreadUrl = field ? field.value.trim() : '';
+            if (!gmailThreadUrl) {
+                window.mostrarAlerta('Pega el enlace del hilo de Gmail', 'error');
+                return;
+            }
+            button.disabled = true;
+            try {
+                const response = await apiRequest({ action: 'vincular_hilo_solicitud', idSolicitud, gmailThreadUrl });
+                const result = await response.json();
+                if (result.status !== 'success') throw new Error(result.message || 'No se pudo vincular el hilo');
+                window.mostrarAlerta('Hilo de Gmail vinculado a la solicitud', 'success');
+                window.cargarSolicitudes();
+            } catch (error) {
+                window.mostrarAlerta(error.message, 'error');
+            } finally {
+                button.disabled = false;
+            }
+        };
+
+        window.copiarRespuestaEntrega = async function(button) {
+            const responseText = button.dataset.deliveryResponse || '';
+            if (!responseText) return;
+            try {
+                await navigator.clipboard.writeText(responseText);
+                window.mostrarAlerta('Respuesta copiada. Abre el hilo y pégala en “Responder a todos”.', 'success');
+            } catch (error) {
+                window.prompt('Copia este texto y pégalo en la respuesta del hilo:', responseText);
+            }
         };
 
         window.actualizarEstadoSolicitud = async function(idSolicitud, estado, button) {

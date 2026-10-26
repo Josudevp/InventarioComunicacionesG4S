@@ -904,6 +904,18 @@
     @apply grid gap-2.5;
   }
 
+  .request-email-field {
+    @apply mb-3 mt-0 block max-w-xl text-xs font-bold text-slate-600;
+  }
+
+  .request-email-field input {
+    @apply mt-1 p-2 text-sm;
+  }
+
+  .request-email-field small {
+    @apply mt-1 block font-normal text-slate-500;
+  }
+
   .request-draft-row {
     @apply grid items-end gap-2 rounded-md border border-slate-200 bg-slate-50 p-3;
     grid-template-columns: minmax(12rem, 2fr) minmax(10rem, 1.3fr) minmax(9rem, 1fr) minmax(9rem, 1fr) 6rem 44px;
@@ -1123,8 +1135,28 @@
     @apply mt-1 p-2 text-sm;
   }
 
+  .request-thread-link-field {
+    @apply mb-0 mt-0 w-full max-w-md text-[11px];
+  }
+
+  .request-thread-link-field input {
+    @apply mt-1 p-2 text-sm;
+  }
+
   .request-transition {
     @apply m-0 w-auto px-3 py-2 text-xs;
+  }
+
+  .request-gmail-link {
+    @apply inline-flex min-h-9 shrink-0 items-center gap-2 rounded-md border border-red-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 no-underline shadow-sm transition-colors;
+  }
+
+  .request-gmail-link:hover {
+    @apply border-red-300 bg-red-50 text-red-800 shadow;
+  }
+
+  .request-gmail-link:focus-visible {
+    @apply outline-none ring-2 ring-red-500 ring-offset-2;
   }
 
   .request-complete {

@@ -33,7 +33,7 @@ var CONFIG = {
   inventorySheet: "Maestro de inventario",
   movementsSheet: "Registro de Movimientos",
   requestsSheet: "Solicitudes",
-  requestHeaders: ["ID_Solicitud", "Fecha_Registro", "Registrado_Por", "Cliente", "Regional", "Entregado_A", "ID_Articulo", "Descripcion", "Cantidad", "Estado", "Proveedor", "Fecha_Solicitud_Proveedor", "Fecha_Recepcion", "Fecha_Entrega", "ID_Transaccion_Recepcion", "ID_Transaccion_Entrega", "Observaciones", "Actualizado_Por", "Fecha_Actualizacion", "Costo_Unitario_COP"],
+  requestHeaders: ["ID_Solicitud", "Fecha_Registro", "Registrado_Por", "Cliente", "Regional", "Entregado_A", "ID_Articulo", "Descripcion", "Cantidad", "Estado", "Proveedor", "Fecha_Solicitud_Proveedor", "Fecha_Recepcion", "Fecha_Entrega", "ID_Transaccion_Recepcion", "ID_Transaccion_Entrega", "Observaciones", "Actualizado_Por", "Fecha_Actualizacion", "Costo_Unitario_COP", "Correo_Solicitante", "Gmail_Thread_ID", "Gmail_Thread_URL"],
   requestStatuses: ["Registrada", "Solicitada", "Recibida", "Entregada", "Anulada"],
   movementHeaders: ["ID_Transaccion", "Fecha_Hora", "ID_Articulo", "Tipo_Movimiento", "Cantidad", "Registrado_Por", "Entregado_A_Usuario", "Cliente_Proveedor", "Regional", "Estado", "ID_Transaccion_Relacionada", "Motivo", "Regional_Origen", "Regional_Destino", "Clave_Idempotencia", "Huella_Solicitud"],
   movementTypes: ["Entrada", "Salida", "Devolucion", "Ajuste positivo", "Ajuste negativo", "Baja por daño"],
@@ -177,6 +177,7 @@ function doPost(e) {
     if (action === "obtener_dashboard") return getDashboard_(session);
     if (action === "obtener_solicitudes") return getRequests_(data, session);
     if (action === "crear_solicitud") return createRequest_(data, session);
+    if (action === "vincular_hilo_solicitud") return linkRequestThread_(data, session);
     if (action === "actualizar_estado_solicitud") return updateRequestStatus_(data, session);
     if (action === "procesar_correos_inventario") return processEmailRequests_(session);
     if (action === "registrar_movimiento") return registerMovement_(data, session);
@@ -658,6 +659,9 @@ function getRequests_(data, session) {
         fechaRecepcion: row[12],
         fechaEntrega: row[13],
         observaciones: clean_(row[16], 500),
+        correoSolicitante: clean_(row[20], 200),
+        gmailThreadId: clean_(row[21], 200),
+        gmailThreadUrl: gmailThreadUrlFromStored_(row[22], row[21]),
         items: []
       };
     }
@@ -709,6 +713,12 @@ function createRequest_(data, session) {
     var requestId = Utilities.getUuid();
     var now = new Date();
     var observations = clean_(data.observaciones, 500);
+    var requesterEmail = clean_(data.correoSolicitante, 200);
+    if (requesterEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(requesterEmail)) {
+      throw new Error("El correo del solicitante no es valido");
+    }
+    var gmailThreadUrl = gmailThreadUrlFromInput_(data.gmailThreadUrl);
+    var gmailThreadId = gmailThreadIdFromUrl_(gmailThreadUrl);
     var rows = lines.map(function(line) {
       var id = clean_(line.idArticulo, 100);
       var item = catalog[id];
@@ -721,11 +731,64 @@ function createRequest_(data, session) {
         throw new Error("Cada linea requiere cliente, regional, destinatario y cantidad valida");
       }
       return [requestId, now, session.usuario, client, regional, recipient, id, item.description, quantity,
-        "Registrada", "", "", "", "", "", "", observations, session.usuario, now, item.cost];
+        "Registrada", "", "", "", "", "", "", observations, session.usuario, now, item.cost, requesterEmail, gmailThreadId, gmailThreadUrl];
     });
     var sheet = requestSheet_();
     sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, CONFIG.requestHeaders.length).setValues(rows);
     return json_({ status: "success", idSolicitud: requestId, estado: "Registrada", lineas: rows.length });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function gmailThreadIdFromUrl_(value) {
+  var url = clean_(value, 500);
+  if (!url) return "";
+  if (!/^https:\/\/mail\.google\.com\//i.test(url)) {
+    throw new Error("El enlace debe pertenecer a mail.google.com");
+  }
+  var match = url.match(/#(?:[^/]+\/)+([A-Za-z0-9_-]+)(?:[?#].*)?$/);
+  if (!match) throw new Error("No se pudo identificar el hilo en el enlace de Gmail");
+  return match[1];
+}
+
+function gmailThreadUrlFromInput_(value) {
+  var url = clean_(value, 500);
+  if (!url) return "";
+  gmailThreadIdFromUrl_(url);
+  return url;
+}
+
+function gmailThreadUrlFromStored_(url, threadId) {
+  var storedUrl = clean_(url, 500);
+  if (storedUrl) return storedUrl;
+  var legacyThreadId = clean_(threadId, 200);
+  return legacyThreadId
+    ? "https://mail.google.com/mail/u/0/#all/" + encodeURIComponent(legacyThreadId)
+    : "";
+}
+
+function linkRequestThread_(data, session) {
+  var requestId = clean_(data.idSolicitud, 100);
+  var threadUrl = gmailThreadUrlFromInput_(data.gmailThreadUrl);
+  var threadId = gmailThreadIdFromUrl_(threadUrl);
+  if (!requestId || !threadId) throw new Error("Solicitud y enlace de Gmail son requeridos");
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    var sheet = requestSheet_();
+    var values = sheet.getDataRange().getValues();
+    var matchingRows = [];
+    for (var i = 1; i < values.length; i++) {
+      if (String(values[i][0]) !== requestId) continue;
+      if (String(values[i][9]) === "Anulada") throw new Error("No se puede vincular el hilo a una solicitud anulada");
+      matchingRows.push(i + 1);
+    }
+    if (!matchingRows.length) throw new Error("Solicitud no encontrada");
+    matchingRows.forEach(function(row) {
+      sheet.getRange(row, 22, 1, 2).setValues([[threadId, threadUrl]]);
+    });
+    return json_({ status: "success", idSolicitud: requestId });
   } finally {
     lock.releaseLock();
   }
@@ -1410,7 +1473,7 @@ function requestSheet_() {
   var headers = sheet.getRange(1, 1, 1, CONFIG.requestHeaders.length).getValues()[0];
   for (var i = 0; i < CONFIG.requestHeaders.length; i++) {
     if (String(headers[i] || "").trim() !== CONFIG.requestHeaders[i]) {
-      if (i === CONFIG.requestHeaders.length - 1 && !String(headers[i] || "").trim()) {
+      if (i >= CONFIG.requestHeaders.length - 3 && !String(headers[i] || "").trim()) {
         sheet.getRange(1, i + 1).setValue(CONFIG.requestHeaders[i]);
         continue;
       }

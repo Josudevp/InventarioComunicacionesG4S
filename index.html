@@ -245,6 +245,14 @@
                     <div class="section-heading">
                         <div><h2 id="requests-title">Nueva solicitud</h2><p class="helper-text">Cada línea corresponde a un artículo y un destinatario.</p></div>
                     </div>
+                    <label class="request-email-field" for="requester-email">Correo de quien solicitó (opcional)
+                        <input type="email" id="requester-email" maxlength="200" autocomplete="email" placeholder="nombre@empresa.com">
+                        <small>Se usará para redactar un aviso si no vinculas el hilo original.</small>
+                    </label>
+                    <label class="request-email-field" for="request-thread-url">Enlace al hilo original de Gmail (opcional)
+                        <input type="url" id="request-thread-url" maxlength="500" placeholder="https://mail.google.com/mail/u/0/#inbox/...">
+                        <small>Al marcar la solicitud entregada, podrás abrir este hilo desde su seguimiento.</small>
+                    </label>
                     <div id="request-draft-rows" class="request-draft-rows"></div>
                     <div class="request-form-actions">
                         <button type="button" class="btn-secondary" id="btn-add-request-line"><i class="fa-solid fa-plus"></i> Agregar línea</button>
