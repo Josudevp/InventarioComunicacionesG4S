@@ -818,47 +818,50 @@
     font-weight: 700;
   }
 
-  .purchases-chart {
+  .accessories-chart {
     @apply mt-3 min-h-0 flex-1 overflow-auto;
-    max-height: 250px;
+    max-height: 260px;
   }
 
-  .purchase-chart-svg {
+  .accessory-chart-svg {
     display: block;
     width: 100%;
-    min-width: 420px;
-    height: 240px;
+    min-width: 520px;
+    height: 250px;
   }
 
-  .purchase-bar-segment {
+  .accessory-column-group {
     cursor: pointer;
-    transition: filter 150ms ease, opacity 150ms ease;
-  }
-
-  .purchase-bar-segment:hover,
-  .purchase-bar-segment:focus-visible {
-    filter: brightness(.82);
     outline: none;
   }
 
-  .purchases-legend {
-    @apply mt-2 flex max-h-20 flex-wrap justify-center gap-1 overflow-auto;
+  .accessory-column-group:focus-visible .accessory-column-bar {
+    stroke: #2563eb;
+    stroke-width: 2;
   }
 
-  .purchase-legend-button {
-    @apply m-0 w-auto gap-1.5 rounded px-2 py-1 text-[11px] font-semibold text-slate-600;
-    background: transparent;
+  .accessory-column-bar {
+    fill: #0f9f6e;
+    transition: filter 150ms ease, opacity 150ms ease;
   }
 
-  .purchase-legend-button:hover {
-    @apply bg-slate-100;
+  .accessory-column-value {
+    fill: #334155;
+    font-size: 11px;
+    font-weight: 700;
   }
 
-  .purchase-legend-button.is-muted {
-    @apply opacity-40;
+  .accessory-column-label {
+    font-size: 10px;
   }
 
-  .regional-chart > .chart-empty-label {
+  .accessory-column-group:hover .accessory-column-bar,
+  .accessory-column-group.is-selected .accessory-column-bar {
+    filter: brightness(.88);
+  }
+
+  .regional-chart > .chart-empty-label,
+  .accessories-chart > .chart-empty-label {
     @apply py-10 text-center text-sm text-slate-500;
     fill: currentColor;
   }

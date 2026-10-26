@@ -469,6 +469,12 @@ function getDashboard_(session) {
   var movementMonths = [];
   var movementMonthTotals = Object.create(null);
   var deliveriesByRegional = Object.create(null);
+  var deliveriesByArticle = Object.create(null);
+  var deliveryPeriodDays = [7, 30, 90];
+  var deliveriesByArticlePeriod = Object.create(null);
+  deliveryPeriodDays.forEach(function(days) {
+    deliveriesByArticlePeriod[days] = Object.create(null);
+  });
   var purchasesByMonthSupplier = Object.create(null);
   var purchasesBySupplier = Object.create(null);
   for (var monthOffset = 11; monthOffset >= 0; monthOffset--) {
@@ -549,7 +555,33 @@ function getDashboard_(session) {
     if (isConfirmedSalida) {
       var regional = clean_(movementRow[8], 100) || "Sin regional";
       deliveriesByRegional[regional] = (deliveriesByRegional[regional] || 0) + quantity;
+      var articleId = clean_(movementRow[2], 100);
+      if (articleId) {
+        deliveriesByArticle[articleId] = (deliveriesByArticle[articleId] || 0) + quantity;
+        if (!isNaN(movementDate.getTime())) {
+          var movementAge = now.getTime() - movementDate.getTime();
+          deliveryPeriodDays.forEach(function(days) {
+            if (movementAge >= 0 && movementAge <= days * 24 * 60 * 60 * 1000) {
+              deliveriesByArticlePeriod[days][articleId] =
+                (deliveriesByArticlePeriod[days][articleId] || 0) + quantity;
+            }
+          });
+        }
+      }
     }
+  }
+
+  function accessoryDeliveryList(deliveries) {
+    return Object.keys(deliveries).map(function(articleId) {
+      var article = inventoryRows.find(function(row) { return clean_(row[0], 100) === articleId; });
+      return {
+        idArticulo: articleId,
+        accesorio: article ? clean_(article[2], 200) || articleId : articleId,
+        unidades: deliveries[articleId]
+      };
+    }).sort(function(first, second) {
+      return second.unidades - first.unidades || first.accesorio.localeCompare(second.accesorio);
+    });
   }
 
   return json_({
@@ -573,6 +605,12 @@ function getDashboard_(session) {
       }).sort(function(first, second) {
         return second.unidades - first.unidades || first.regional.localeCompare(second.regional);
       }),
+      accesoriosMasEntregados: accessoryDeliveryList(deliveriesByArticle),
+      accesoriosMasEntregadosPorPeriodo: {
+        dias7: accessoryDeliveryList(deliveriesByArticlePeriod[7]),
+        dias30: accessoryDeliveryList(deliveriesByArticlePeriod[30]),
+        dias90: accessoryDeliveryList(deliveriesByArticlePeriod[90])
+      },
       comprasPorMesProveedor: movementMonths.map(function(key) {
         return {
           mes: key,

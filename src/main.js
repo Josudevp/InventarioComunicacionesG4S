@@ -5,10 +5,6 @@ import "choices.js/public/assets/styles/choices.min.css";
 import "./tailwind.css";
 import { apiRequest } from "./services/api.js";
 
-        // =========================================================================
-        // URL FIJA DE APPS SCRIPT
-        // =========================================================================
-        // Reemplaza este valor por la ruta local o URL HTTPS de tu imagen de logo.
         const LOGO_URL = "assets/LOGO_G4S.jpg";
 
         if ('serviceWorker' in navigator) { navigator.serviceWorker.register('sw.js').then(() => console.log("PWA SW Registrado v11")); }
@@ -73,13 +69,14 @@ import { apiRequest } from "./services/api.js";
         let dashboardChartData = null;
         let dashboardRequestStates = {};
         let dashboardRegionalData = [];
-        let dashboardPurchaseData = [];
-        let dashboardPurchaseSuppliers = [];
-        let dashboardVisibleSuppliers = {};
+        let dashboardAccessoryData = [];
+        let dashboardAccessoryPeriods = {};
+        let dashboardAccessoryPeriod = 'historico';
         let dashboardChartMonths = 6;
         let dashboardVisibleSeries = { entradas: true, salidas: true };
         let dashboardSelectedRequestState = '';
         let dashboardSelectedRegional = '';
+        let dashboardSelectedAccessory = '';
         let inactivityTimer = null;
         const storedUserActivity = sessionStorage.getItem("g4sLastActivity");
         let lastUserActivity = storedUserActivity ? Number(storedUserActivity) : Date.now();
@@ -1325,107 +1322,103 @@ import { apiRequest } from "./services/api.js";
                 'Selecciona una regional para ver el detalle.';
         };
 
-        window.seleccionarCompraDashboard = function(month, supplier, units) {
-            const monthLabel = new Intl.DateTimeFormat('es-CO', { month: 'long', year: 'numeric' })
-                .format(new Date(`${month}-01T12:00:00`));
-            document.getElementById('dashboard-purchases-detail').textContent =
-                `${supplier} · ${monthLabel}: ${Number(units || 0).toLocaleString('es-CO')} unidades recibidas`;
+        window.seleccionarAccesorioDashboard = function(index) {
+            const item = dashboardAccessoryData[index];
+            if (!item) return;
+            dashboardSelectedAccessory = item.idArticulo;
+                    const periodLabels = {
+                        dias7: 'Últimos 7 días',
+                        dias30: 'Últimos 30 días',
+                        dias90: 'Últimos 90 días',
+                        historico: 'Histórico'
+                    };
+            document.getElementById('dashboard-accessories-detail').textContent =
+                        `${item.accesorio} · ${periodLabels[dashboardAccessoryPeriod]}: ${Number(item.unidades || 0).toLocaleString('es-CO')} unidades entregadas`;
+            document.querySelectorAll('[data-accessory-index]').forEach(bar => {
+                const selected = Number(bar.dataset.accessoryIndex) === index;
+                bar.setAttribute('aria-pressed', String(selected));
+                bar.classList.toggle('is-selected', selected);
+            });
         };
 
-        window.renderizarGraficoCompras = function(monthlyData, supplierData) {
-            const container = document.getElementById('dashboard-purchases-chart');
-            const legend = document.getElementById('dashboard-purchases-legend');
-            if (!container || !legend) return;
-            dashboardPurchaseData = Array.isArray(monthlyData) ? monthlyData.slice(-12) : [];
-            dashboardPurchaseSuppliers = Array.isArray(supplierData) ? supplierData : [];
-            const supplierNames = dashboardPurchaseSuppliers.map(item => item.proveedor);
-            dashboardVisibleSuppliers = Object.fromEntries(
-                supplierNames.map(name => [name, dashboardVisibleSuppliers[name] !== false])
-            );
-            const colors = ['#e11d48', '#142c46', '#0f9f6e', '#7c3aed', '#d97706', '#0284c7', '#be185d', '#4d7c0f', '#475569', '#0891b2'];
-            const colorFor = supplier => {
-                const index = supplierNames.indexOf(supplier);
-                return colors[(index < 0 ? 0 : index) % colors.length];
-            };
-            if (!supplierNames.length || !dashboardPurchaseData.length) {
-                container.innerHTML = '<p class="chart-empty-label">Sin entradas registradas en los últimos 12 meses</p>';
-                legend.innerHTML = '';
-                document.getElementById('dashboard-purchases-detail').textContent =
-                    'Las compras se calculan únicamente con movimientos de tipo Entrada.';
+                window.seleccionarPeriodoAccesorios = function(period) {
+                    if (!['dias7', 'dias30', 'dias90', 'historico'].includes(period)) return;
+                    dashboardAccessoryPeriod = period;
+                    document.querySelectorAll('[data-accessory-period]').forEach(button => {
+                        const active = button.dataset.accessoryPeriod === period;
+                        button.classList.toggle('is-active', active);
+                        button.setAttribute('aria-pressed', String(active));
+                    });
+                    window.renderizarGraficoAccesorios();
+                };
+
+                window.renderizarGraficoAccesorios = function(periodData, historicalData) {
+                    if (periodData) {
+                        dashboardAccessoryPeriods = Object.assign({}, periodData);
+                        if (Array.isArray(historicalData)) dashboardAccessoryPeriods.historico = historicalData;
+                    }
+            const container = document.getElementById('dashboard-accessories-chart');
+            if (!container) return;
+                    const selectedPeriodData = dashboardAccessoryPeriods[dashboardAccessoryPeriod];
+                    dashboardAccessoryData = Array.isArray(selectedPeriodData)
+                        ? selectedPeriodData.filter(item => item && item.idArticulo && item.accesorio)
+                    .slice()
+                    .sort((first, second) => Number(second.unidades) - Number(first.unidades) || first.accesorio.localeCompare(second.accesorio))
+                    .slice(0, 8)
+                : [];
+            if (!dashboardAccessoryData.length) {
+                        container.innerHTML = '<p class="chart-empty-label">Sin entregas registradas en este periodo</p>';
+                document.getElementById('dashboard-accessories-detail').textContent =
+                            'No hay accesorios entregados para mostrar en este periodo.';
                 return;
             }
+            if (!dashboardAccessoryData.some(item => item.idArticulo === dashboardSelectedAccessory)) {
+                dashboardSelectedAccessory = '';
+            }
             const width = 640;
-            const height = 240;
-            const margin = { top: 14, right: 20, bottom: 32, left: 42 };
-            const chartWidth = width - margin.left - margin.right;
-            const chartHeight = height - margin.top - margin.bottom;
-            const rows = dashboardPurchaseData;
-            const visibleSuppliers = supplierNames.filter(name => dashboardVisibleSuppliers[name]);
-            const totals = rows.map(row => (row.proveedores || [])
-                .filter(item => dashboardVisibleSuppliers[item.proveedor])
-                .reduce((sum, item) => sum + (Number(item.unidades) || 0), 0));
-            const maxTotal = Math.max(...totals, 1);
-            const step = Math.max(1, Math.ceil(maxTotal / 4));
-            const axisMax = step * 4;
-            const y = value => margin.top + chartHeight - (value / axisMax) * chartHeight;
-            const grid = Array.from({ length: 5 }, (_, index) => {
-                const value = axisMax - step * index;
-                const lineY = y(value);
-                return `<g class="chart-grid-line"><line x1="${margin.left}" y1="${lineY}" x2="${width - margin.right}" y2="${lineY}"></line><text x="${margin.left - 8}" y="${lineY + 4}" text-anchor="end">${value.toLocaleString('es-CO')}</text></g>`;
-            }).join('');
-            const groupWidth = chartWidth / rows.length;
-            const barWidth = Math.min(28, groupWidth * 0.55);
-            const bars = rows.map((row, rowIndex) => {
-                const center = margin.left + groupWidth * (rowIndex + 0.5);
-                let accumulated = 0;
-                const segments = (row.proveedores || [])
-                    .filter(item => dashboardVisibleSuppliers[item.proveedor])
-                    .map(item => {
-                        const amount = Number(item.unidades) || 0;
-                        const segmentHeight = amount / axisMax * chartHeight;
-                        const segmentY = y(accumulated + amount);
-                        const segment = `<rect class="purchase-bar-segment" data-purchase-month="${window.escapeHtml(row.mes)}" data-purchase-supplier="${window.escapeHtml(item.proveedor)}" data-purchase-units="${amount}" x="${center - barWidth / 2}" y="${segmentY}" width="${barWidth}" height="${Math.max(segmentHeight, amount ? 1 : 0)}" fill="${colorFor(item.proveedor)}" rx="2" tabindex="0" role="button" aria-label="${window.escapeHtml(item.proveedor)}, ${row.mes}: ${amount.toLocaleString('es-CO')} unidades recibidas">
-                            <title>${window.escapeHtml(item.proveedor)} · ${row.mes}: ${amount.toLocaleString('es-CO')} unidades recibidas</title>
-                        </rect>`;
-                        accumulated += amount;
-                        return segment;
+                    const height = 270;
+                    const margin = { top: 28, right: 18, bottom: 58, left: 46 };
+                    const chartWidth = width - margin.left - margin.right;
+                    const chartHeight = height - margin.top - margin.bottom;
+            const maxValue = Math.max(...dashboardAccessoryData.map(item => Number(item.unidades) || 0), 1);
+                    const step = Math.max(1, Math.ceil(maxValue / 4));
+                    const axisMax = step * 4;
+                    const y = value => margin.top + chartHeight - value / axisMax * chartHeight;
+                    const grid = Array.from({ length: 5 }, (_, index) => {
+                        const value = axisMax - step * index;
+                        const lineY = y(value);
+                        return `<g class="chart-grid-line"><line x1="${margin.left}" y1="${lineY}" x2="${width - margin.right}" y2="${lineY}"></line><text x="${margin.left - 8}" y="${lineY + 4}" text-anchor="end">${value.toLocaleString('es-CO')}</text></g>`;
                     }).join('');
-                const monthLabel = new Intl.DateTimeFormat('es-CO', { month: 'short' })
-                    .format(new Date(`${row.mes}-01T12:00:00`))
-                    .replace('.', '');
-                return `<g>${segments}<text class="chart-month-label" x="${center}" y="${height - 10}" text-anchor="middle">${monthLabel}</text></g>`;
+                    const groupWidth = chartWidth / dashboardAccessoryData.length;
+                    const barWidth = Math.min(38, groupWidth * 0.56);
+            const bars = dashboardAccessoryData.map((item, index) => {
+                const value = Number(item.unidades) || 0;
+                        const center = margin.left + groupWidth * (index + 0.5);
+                        const barHeight = value / axisMax * chartHeight;
+                const selected = dashboardSelectedAccessory === item.idArticulo;
+                const label = String(item.accesorio);
+                        const displayLabel = label.length > 11 ? `${label.slice(0, 10)}…` : label;
+                        return `<g class="accessory-column-group${selected ? ' is-selected' : ''}" data-accessory-index="${index}" role="button" tabindex="0" aria-pressed="${selected}" aria-label="${window.escapeHtml(label)}: ${value.toLocaleString('es-CO')} unidades entregadas">
+                            <title>${window.escapeHtml(label)}: ${value.toLocaleString('es-CO')} unidades entregadas</title>
+                            <rect class="chart-bar accessory-column-bar" x="${center - barWidth / 2}" y="${y(value)}" width="${barWidth}" height="${Math.max(barHeight, value ? 1 : 0)}" rx="3"></rect>
+                            <text class="accessory-column-value" x="${center}" y="${Math.max(y(value) - 7, margin.top - 8)}" text-anchor="middle">${value.toLocaleString('es-CO')}</text>
+                            <text class="chart-month-label accessory-column-label" x="${center}" y="${height - 24}" text-anchor="middle">${window.escapeHtml(displayLabel)}</text>
+                </g>`;
             }).join('');
-            const emptyMessage = visibleSuppliers.length && totals.some(total => total > 0)
-                ? ''
-                : '<text class="chart-empty-label" x="320" y="110" text-anchor="middle">Sin entradas de los proveedores seleccionados</text>';
-            container.innerHTML = `<svg class="purchase-chart-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="Unidades compradas por proveedor en los últimos doce meses">${grid}${bars}${emptyMessage}</svg>`;
-            container.querySelectorAll('.purchase-bar-segment').forEach(segment => {
-                segment.addEventListener('click', () => {
-                    window.seleccionarCompraDashboard(
-                        segment.dataset.purchaseMonth,
-                        segment.dataset.purchaseSupplier,
-                        segment.dataset.purchaseUnits
-                    );
-                });
-                segment.addEventListener('keydown', event => {
+                    container.innerHTML = `<svg class="accessory-chart-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="Accesorios ordenados por unidades entregadas">${grid}${bars}</svg>`;
+            container.querySelectorAll('[data-accessory-index]').forEach(bar => {
+                const select = () => window.seleccionarAccesorioDashboard(Number(bar.dataset.accessoryIndex));
+                bar.addEventListener('click', select);
+                bar.addEventListener('keydown', event => {
                     if (event.key !== 'Enter' && event.key !== ' ') return;
                     event.preventDefault();
-                    segment.click();
+                    select();
                 });
             });
-            legend.innerHTML = supplierNames.map((supplier, index) => {
-                const active = dashboardVisibleSuppliers[supplier];
-                return `<button type="button" class="purchase-legend-button${active ? '' : ' is-muted'}" data-purchase-supplier-index="${index}" aria-pressed="${active}">
-                    <span class="chart-legend-dot" style="--legend-color:${colorFor(supplier)}"></span>${window.escapeHtml(supplier)}
-                </button>`;
-            }).join('');
-            legend.querySelectorAll('[data-purchase-supplier-index]').forEach(button => {
-                button.addEventListener('click', () => {
-                    const supplier = supplierNames[Number(button.dataset.purchaseSupplierIndex)];
-                    dashboardVisibleSuppliers[supplier] = !dashboardVisibleSuppliers[supplier];
-                    window.renderizarGraficoCompras(dashboardPurchaseData, dashboardPurchaseSuppliers);
-                });
-            });
+            const selectedIndex = dashboardAccessoryData.findIndex(item => item.idArticulo === dashboardSelectedAccessory);
+            if (selectedIndex >= 0) window.seleccionarAccesorioDashboard(selectedIndex);
+            else document.getElementById('dashboard-accessories-detail').textContent =
+                'Selecciona un accesorio para ver las unidades entregadas.';
         };
 
         window.cargarDashboard = function() {
@@ -1454,7 +1447,7 @@ import { apiRequest } from "./services/api.js";
                     window.renderizarGraficoUnidades();
                     window.renderizarGraficoSolicitudes(states);
                     window.renderizarGraficoRegional(data.entregasPorRegional);
-                    window.renderizarGraficoCompras(data.comprasPorMesProveedor, data.proveedoresCompras);
+                    window.renderizarGraficoAccesorios(data.accesoriosMasEntregadosPorPeriodo, data.accesoriosMasEntregados);
                     feedback.hidden = true;
                 }).catch(error => {
                     console.error('Dashboard no disponible:', error);
@@ -1561,6 +1554,11 @@ import { apiRequest } from "./services/api.js";
                     option.setAttribute('aria-pressed', String(active));
                 });
                 window.renderizarGraficoUnidades();
+            });
+        });
+        document.querySelectorAll('[data-accessory-period]').forEach(button => {
+            button.addEventListener('click', () => {
+                window.seleccionarPeriodoAccesorios(button.dataset.accessoryPeriod);
             });
         });
         document.querySelectorAll('[data-dashboard-series]').forEach(button => {

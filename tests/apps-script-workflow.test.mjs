@@ -290,23 +290,38 @@ test('dashboard includes the last twelve months of incoming and outgoing unit to
   assert.equal(currentMonthTotals.salidas, 2);
 });
 
-test('dashboard groups confirmed deliveries by regional and excludes corrected movements', () => {
+test('dashboard ranks delivered accessories and excludes corrected movements', () => {
   const { context, spreadsheet } = createRuntime();
   const session = { usuario: 'operador', rol: 'usuario' };
+  const now = new Date();
+  const daysAgo = days => new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
+  spreadsheet.getSheetByName('Maestro de inventario').getRange(3, 1, 1, 11).setValues([
+    ['ADAPT-HDMI', 'Adaptador', 'Adaptador HDMI', 0, 0, 0, 0, 1, '', true, 15000]
+  ]);
   const movements = spreadsheet.getSheetByName('Registro de Movimientos');
-  movements.getRange(2, 1, 4, 14).setValues([
-    ['sale-bogota-1', new Date(), 'CARG-USB', 'Salida', 5, 'operador', 'Ana', 'Cliente A', 'Bogota', 'Confirmado', '', '', '', ''],
-    ['sale-bogota-2', new Date(), 'CARG-USB', 'Salida', 3, 'operador', 'Luis', 'Cliente B', 'Bogota', 'Confirmado', '', '', '', ''],
-    ['sale-cali', new Date(), 'CARG-USB', 'Salida', 4, 'operador', 'Eva', 'Cliente C', 'Cali', 'Confirmado', '', '', '', ''],
-    ['sale-reversed', new Date(), 'CARG-USB', 'Salida', 9, 'operador', 'Mia', 'Cliente D', 'Cali', 'Reversado', '', '', '', '']
+  movements.getRange(2, 1, 5, 14).setValues([
+    ['sale-bogota-1', now, 'CARG-USB', 'Salida', 5, 'operador', 'Ana', 'Cliente A', 'Bogota', 'Confirmado', '', '', '', ''],
+    ['sale-bogota-2', daysAgo(10), 'CARG-USB', 'Salida', 3, 'operador', 'Luis', 'Cliente B', 'Bogota', 'Confirmado', '', '', '', ''],
+    ['sale-cali', daysAgo(45), 'CARG-USB', 'Salida', 4, 'operador', 'Eva', 'Cliente C', 'Cali', 'Confirmado', '', '', '', ''],
+    ['sale-reversed', now, 'CARG-USB', 'Salida', 9, 'operador', 'Mia', 'Cliente D', 'Cali', 'Reversado', '', '', '', ''],
+    ['sale-adapter', daysAgo(95), 'ADAPT-HDMI', 'Salida', 6, 'operador', 'Eva', 'Cliente C', 'Cali', 'Confirmado', '', '', '', '']
   ]);
 
   const dashboard = response(context.getDashboard_(session));
 
   assert.deepEqual(JSON.parse(JSON.stringify(dashboard.data.entregasPorRegional)), [
-    { regional: 'Bogota', unidades: 8 },
-    { regional: 'Cali', unidades: 4 }
+    { regional: 'Cali', unidades: 10 },
+    { regional: 'Bogota', unidades: 8 }
   ]);
+  assert.deepEqual(JSON.parse(JSON.stringify(dashboard.data.accesoriosMasEntregados)), [
+    { idArticulo: 'CARG-USB', accesorio: 'Cargador USB', unidades: 12 },
+    { idArticulo: 'ADAPT-HDMI', accesorio: 'Adaptador HDMI', unidades: 6 }
+  ]);
+  assert.deepEqual(JSON.parse(JSON.stringify(dashboard.data.accesoriosMasEntregadosPorPeriodo)), {
+    dias7: [{ idArticulo: 'CARG-USB', accesorio: 'Cargador USB', unidades: 5 }],
+    dias30: [{ idArticulo: 'CARG-USB', accesorio: 'Cargador USB', unidades: 8 }],
+    dias90: [{ idArticulo: 'CARG-USB', accesorio: 'Cargador USB', unidades: 12 }]
+  });
 });
 
 test('monthly purchases count only confirmed Entrada movements and preserve supplier names', () => {

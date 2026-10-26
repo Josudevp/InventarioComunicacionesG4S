@@ -152,13 +152,18 @@
                     <section class="dashboard-panel dashboard-chart-panel">
                         <div class="dashboard-panel-heading">
                             <div>
-                                <h2>Compras mensuales por proveedor</h2>
-                                <p>Unidades recibidas en movimientos de entrada · últimos 12 meses</p>
+                                <h2>Accesorios más entregados</h2>
+                                <p>Unidades de salida confirmadas · selecciona un periodo</p>
                             </div>
                         </div>
-                        <div id="dashboard-purchases-chart" class="purchases-chart" role="group" aria-label="Compras mensuales por proveedor"></div>
-                        <div id="dashboard-purchases-legend" class="purchases-legend" aria-label="Proveedores"></div>
-                        <p id="dashboard-purchases-detail" class="chart-detail" aria-live="polite">Selecciona una barra para ver el proveedor y el detalle.</p>
+                        <div class="chart-period accessory-period" role="group" aria-label="Periodo de entregas de accesorios">
+                            <button type="button" class="chart-period-button" data-accessory-period="dias7" aria-pressed="false">7 días</button>
+                            <button type="button" class="chart-period-button" data-accessory-period="dias30" aria-pressed="false">30 días</button>
+                            <button type="button" class="chart-period-button" data-accessory-period="dias90" aria-pressed="false">90 días</button>
+                            <button type="button" class="chart-period-button is-active" data-accessory-period="historico" aria-pressed="true">Histórico total</button>
+                        </div>
+                        <div id="dashboard-accessories-chart" class="accessories-chart" role="group" aria-label="Accesorios más entregados"></div>
+                        <p id="dashboard-accessories-detail" class="chart-detail" aria-live="polite">Selecciona un accesorio para ver las unidades entregadas.</p>
                     </section>
                 </div>
                 <div class="dashboard-lower">
