@@ -35,13 +35,17 @@ class Range {
     this.sheet.lastFormulas = formulas;
     return this;
   }
-  setDataValidation() { return this; }
+  setDataValidation(rule) {
+    this.sheet.validations.push({ row: this.row, column: this.column, rowCount: this.rowCount, columnCount: this.columnCount, rule });
+    return this;
+  }
 }
 
 class Sheet {
   constructor(name, rows = []) {
     this.name = name;
     this.rows = rows;
+    this.validations = [];
   }
 
   getLastRow() {
@@ -129,11 +133,15 @@ function createRuntime() {
       getActiveSpreadsheet: () => spreadsheet,
       openById: () => spreadsheet,
       flush() {},
-      newDataValidation: () => ({
-        requireValueInList() { return this; },
-        setAllowInvalid() { return this; },
-        build() { return {}; }
-      })
+      newDataValidation: () => {
+        const rule = {};
+        return {
+          requireValueInList(values) { rule.values = values; return this; },
+          requireNumberGreaterThanOrEqualTo(value) { rule.minimum = value; return this; },
+          setAllowInvalid(value) { rule.allowInvalid = value; return this; },
+          build() { return rule; }
+        };
+      }
     },
     PropertiesService: {
       getScriptProperties: () => ({
@@ -239,6 +247,21 @@ test('movement retries with the same idempotency key do not duplicate inventory 
     items: [{ idArticulo: 'CARG-USB', cantidad: 7 }]
   }, session), /clave de registro ya fue usada/);
   assert.equal(stockFor(spreadsheet, 'CARG-USB'), 6);
+});
+
+test('negative movement quantities are rejected and spreadsheet quantity columns disallow negatives', () => {
+  const { context, spreadsheet } = createRuntime();
+  const movements = spreadsheet.getSheetByName('Registro de Movimientos');
+
+  context.ensureMovementHeaders_(movements);
+  assert.throws(() => context.registerMovement_({
+    tipoMovimiento: 'Entrada',
+    proveedor: 'Proveedor A',
+    items: [{ idArticulo: 'CARG-USB', cantidad: -1 }]
+  }, { usuario: 'operador', rol: 'usuario' }), /cantidad invalida/i);
+  assert.equal(movements.getLastRow(), 1);
+  assert.ok(movements.validations.some(validation =>
+    validation.column === 5 && validation.rule.minimum === 1 && validation.rule.allowInvalid === false));
 });
 
 test('inventory formulas retain both sides of corrected movements', () => {
@@ -413,6 +436,10 @@ test('request receipt adds stock and delivery removes it exactly once', () => {
   assert.equal(requestSheet.rows[1][19], 30000);
   assert.equal(spreadsheet.getSheetByName('Registro de Movimientos').getLastRow(), 1);
 
+  requestSheet.rows[1][8] = -1;
+  assert.throws(() => context.updateRequestStatus_({ ...request, estado: 'Recibida' }, session), /cantidad invalida/i);
+  assert.equal(spreadsheet.getSheetByName('Registro de Movimientos').getLastRow(), 1);
+  requestSheet.rows[1][8] = 32;
   context.updateRequestStatus_({ ...request, estado: 'Recibida' }, session);
   assert.equal(stockFor(spreadsheet, 'CARG-USB'), 32);
   const receiptCount = spreadsheet.getSheetByName('Registro de Movimientos').getLastRow();
@@ -900,6 +927,21 @@ test('catalog write permissions are enforced for selected users on the server', 
   assert.equal(response(context.createAccessory_({ idArticulo: 'CBL-1', descripcion: 'Cable', stockMinimo: 2, costoUnitario: 4500 }, selected)).status, 'success');
   assert.equal(context.inventorySheet_().getRange(3, 11).getValue(), 4500);
   assert.throws(() => context.updateAccessory_({ idArticulo: 'CBL-1', descripcion: 'Nuevo nombre' }, unselected), /permiso/i);
+  assert.throws(() => context.updateAccessory_({ idArticulo: 'CBL-1', stockMinimo: -1 }, selected), /stock minimo invalido/i);
+  assert.ok(context.inventorySheet_().validations.some(validation =>
+    validation.column === 4 && validation.rule.minimum === 0 && validation.rule.allowInvalid === false));
+  assert.ok(context.inventorySheet_().validations.some(validation =>
+    validation.column === 8 && validation.rule.minimum === 0 && validation.rule.allowInvalid === false));
+});
+
+test('request quantity column rejects negative values in the spreadsheet', () => {
+  const { context, spreadsheet } = createRuntime();
+
+  context.requestSheet_();
+
+  const requests = spreadsheet.getSheetByName(context.CONFIG.requestsSheet);
+  assert.ok(requests.validations.some(validation =>
+    validation.column === 9 && validation.rule.minimum === 1 && validation.rule.allowInvalid === false));
 });
 
 test('catalog initializes the cost column without overwriting existing inventory fields', () => {

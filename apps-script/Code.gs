@@ -1039,6 +1039,12 @@ function updateRequestStatus_(data, session) {
     if (rows.some(function(row, index) { return index && row.row !== rows[index - 1].row + 1; })) {
       throw new Error("Las lineas de la solicitud no son contiguas; requiere revision administrativa");
     }
+    if (rows.some(function(row) {
+      var quantity = Number(row.values[8]);
+      return !Number.isInteger(quantity) || quantity < 1 || quantity > 9999;
+    })) {
+      throw new Error("La solicitud contiene una cantidad invalida");
+    }
 
     var now = new Date();
     var provider = clean_(data.proveedor, 150) || clean_(rows[0].values[10], 150);
@@ -1237,7 +1243,7 @@ function createAccessory_(data, session) {
   var id = clean_(data.idArticulo, 100);
   var description = clean_(data.descripcion, 200);
   var minimum = number_(data.stockMinimo);
-  if (!id || !description || minimum < 1) throw new Error("Datos de accesorio invalidos");
+  if (!id || !description || !Number.isInteger(minimum) || minimum < 1) throw new Error("Datos de accesorio invalidos");
   var sheet = inventorySheet_();
   ensureInventoryCostColumn_(sheet);
   var unitCost = Number(data.costoUnitario);
@@ -1261,11 +1267,13 @@ function updateAccessory_(data, session) {
   ensureInventoryCostColumn_(sheet);
   var unitCost = data.costoUnitario == null ? null : Number(data.costoUnitario);
   if (unitCost != null && (!isFinite(unitCost) || unitCost < 0 || unitCost > 1000000000)) throw new Error("Costo unitario invalido");
+  var minimum = data.stockMinimo == null ? null : Number(data.stockMinimo);
+  if (minimum != null && (!Number.isInteger(minimum) || minimum < 0)) throw new Error("Stock minimo invalido");
   var rows = sheet.getDataRange().getValues();
   for (var i = 1; i < rows.length; i++) {
     if (clean_(rows[i][0], 100).toUpperCase() !== id.toUpperCase()) continue;
     if (data.descripcion != null) sheet.getRange(i + 1, 3).setValue(clean_(data.descripcion, 200));
-    if (data.stockMinimo != null && Number(data.stockMinimo) >= 0) sheet.getRange(i + 1, 8).setValue(Number(data.stockMinimo));
+    if (minimum != null) sheet.getRange(i + 1, 8).setValue(minimum);
     if (data.activo != null) sheet.getRange(i + 1, CONFIG.inventoryActiveColumn).setValue(Boolean(data.activo));
     if (unitCost != null) sheet.getRange(i + 1, CONFIG.inventoryCostColumn).setValue(unitCost);
     return json_({ status: "success", message: "Accesorio actualizado" });
@@ -1343,6 +1351,7 @@ function ensureMovementHeaders_(sheet) {
   if (changed) sheet.getRange(1, 1, 1, CONFIG.movementHeaders.length).setValues([current]);
   var rule = SpreadsheetApp.newDataValidation().requireValueInList(CONFIG.movementTypes, true).setAllowInvalid(false).build();
   sheet.getRange(2, 4, Math.max(sheet.getMaxRows() - 1, 1), 1).setDataValidation(rule);
+  setMinimumNumberValidation_(sheet, 5, 1);
 }
 
 function refreshInventoryFormulas_(sheet, lastRow) {
@@ -1457,9 +1466,19 @@ function ensureInventoryCostColumn_(sheet) {
   var header = clean_(sheet.getRange(1, CONFIG.inventoryCostColumn).getValue(), 100);
   if (!header) {
     sheet.getRange(1, CONFIG.inventoryCostColumn).setValue("Costo_Unitario_COP");
-    return;
+  } else if (header !== "Costo_Unitario_COP") {
+    throw new Error("La columna K debe estar libre para Costo_Unitario_COP");
   }
-  if (header !== "Costo_Unitario_COP") throw new Error("La columna K debe estar libre para Costo_Unitario_COP");
+  setMinimumNumberValidation_(sheet, 4, 0);
+  setMinimumNumberValidation_(sheet, 8, 0);
+}
+
+function setMinimumNumberValidation_(sheet, column, minimum) {
+  var rule = SpreadsheetApp.newDataValidation()
+    .requireNumberGreaterThanOrEqualTo(minimum)
+    .setAllowInvalid(false)
+    .build();
+  sheet.getRange(2, column, Math.max(sheet.getMaxRows() - 1, 1), 1).setDataValidation(rule);
 }
 
 function requestSheet_() {
@@ -1468,6 +1487,7 @@ function requestSheet_() {
   if (!sheet) sheet = spreadsheet.insertSheet(CONFIG.requestsSheet);
   if (sheet.getLastRow() === 0) {
     sheet.getRange(1, 1, 1, CONFIG.requestHeaders.length).setValues([CONFIG.requestHeaders]);
+    setMinimumNumberValidation_(sheet, 9, 1);
     return sheet;
   }
   var headers = sheet.getRange(1, 1, 1, CONFIG.requestHeaders.length).getValues()[0];
@@ -1480,6 +1500,7 @@ function requestSheet_() {
       throw new Error("La hoja Solicitudes existe con encabezados incompatibles");
     }
   }
+  setMinimumNumberValidation_(sheet, 9, 1);
   return sheet;
 }
 

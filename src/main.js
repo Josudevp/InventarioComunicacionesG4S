@@ -597,12 +597,17 @@ import { apiRequest } from "./services/api.js";
                 window.mostrarAlerta('Selecciona un artículo para editar', 'error');
                 return;
             }
+            const minimum = Number(document.getElementById('edit-min').value);
+            if (!Number.isInteger(minimum) || minimum < 0) {
+                window.mostrarAlerta('El stock mínimo debe ser un número entero igual o mayor que cero', 'error');
+                return;
+            }
             const button = document.getElementById('btn-editar-acc');
             button.disabled = true;
             apiRequest({
                 action: 'actualizar_accesorio', idArticulo,
                 descripcion: document.getElementById('edit-desc').value,
-                stockMinimo: document.getElementById('edit-min').value,
+                stockMinimo: minimum,
                 costoUnitario: document.getElementById('edit-cost').value,
                 activo: document.getElementById('edit-active').checked
             }).then(response => response.json()).then(result => {
@@ -923,6 +928,8 @@ import { apiRequest } from "./services/api.js";
         document.getElementById('btn-crear-acc').addEventListener('click', () => {
             let payload = { action: "crear_accesorio", idArticulo: document.getElementById('new-sku').value, categoria: document.getElementById('new-cat').value, descripcion: document.getElementById('new-desc').value, stockMinimo: document.getElementById('new-min').value, costoUnitario: document.getElementById('new-cost').value };
             if(!payload.idArticulo || !document.getElementById('new-model').value.trim() || !payload.descripcion) { window.mostrarAlerta("Selecciona la categoría, escribe el modelo y completa la descripción", "error"); return; }
+            const minimum = Number(payload.stockMinimo);
+            if (!Number.isInteger(minimum) || minimum < 1) { window.mostrarAlerta("El stock mínimo debe ser un número entero mayor que cero", "error"); return; }
             let btn = document.getElementById('btn-crear-acc');
             btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Creando...';
             btn.disabled = true;
