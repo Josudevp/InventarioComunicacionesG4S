@@ -225,7 +225,7 @@ test('authenticated activity renews the server-side session lifetime', () => {
 
 test('movement retries with the same idempotency key do not duplicate inventory rows', () => {
   const { context, spreadsheet } = createRuntime();
-  const session = { usuario: 'operador', rol: 'usuario' };
+  const session = { usuario: 'administrador', rol: 'admin' };
   const movement = {
     tipoMovimiento: 'Entrada',
     proveedor: 'Proveedor A',
@@ -258,10 +258,35 @@ test('negative movement quantities are rejected and spreadsheet quantity columns
     tipoMovimiento: 'Entrada',
     proveedor: 'Proveedor A',
     items: [{ idArticulo: 'CARG-USB', cantidad: -1 }]
-  }, { usuario: 'operador', rol: 'usuario' }), /cantidad invalida/i);
+  }, { usuario: 'administrador', rol: 'admin' }), /cantidad invalida/i);
   assert.equal(movements.getLastRow(), 1);
   assert.ok(movements.validations.some(validation =>
     validation.column === 5 && validation.rule.minimum === 1 && validation.rule.allowInvalid === false));
+});
+
+test('manual movements and annulments are restricted to administrators', () => {
+  const { context, spreadsheet } = createRuntime();
+  const admin = { usuario: 'administrador', rol: 'admin' };
+  const operator = { usuario: 'operador', rol: 'usuario' };
+  const movement = response(context.registerMovement_({
+    tipoMovimiento: 'Entrada',
+    proveedor: 'Proveedor A',
+    items: [{ idArticulo: 'CARG-USB', cantidad: 2 }]
+  }, admin));
+
+  assert.throws(() => context.registerMovement_({
+    tipoMovimiento: 'Ajuste positivo',
+    motivo: 'Ajuste no autorizado',
+    items: [{ idArticulo: 'CARG-USB', cantidad: 1 }]
+  }, operator), /Solo un administrador/);
+  assert.throws(() => context.annulMovement_({
+    idTransaccion: movement.idTransaccion,
+    justificacion: 'Motivo'
+  }, operator), /Solo un administrador/);
+  assert.throws(() => context.annulMovement_({
+    idTransaccion: movement.idTransaccion
+  }, admin), /justificacion.*obligatoria/i);
+  assert.equal(stockFor(spreadsheet, 'CARG-USB'), 2);
 });
 
 test('inventory formulas retain both sides of corrected movements', () => {
@@ -296,7 +321,7 @@ test('legacy annulment inverse is neutralized without deleting its audit row', (
 
 test('dashboard includes the last twelve months of incoming and outgoing unit totals', () => {
   const { context, spreadsheet } = createRuntime();
-  const session = { usuario: 'operador', rol: 'usuario' };
+  const session = { usuario: 'administrador', rol: 'admin' };
   const now = new Date();
   const movements = spreadsheet.getSheetByName('Registro de Movimientos');
   movements.getRange(2, 1, 2, 14).setValues([
@@ -376,7 +401,7 @@ test('monthly purchases count only confirmed Entrada movements and preserve supp
 
 test('anular marks the original movement, creates no inverse, and is idempotent', () => {
     const { context, spreadsheet } = createRuntime();
-    const session = { usuario: 'operador', rol: 'usuario' };
+    const session = { usuario: 'administrador', rol: 'admin' };
     const original = response(context.registerMovement_({
       tipoMovimiento: 'Entrada',
       proveedor: 'Proveedor A',
@@ -384,11 +409,13 @@ test('anular marks the original movement, creates no inverse, and is idempotent'
       items: [{ idArticulo: 'CARG-USB', cantidad: 6 }]
     }, session));
     const correction = response(context.annulMovement_({
-      idTransaccion: original.idTransaccion
-    }));
+      idTransaccion: original.idTransaccion,
+      justificacion: 'Registro de prueba incorrecto'
+    }, session));
     const retry = response(context.annulMovement_({
-      idTransaccion: original.idTransaccion
-    }));
+      idTransaccion: original.idTransaccion,
+      justificacion: 'Registro de prueba incorrecto'
+    }, session));
     const movementSheet = spreadsheet.getSheetByName('Registro de Movimientos');
     const history = response(context.getMovements_({}, session)).data;
 
@@ -398,6 +425,7 @@ test('anular marks the original movement, creates no inverse, and is idempotent'
     assert.equal(movementSheet.rows.length, 2);
     assert.equal(movementSheet.rows[1][9], 'Anulado');
     assert.equal(movementSheet.rows[1][10], '');
+    assert.equal(movementSheet.rows[1][16], 'Registro de prueba incorrecto');
     assert.equal(stockFor(spreadsheet, 'CARG-USB'), 0);
     assert.equal(history.length, 1);
     assert.equal(history[0].estado, 'Anulado');
@@ -420,6 +448,8 @@ test('request receipt adds stock and delivery removes it exactly once', () => {
   assert.equal(response(context.getRequests_({}, session)).data[0].correoSolicitante, 'solicitante@example.com');
 
   assert.equal(stockFor(spreadsheet, 'CARG-USB'), 0);
+  context.updateRequestStatus_({ ...request, estado: 'Revisión de disponibilidad' }, session);
+  assert.equal(response(context.checkRequestAvailability_({ idSolicitud: created.idSolicitud }, session)).disponible, false);
   assert.throws(() => context.updateRequestStatus_({ ...request, estado: 'Recibida' }, session));
   assert.throws(() => context.updateRequestStatus_({ ...request, estado: 'Solicitada' }, session));
   context.updateAccessory_({ idArticulo: 'CARG-USB', costoUnitario: 30000 }, {
@@ -444,23 +474,24 @@ test('request receipt adds stock and delivery removes it exactly once', () => {
   assert.equal(stockFor(spreadsheet, 'CARG-USB'), 32);
   const receiptCount = spreadsheet.getSheetByName('Registro de Movimientos').getLastRow();
   assert.throws(() => context.updateRequestStatus_({ ...request, estado: 'Recibida' }, session));
-  assert.throws(() => context.updateRequestStatus_({ ...request, estado: 'Anulada' }, session), /Transicion invalida/);
+  assert.throws(() => context.updateRequestStatus_({ ...request, estado: 'Anulada' }, session), /Solo un administrador/);
   assert.equal(spreadsheet.getSheetByName('Registro de Movimientos').getLastRow(), receiptCount);
 
+  const adminSession = { usuario: 'administrador', rol: 'admin' };
   context.registerMovement_({
     tipoMovimiento: 'Salida',
     items: [{ idArticulo: 'CARG-USB', cantidad: 2 }],
     distribution: [{ idArticulo: 'CARG-USB', cantidad: 2, cliente: 'Cliente B', regional: 'Bogota', usuario: 'Luis' }]
-  }, session);
+  }, adminSession);
   assert.equal(stockFor(spreadsheet, 'CARG-USB'), 30);
   assert.throws(() => context.updateRequestStatus_({ ...request, estado: 'Entregada' }, session), /Stock insuficiente/);
 
-  context.registerMovement_({ tipoMovimiento: 'Entrada', proveedor: 'Proveedor alterno', items: [{ idArticulo: 'CARG-USB', cantidad: 2 }] }, session);
+  context.registerMovement_({ tipoMovimiento: 'Entrada', proveedor: 'Proveedor alterno', items: [{ idArticulo: 'CARG-USB', cantidad: 2 }] }, adminSession);
   context.updateRequestStatus_({ ...request, estado: 'Entregada' }, session);
   assert.equal(stockFor(spreadsheet, 'CARG-USB'), 0);
   const deliveryCount = spreadsheet.getSheetByName('Registro de Movimientos').getLastRow();
   assert.throws(() => context.updateRequestStatus_({ ...request, estado: 'Entregada' }, session));
-  assert.throws(() => context.updateRequestStatus_({ ...request, estado: 'Anulada' }, session), /Transicion invalida/);
+  assert.throws(() => context.updateRequestStatus_({ ...request, estado: 'Anulada' }, session), /Solo un administrador/);
   assert.equal(spreadsheet.getSheetByName('Registro de Movimientos').getLastRow(), deliveryCount);
 
   const dashboard = response(context.getDashboard_(session));
@@ -495,6 +526,90 @@ test('linking a delivered request preserves the original Gmail URL for redirect'
   assert.equal(response(context.getRequests_({}, session)).data[0].gmailThreadUrl, threadUrl);
 });
 
+test('availability review validates client stock and dispatches directly when available', () => {
+  const { context, spreadsheet } = createRuntime();
+  const inventory = spreadsheet.getSheetByName('Maestro de inventario');
+  inventory.rows[1][3] = 5;
+  const session = { usuario: 'solicitante', rol: 'usuario' };
+  const created = response(context.createRequest_({
+    regional: 'Bogota',
+    entregadoA: 'Ana',
+    items: [{ idArticulo: 'CARG-USB', cantidad: 2, cliente: 'Cliente A' }]
+  }, session));
+  const requestSheet = spreadsheet.getSheetByName('Solicitudes');
+
+  context.updateRequestStatus_({
+    idSolicitud: created.idSolicitud,
+    estado: 'Revisión de disponibilidad'
+  }, session);
+  assert.equal(typeof requestSheet.rows[1][23].getTime, 'function');
+  const availability = response(context.checkRequestAvailability_({ idSolicitud: created.idSolicitud }, session));
+  assert.equal(availability.disponible, true);
+  assert.throws(() => context.updateRequestStatus_({
+    idSolicitud: created.idSolicitud,
+    estado: 'Solicitada',
+    proveedor: 'Proveedor'
+  }, session), /disponibilidad suficiente/i);
+  const dispatched = response(context.updateRequestStatus_({
+    idSolicitud: created.idSolicitud,
+    estado: 'Entregada'
+  }, session));
+  assert.equal(dispatched.estado, 'Entregada');
+  assert.equal(stockFor(spreadsheet, 'CARG-USB'), 3);
+  const movements = spreadsheet.getSheetByName('Registro de Movimientos').rows;
+  assert.equal(movements[1][3], 'Salida');
+  assert.equal(movements[1][4], 2);
+  assert.equal(movements[1][7], 'Cliente A');
+});
+
+test('Communications requests go directly to supplier and close on receipt', () => {
+  const { context, spreadsheet } = createRuntime();
+  const session = { usuario: 'solicitante', rol: 'usuario' };
+  const created = response(context.createRequest_({
+    tipoSolicitud: 'Comunicaciones',
+    correoSolicitante: 'ignored@example.com',
+    gmailThreadUrl: 'https://mail.google.com/mail/u/0/#inbox/thread-123456789',
+    items: [{ idArticulo: 'CARG-USB', cantidad: 2 }]
+  }, session));
+
+  assert.equal(spreadsheet.getSheetByName('Solicitudes').rows[1][4], 'Comunicaciones');
+  assert.throws(() => context.updateRequestStatus_({
+    idSolicitud: created.idSolicitud,
+    estado: 'Revisión de disponibilidad'
+  }, session), /Transicion invalida/);
+  assert.throws(() => context.checkRequestAvailability_({ idSolicitud: created.idSolicitud   }, session), /Comunicaciones.*proveedor y recepci[oó]n/i);
+  context.updateRequestStatus_({
+    idSolicitud: created.idSolicitud,
+    estado: 'Solicitada',
+    proveedor: 'Proveedor'
+  }, session);
+  assert.equal(stockFor(spreadsheet, 'CARG-USB'), 0);
+
+  const request = response(context.getRequests_({}, session)).data[0];
+  assert.equal(request.tipoSolicitud, 'Comunicaciones');
+  assert.equal(request.correoSolicitante, '');
+  assert.equal(request.gmailThreadUrl, '');
+  assert.equal(request.items[0].cliente, 'Comunicaciones');
+  assert.equal(request.items[0].entregadoA, 'Comunicaciones');
+  assert.throws(() => context.linkRequestThread_({
+    idSolicitud: created.idSolicitud,
+    gmailThreadUrl: 'https://mail.google.com/mail/u/0/#inbox/thread-abcdef123'
+  }, session), /correo nuevo/i);
+
+  const closed = response(context.updateRequestStatus_({
+    idSolicitud: created.idSolicitud,
+    estado: 'Cerrada'
+  }, session));
+  assert.equal(closed.estado, 'Cerrada');
+  assert.equal(stockFor(spreadsheet, 'CARG-USB'), 2);
+  const movements = spreadsheet.getSheetByName('Registro de Movimientos').rows;
+  assert.equal(movements[1][3], 'Entrada');
+  assert.equal(movements[1][4], 2);
+  assert.equal(movements[1][7], 'Proveedor');
+  assert.equal(movements[1][8], 'Comunicaciones');
+  assert.equal(response(context.getDashboard_(session)).data.solicitudesPendientes, 0);
+});
+
 test('request schema adds email and Gmail thread columns without shifting existing data', () => {
   const { context, spreadsheet } = createRuntime();
   const oldHeaders = context.CONFIG.requestHeaders.slice(0, 20);
@@ -509,16 +624,23 @@ test('request schema adds email and Gmail thread columns without shifting existi
   assert.equal(sheet.rows[0][20], 'Correo_Solicitante');
   assert.equal(sheet.rows[0][21], 'Gmail_Thread_ID');
   assert.equal(sheet.rows[0][22], 'Gmail_Thread_URL');
+  assert.equal(sheet.rows[0][23], 'Fecha_Revision_Disponibilidad');
+  assert.equal(sheet.rows[0][24], 'Justificacion_Anulacion');
+  assert.equal(sheet.rows[0][25], 'Tipo_Solicitud');
   assert.deepEqual(JSON.parse(JSON.stringify(sheet.rows[1].slice(0, 20))), JSON.parse(JSON.stringify(oldRow)));
 });
 
 test('request response summarizes accessory quantities across separate lines', () => {
   const { context } = createRuntime();
   const session = { usuario: 'solicitante', rol: 'usuario' };
+  assert.throws(() => context.createRequest_({ items: [
+    { idArticulo: 'CARG-USB', cantidad: 1, cliente: 'Cliente A', regional: 'Bogota', entregadoA: 'Ana' },
+    { idArticulo: 'CARG-USB', cantidad: 1, cliente: 'Cliente B', regional: 'Cali', entregadoA: 'Ana' }
+  ] }, session), /regional/i);
   const created = response(context.createRequest_({ items: [
     { idArticulo: 'CARG-USB', cantidad: 7, cliente: 'Cliente A', regional: 'Bogota', entregadoA: 'Ana' },
-    { idArticulo: 'CARG-USB', cantidad: 5, cliente: 'Cliente B', regional: 'Cali', entregadoA: 'Luis' },
-    { idArticulo: 'CARG-USB', cantidad: 3, cliente: 'Cliente C', regional: 'Cali', entregadoA: 'Mia' }
+    { idArticulo: 'CARG-USB', cantidad: 5, cliente: 'Cliente B', regional: 'Bogota', entregadoA: 'Ana' },
+    { idArticulo: 'CARG-USB', cantidad: 3, cliente: 'Cliente C', regional: 'Bogota', entregadoA: 'Ana' }
   ] }, session));
   const requests = response(context.getRequests_({}, session));
 
@@ -531,19 +653,23 @@ test('request response summarizes accessory quantities across separate lines', (
 
 test('registered or ordered requests can be annulled before receipt without inventory movements', () => {
   const { context, spreadsheet } = createRuntime();
-  const session = { usuario: 'operador', rol: 'usuario' };
+  const session = { usuario: 'administrador', rol: 'admin' };
   const registered = response(context.createRequest_({ items: [{
     idArticulo: 'CARG-USB', cantidad: 3, cliente: 'Cliente A', regional: 'Bogota', entregadoA: 'Ana'
   }] }, session));
   const requestSheet = spreadsheet.getSheetByName('Solicitudes');
   const movements = spreadsheet.getSheetByName('Registro de Movimientos');
 
+  assert.throws(() => context.updateRequestStatus_({
+    idSolicitud: registered.idSolicitud, estado: 'Anulada', justificacion: 'Motivo'
+  }, { usuario: 'operador', rol: 'usuario' }), /Solo un administrador/);
   const cancelled = response(context.updateRequestStatus_({
-    idSolicitud: registered.idSolicitud, estado: 'Anulada'
+    idSolicitud: registered.idSolicitud, estado: 'Anulada', justificacion: 'Solicitud duplicada'
   }, session));
   assert.equal(cancelled.estado, 'Anulada');
   assert.equal(requestSheet.rows[1][9], 'Anulada');
-  assert.equal(requestSheet.rows[1][17], 'operador');
+  assert.equal(requestSheet.rows[1][17], 'administrador');
+  assert.equal(requestSheet.rows[1][24], 'Solicitud duplicada');
   assert.equal(movements.getLastRow(), 1);
   assert.throws(() => context.updateRequestStatus_({
     idSolicitud: registered.idSolicitud, estado: 'Solicitada', proveedor: 'Proveedor'
@@ -553,9 +679,12 @@ test('registered or ordered requests can be annulled before receipt without inve
     idArticulo: 'CARG-USB', cantidad: 1, cliente: 'Cliente B', regional: 'Bogota', entregadoA: 'Luis'
   }] }, session));
   context.updateRequestStatus_({
+    idSolicitud: ordered.idSolicitud, estado: 'Revisión de disponibilidad'
+  }, session);
+  context.updateRequestStatus_({
     idSolicitud: ordered.idSolicitud, estado: 'Solicitada', proveedor: 'Proveedor'
   }, session);
-  context.updateRequestStatus_({ idSolicitud: ordered.idSolicitud, estado: 'Anulada' }, session);
+  context.updateRequestStatus_({ idSolicitud: ordered.idSolicitud, estado: 'Anulada', justificacion: 'Compra ya no requerida' }, session);
 
   const dashboard = response(context.getDashboard_(session));
   assert.equal(dashboard.data.solicitudesPorEstado.Anulada, 2);
@@ -972,7 +1101,7 @@ test('outgoing movements use the ledger when the inventory formula is stale', ()
     tipoMovimiento: 'Salida',
     items: [{ idArticulo: 'CARG-USB', cantidad: 2 }],
     distribution: [{ idArticulo: 'CARG-USB', cantidad: 2, cliente: 'Cliente B', regional: 'Bogota', usuario: 'Luis' }]
-  }, { usuario: 'solicitante', rol: 'usuario' }), /Disponible según movimientos: 1/);
+  }, { usuario: 'administrador', rol: 'admin' }), /Disponible según movimientos: 1/);
   assert.equal(movements.getLastRow(), 2);
 });
 

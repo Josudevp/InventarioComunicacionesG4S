@@ -346,6 +346,22 @@
     @apply mb-5 mt-2 text-sm leading-6 text-slate-600;
   }
 
+  .confirm-reason-field {
+    @apply mb-5 mt-4 block text-xs font-extrabold uppercase tracking-wide text-slate-700;
+  }
+
+  .confirm-reason-field textarea {
+    @apply mt-2 min-h-28 w-full resize-y rounded-lg border border-slate-300 bg-slate-50 p-3 text-sm font-medium normal-case tracking-normal text-slate-900 outline-none transition focus:border-red-400 focus:bg-white focus:ring-4 focus:ring-red-100;
+  }
+
+  .confirm-reason-field textarea::placeholder {
+    @apply font-normal text-slate-400;
+  }
+
+  .confirm-reason-error {
+    @apply mt-1.5 block normal-case tracking-normal text-red-700;
+  }
+
   .confirm-actions {
     @apply flex justify-end gap-2;
   }
@@ -904,6 +920,44 @@
     @apply grid gap-2.5;
   }
 
+  .request-shared-fields {
+    @apply mb-3 grid gap-3 md:grid-cols-2;
+  }
+
+  .request-flow-guide {
+    @apply mb-4 grid gap-1.5 rounded-lg border border-slate-300 border-l-4 border-l-slate-700 bg-slate-50 px-4 py-3 text-sm text-slate-800;
+  }
+
+  .request-flow-guide[hidden] {
+    display: none;
+  }
+
+  .request-flow-guide strong {
+    @apply flex items-center gap-2 text-sm font-extrabold text-slate-900;
+  }
+
+  .request-flow-guide > span,
+  .request-flow-guide small {
+    @apply leading-5 text-slate-700;
+  }
+
+  .request-communications-label {
+    @apply grid min-h-12 grid-cols-[2rem_minmax(0,1fr)] grid-rows-2 items-center gap-x-2 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-left text-slate-800;
+    text-decoration: none;
+  }
+
+  .request-communications-icon {
+    @apply row-span-2 grid h-8 w-8 place-items-center rounded-md bg-slate-800 text-sm text-white;
+  }
+
+  .request-communications-label strong {
+    @apply self-end text-xs font-extrabold leading-4 text-slate-900;
+  }
+
+  .request-communications-label small {
+    @apply self-start text-[10px] font-medium leading-4 text-slate-600;
+  }
+
   .request-email-field {
     @apply mb-3 mt-0 block max-w-xl text-xs font-bold text-slate-600;
   }
@@ -918,7 +972,7 @@
 
   .request-draft-row {
     @apply grid items-end gap-2 rounded-md border border-slate-200 bg-slate-50 p-3;
-    grid-template-columns: minmax(12rem, 2fr) minmax(10rem, 1.3fr) minmax(9rem, 1fr) minmax(9rem, 1fr) 6rem 44px;
+    grid-template-columns: minmax(12rem, 2fr) minmax(10rem, 1.3fr) 6rem 44px;
   }
 
   .request-draft-row label {
@@ -1077,6 +1131,10 @@
     @apply bg-slate-100 text-slate-700;
   }
 
+  .status-revision-de-disponibilidad {
+    @apply bg-cyan-100 text-cyan-800;
+  }
+
   .status-solicitada,
   .status-reversado {
     @apply bg-amber-100 text-amber-800;
@@ -1089,6 +1147,10 @@
   .status-entregada,
   .status-confirmado {
     @apply bg-emerald-100 text-emerald-800;
+  }
+
+  .status-cerrada {
+    @apply bg-teal-100 text-teal-900;
   }
 
   .status-anulado {
@@ -1131,8 +1193,13 @@
     @apply mb-0 mt-0 min-w-48 text-[11px];
   }
 
-  .request-provider-field input {
+  .request-provider-field input,
+  .request-provider-field select {
     @apply mt-1 p-2 text-sm;
+  }
+
+  .request-provider-field [hidden] {
+    display: none;
   }
 
   .request-thread-link-field {
@@ -1456,7 +1523,7 @@
   }
 
   .request-draft-row .request-field:first-child,
-  .request-draft-row label:nth-child(4) {
+  .request-draft-row .request-communications-label {
     grid-column: 1 / -1;
   }
 

@@ -6,7 +6,7 @@
 //   D=Tipo_Movimiento, E=Cantidad, F=Registrado_Por, G=Entregado_A_Usuario,
 //   H=Cliente_Proveedor, I=Regional, J=Estado, K=ID_Transaccion_Relacionada,
 //   L=Motivo, M=Regional_Origen, N=Regional_Destino, O=Clave_Idempotencia,
-//   P=Huella_Solicitud.
+//   P=Huella_Solicitud, Q=Justificacion_Anulacion.
 //
 // Propiedades recomendadas:
 //   SPREADSHEET_ID: ID del archivo principal (opcional si el script esta vinculado al Sheet).
@@ -33,9 +33,9 @@ var CONFIG = {
   inventorySheet: "Maestro de inventario",
   movementsSheet: "Registro de Movimientos",
   requestsSheet: "Solicitudes",
-  requestHeaders: ["ID_Solicitud", "Fecha_Registro", "Registrado_Por", "Cliente", "Regional", "Entregado_A", "ID_Articulo", "Descripcion", "Cantidad", "Estado", "Proveedor", "Fecha_Solicitud_Proveedor", "Fecha_Recepcion", "Fecha_Entrega", "ID_Transaccion_Recepcion", "ID_Transaccion_Entrega", "Observaciones", "Actualizado_Por", "Fecha_Actualizacion", "Costo_Unitario_COP", "Correo_Solicitante", "Gmail_Thread_ID", "Gmail_Thread_URL"],
-  requestStatuses: ["Registrada", "Solicitada", "Recibida", "Entregada", "Anulada"],
-  movementHeaders: ["ID_Transaccion", "Fecha_Hora", "ID_Articulo", "Tipo_Movimiento", "Cantidad", "Registrado_Por", "Entregado_A_Usuario", "Cliente_Proveedor", "Regional", "Estado", "ID_Transaccion_Relacionada", "Motivo", "Regional_Origen", "Regional_Destino", "Clave_Idempotencia", "Huella_Solicitud"],
+  requestHeaders: ["ID_Solicitud", "Fecha_Registro", "Registrado_Por", "Cliente", "Regional", "Entregado_A", "ID_Articulo", "Descripcion", "Cantidad", "Estado", "Proveedor", "Fecha_Solicitud_Proveedor", "Fecha_Recepcion", "Fecha_Entrega", "ID_Transaccion_Recepcion", "ID_Transaccion_Entrega", "Observaciones", "Actualizado_Por", "Fecha_Actualizacion", "Costo_Unitario_COP", "Correo_Solicitante", "Gmail_Thread_ID", "Gmail_Thread_URL", "Fecha_Revision_Disponibilidad", "Justificacion_Anulacion", "Tipo_Solicitud"],
+  requestStatuses: ["Registrada", "Revisión de disponibilidad", "Solicitada", "Recibida", "Entregada", "Cerrada", "Anulada"],
+  movementHeaders: ["ID_Transaccion", "Fecha_Hora", "ID_Articulo", "Tipo_Movimiento", "Cantidad", "Registrado_Por", "Entregado_A_Usuario", "Cliente_Proveedor", "Regional", "Estado", "ID_Transaccion_Relacionada", "Motivo", "Regional_Origen", "Regional_Destino", "Clave_Idempotencia", "Huella_Solicitud", "Justificacion_Anulacion"],
   movementTypes: ["Entrada", "Salida", "Devolucion", "Ajuste positivo", "Ajuste negativo", "Baja por daño"],
   inventoryActiveColumn: 10,
   inventoryCostColumn: 11,
@@ -177,11 +177,12 @@ function doPost(e) {
     if (action === "obtener_dashboard") return getDashboard_(session);
     if (action === "obtener_solicitudes") return getRequests_(data, session);
     if (action === "crear_solicitud") return createRequest_(data, session);
+    if (action === "revisar_disponibilidad_solicitud") return checkRequestAvailability_(data, session);
     if (action === "vincular_hilo_solicitud") return linkRequestThread_(data, session);
     if (action === "actualizar_estado_solicitud") return updateRequestStatus_(data, session);
     if (action === "procesar_correos_inventario") return processEmailRequests_(session);
     if (action === "registrar_movimiento") return registerMovement_(data, session);
-    if (action === "anular_movimiento") return annulMovement_(data);
+    if (action === "anular_movimiento") return annulMovement_(data, session);
     if (action === "crear_accesorio") return createAccessory_(data, session);
     if (action === "actualizar_accesorio") return updateAccessory_(data, session);
     if (action === "subir_fotografia") return uploadPhoto_(data, session);
@@ -410,7 +411,7 @@ function getMovements_(data, session) {
     if (!rows[i][0]) continue;
     var date = rows[i][1] instanceof Date ? rows[i][1] : new Date(rows[i][1]);
     var dateKey = isNaN(date.getTime()) ? "" : Utilities.formatDate(date, Session.getScriptTimeZone(), "yyyy-MM-dd");
-    var text = rows[i].slice(0, 14).join(" ").toLowerCase();
+    var text = rows[i].slice(0, 17).join(" ").toLowerCase();
     if (from && dateKey < from) continue;
     if (to && dateKey > to) continue;
     if (filter && text.indexOf(filter) < 0) continue;
@@ -421,7 +422,8 @@ function getMovements_(data, session) {
       entregadoA: clean_(rows[i][6], 150), clienteProveedor: clean_(rows[i][7], 150),
       regional: clean_(rows[i][8], 100), estado: clean_(rows[i][9], 50) || "Confirmado",
       relacionada: clean_(rows[i][10], 100), motivo: clean_(rows[i][11], 200),
-      regionalOrigen: clean_(rows[i][12], 100), regionalDestino: clean_(rows[i][13], 100)
+      regionalOrigen: clean_(rows[i][12], 100), regionalDestino: clean_(rows[i][13], 100),
+      justificacionAnulacion: clean_(rows[i][16], 500)
     });
   }
   return json_({ status: "success", usuario: session.usuario, data: result.slice(-500).reverse() });
@@ -462,7 +464,7 @@ function getDashboard_(session) {
     }
     requests[requestId].lineas.push({ cantidad: number_(requestRow[8]), costoUnitario: number_(requestRow[19]) });
   }
-  var states = { Registrada: 0, Solicitada: 0, Recibida: 0, Entregada: 0, Anulada: 0 };
+  var states = { Registrada: 0, "Revisión de disponibilidad": 0, Solicitada: 0, Recibida: 0, Entregada: 0, Cerrada: 0, Anulada: 0 };
   Object.keys(requests).forEach(function(id) { states[requests[id].estado] = (states[requests[id].estado] || 0) + 1; });
 
   var now = new Date();
@@ -592,7 +594,7 @@ function getDashboard_(session) {
       unidades: metrics.unidades,
       stockBajo: metrics.stockBajo,
       agotados: metrics.agotados,
-      solicitudesPendientes: states.Registrada + states.Solicitada + states.Recibida,
+      solicitudesPendientes: states.Registrada + states["Revisión de disponibilidad"] + states.Solicitada + states.Recibida,
       solicitudesPorEstado: states,
       unidadesPorMes: movementMonths.map(function(key) {
         return {
@@ -658,6 +660,9 @@ function getRequests_(data, session) {
         fechaSolicitudProveedor: row[11],
         fechaRecepcion: row[12],
         fechaEntrega: row[13],
+        fechaRevisionDisponibilidad: row[23],
+        justificacionAnulacion: clean_(row[24], 500),
+        tipoSolicitud: clean_(row[25], 30) || "Cliente",
         observaciones: clean_(row[16], 500),
         correoSolicitante: clean_(row[20], 200),
         gmailThreadId: clean_(row[21], 200),
@@ -713,25 +718,39 @@ function createRequest_(data, session) {
     var requestId = Utilities.getUuid();
     var now = new Date();
     var observations = clean_(data.observaciones, 500);
-    var requesterEmail = clean_(data.correoSolicitante, 200);
+    var requestType = clean_(data.tipoSolicitud, 30) || "Cliente";
+    if (["Cliente", "Comunicaciones"].indexOf(requestType) < 0) throw new Error("Tipo de solicitud invalido");
+    var requesterEmail = requestType === "Comunicaciones" ? "" : clean_(data.correoSolicitante, 200);
     if (requesterEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(requesterEmail)) {
       throw new Error("El correo del solicitante no es valido");
     }
-    var gmailThreadUrl = gmailThreadUrlFromInput_(data.gmailThreadUrl);
+    var sharedRegional = requestType === "Comunicaciones"
+      ? "Comunicaciones"
+      : clean_(data.regional, 100) || clean_(lines[0].regional, 100);
+    var sharedRecipient = requestType === "Comunicaciones"
+      ? "Comunicaciones"
+      : clean_(data.entregadoA, 150) || clean_(lines[0].entregadoA || lines[0].usuario, 150);
+    if (!sharedRegional || !sharedRecipient) {
+      throw new Error("La solicitud requiere una regional y una persona destinataria comunes");
+    }
+    var gmailThreadUrl = requestType === "Comunicaciones" ? "" : gmailThreadUrlFromInput_(data.gmailThreadUrl);
     var gmailThreadId = gmailThreadIdFromUrl_(gmailThreadUrl);
     var rows = lines.map(function(line) {
       var id = clean_(line.idArticulo, 100);
       var item = catalog[id];
       var quantity = Number(line.cantidad);
-      var client = clean_(line.cliente, 150);
-      var regional = clean_(line.regional, 100);
-      var recipient = clean_(line.entregadoA || line.usuario, 150);
+      var client = requestType === "Comunicaciones" ? "Comunicaciones" : clean_(line.cliente, 150);
+      var lineRegional = clean_(line.regional, 100);
+      var lineRecipient = clean_(line.entregadoA || line.usuario, 150);
       if (!item || !item.active) throw new Error("Articulo inexistente o inactivo: " + id);
-      if (!client || !regional || !recipient || !Number.isInteger(quantity) || quantity < 1 || quantity > 9999) {
+      if ((!client && requestType !== "Comunicaciones") ||
+          (lineRegional && lineRegional !== sharedRegional) ||
+          (lineRecipient && requestType !== "Comunicaciones" && lineRecipient !== sharedRecipient) ||
+          !Number.isInteger(quantity) || quantity < 1 || quantity > 9999) {
         throw new Error("Cada linea requiere cliente, regional, destinatario y cantidad valida");
       }
-      return [requestId, now, session.usuario, client, regional, recipient, id, item.description, quantity,
-        "Registrada", "", "", "", "", "", "", observations, session.usuario, now, item.cost, requesterEmail, gmailThreadId, gmailThreadUrl];
+      return [requestId, now, session.usuario, client, sharedRegional, sharedRecipient, id, item.description, quantity,
+        "Registrada", "", "", "", "", "", "", observations, session.usuario, now, item.cost, requesterEmail, gmailThreadId, gmailThreadUrl, "", "", requestType];
     });
     var sheet = requestSheet_();
     sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, CONFIG.requestHeaders.length).setValues(rows);
@@ -782,6 +801,9 @@ function linkRequestThread_(data, session) {
     for (var i = 1; i < values.length; i++) {
       if (String(values[i][0]) !== requestId) continue;
       if (String(values[i][9]) === "Anulada") throw new Error("No se puede vincular el hilo a una solicitud anulada");
+      if (String(values[i][25] || "") === "Comunicaciones") {
+        throw new Error("Las solicitudes de Comunicaciones se envian en un correo nuevo y no admiten hilos vinculados");
+      }
       matchingRows.push(i + 1);
     }
     if (!matchingRows.length) throw new Error("Solicitud no encontrada");
@@ -1000,8 +1022,12 @@ function insertEmailRequest_(extracted, messageId) {
         throw new Error("La extraccion requiere cliente, regional, destinatario y cantidad entera valida");
       }
       return [requestId, now, registeredBy, client, regional, recipient, article.id, article.description,
-        quantity, "Registrada", "", "", "", "", "", "", observations, registeredBy, now, article.cost];
+        quantity, "Registrada", "", "", "", "", "", "", observations, registeredBy, now, article.cost,
+        "", "", "", "", "", "Cliente"];
     });
+    if (rows.some(function(row) { return row[4] !== rows[0][4] || row[5] !== rows[0][5]; })) {
+      throw new Error("Cada correo debe generar una solicitud para una sola regional y destinatario");
+    }
     sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, CONFIG.requestHeaders.length).setValues(rows);
     return requestId;
   } finally {
@@ -1015,8 +1041,13 @@ function normalizeArticle_(value) {
 
 function updateRequestStatus_(data, session) {
   var requestId = clean_(data.idSolicitud, 100);
-  var nextStatus = clean_(data.estado, 30);
-  if (!requestId || ["Solicitada", "Recibida", "Entregada", "Anulada"].indexOf(nextStatus) < 0) throw new Error("Solicitud o estado invalido");
+  var nextStatus = clean_(data.estado, 40);
+  if (!requestId || ["Revisión de disponibilidad", "Solicitada", "Recibida", "Entregada", "Cerrada", "Anulada"].indexOf(nextStatus) < 0) throw new Error("Solicitud o estado invalido");
+  var cancellationReason = clean_(data.justificacion, 500);
+  if (nextStatus === "Anulada") {
+    if (!isAdmin_(session)) throw new Error("Solo un administrador puede anular solicitudes");
+    if (!cancellationReason) throw new Error("La justificacion de anulacion es obligatoria");
+  }
   var lock = LockService.getScriptLock();
   lock.waitLock(30000);
   try {
@@ -1028,12 +1059,21 @@ function updateRequestStatus_(data, session) {
     }
     if (!rows.length) throw new Error("Solicitud no encontrada");
     var currentStatus = String(rows[0].values[9] || "Registrada");
+    var requestType = clean_(rows[0].values[25], 30) || "Cliente";
     if (rows.some(function(row) { return String(row.values[9] || "Registrada") !== currentStatus; })) {
       throw new Error("La solicitud tiene estados inconsistentes; requiere revision administrativa");
     }
-    var allowed = { Registrada: "Solicitada", Solicitada: "Recibida", Recibida: "Entregada" };
-    var canCancel = nextStatus === "Anulada" && ["Registrada", "Solicitada"].indexOf(currentStatus) >= 0;
-    if (!canCancel && allowed[currentStatus] !== nextStatus) {
+    var allowed = {
+      Registrada: requestType === "Comunicaciones" ? "Solicitada" : "Revisión de disponibilidad",
+      "Revisión de disponibilidad": requestType === "Comunicaciones" ? [] : ["Solicitada", "Entregada"],
+      Solicitada: requestType === "Comunicaciones" ? "Cerrada" : "Recibida",
+      Recibida: "Entregada"
+    };
+    var canCancel = nextStatus === "Anulada" && ["Registrada", "Revisión de disponibilidad", "Solicitada"].indexOf(currentStatus) >= 0;
+    var allowedNext = allowed[currentStatus];
+    if (!canCancel && (Array.isArray(allowedNext)
+        ? allowedNext.indexOf(nextStatus) < 0
+        : allowedNext !== nextStatus)) {
       throw new Error("Transicion invalida: " + currentStatus + " a " + nextStatus);
     }
     if (rows.some(function(row, index) { return index && row.row !== rows[index - 1].row + 1; })) {
@@ -1068,7 +1108,13 @@ function updateRequestStatus_(data, session) {
     var deliveryTransactionId = String(rows[0].values[15] || "");
     var movementRows = [];
     if (nextStatus === "Solicitada" && !provider) throw new Error("Indica el proveedor solicitado");
-    if (nextStatus === "Recibida") {
+    if (nextStatus === "Solicitada" && requestType !== "Comunicaciones" && hasRequestStockAvailability_(rows)) {
+      throw new Error("Hay disponibilidad suficiente para el despacho; no se puede solicitar al proveedor");
+    }
+    if (nextStatus === "Cerrada" && requestType !== "Comunicaciones") {
+      throw new Error("Solo las solicitudes de Comunicaciones se cierran al recepcionar");
+    }
+    if (nextStatus === "Recibida" || nextStatus === "Cerrada") {
       if (!provider) throw new Error("La solicitud no tiene proveedor registrado");
       receiptTransactionId = receiptTransactionId || Utilities.getUuid();
       transactionId = receiptTransactionId;
@@ -1089,11 +1135,17 @@ function updateRequestStatus_(data, session) {
       var original = row.values;
       return [nextStatus, provider,
         nextStatus === "Solicitada" ? now : original[11],
-        nextStatus === "Recibida" ? now : original[12],
+        (nextStatus === "Recibida" || nextStatus === "Cerrada") ? now : original[12],
         nextStatus === "Entregada" ? now : original[13],
         receiptTransactionId, deliveryTransactionId, original[16] || "", session.usuario, now];
     });
     sheet.getRange(rows[0].row, 10, updates.length, 10).setValues(updates);
+    if (nextStatus === "Revisión de disponibilidad") {
+      sheet.getRange(rows[0].row, 24, rows.length, 1).setValues(rows.map(function() { return [now]; }));
+    }
+    if (nextStatus === "Anulada") {
+      sheet.getRange(rows[0].row, 25, rows.length, 1).setValues(rows.map(function() { return [cancellationReason]; }));
+    }
     if (nextStatus === "Solicitada") {
       unitCosts.forEach(function(amount, index) { sheet.getRange(rows[index].row, 20).setValue(amount); });
     }
@@ -1103,7 +1155,42 @@ function updateRequestStatus_(data, session) {
   }
 }
 
+function checkRequestAvailability_(data, session) {
+  var requestId = clean_(data.idSolicitud, 100);
+  if (!requestId) throw new Error("Solicitud requerida");
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    var values = requestSheet_().getDataRange().getValues();
+    var rows = [];
+    for (var i = 1; i < values.length; i++) {
+      if (String(values[i][0]) === requestId) rows.push({ row: i + 1, values: values[i] });
+    }
+    if (!rows.length) throw new Error("Solicitud no encontrada");
+    if (clean_(rows[0].values[25], 30) === "Comunicaciones") {
+      throw new Error("Las solicitudes de Comunicaciones se gestionan con proveedor y recepción");
+    }
+    if (rows.some(function(row) { return String(row.values[9]) !== "Revisión de disponibilidad"; })) {
+      throw new Error("La solicitud no está en revisión de disponibilidad");
+    }
+    if (rows.some(function(row) {
+      return !Number.isInteger(Number(row.values[8])) || Number(row.values[8]) < 1 || Number(row.values[8]) > 9999;
+    })) {
+      throw new Error("La solicitud contiene una cantidad invalida");
+    }
+    var available = hasRequestStockAvailability_(rows);
+    return json_({
+      status: "success",
+      idSolicitud: requestId,
+      disponible: available
+    });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
 function registerMovement_(data, session) {
+  if (!isAdmin_(session)) throw new Error("Solo un administrador puede registrar movimientos manuales; usa una solicitud");
   var type = String(data.tipoMovimiento || "Salida");
   if (CONFIG.movementTypes.indexOf(type) < 0) throw new Error("Tipo de movimiento invalido");
   var items = normalizeItems_(data.items);
@@ -1192,9 +1279,12 @@ function registerMovement_(data, session) {
   }
 }
 
-function annulMovement_(data) {
+function annulMovement_(data, session) {
+  if (!isAdmin_(session)) throw new Error("Solo un administrador puede anular movimientos");
   var originalId = clean_(data.idTransaccion, 100);
+  var justification = clean_(data.justificacion, 500);
   if (!originalId) throw new Error("Falta la transaccion original");
+  if (!justification) throw new Error("La justificacion de anulacion es obligatoria");
   var lock = LockService.getScriptLock();
   lock.waitLock(30000);
   try {
@@ -1231,6 +1321,7 @@ function annulMovement_(data) {
     validateStockChanges_(stockChanges, ledger, "anular");
     originals.forEach(function(item) {
       movements.getRange(item.row, 10, 1, 2).setValues([["Anulado", ""]]);
+      movements.getRange(item.row, 17).setValue(justification);
     });
     return json_({ status: "success", idTransaccionOriginal: originalId, anulada: true });
   } finally {
@@ -1440,6 +1531,7 @@ function normalizeItems_(items) {
 }
 
 function isAdmin_(session) {
+  if (!session || !session.usuario) return false;
   var configured = PropertiesService.getScriptProperties().getProperty(CONFIG.adminsProperty) || "";
   var admins = configured.split(",").map(function(value) { return value.trim().toLowerCase(); });
   return String(session.rol || "").toLowerCase() === "admin" || admins.indexOf(session.usuario.toLowerCase()) >= 0;
@@ -1493,7 +1585,7 @@ function requestSheet_() {
   var headers = sheet.getRange(1, 1, 1, CONFIG.requestHeaders.length).getValues()[0];
   for (var i = 0; i < CONFIG.requestHeaders.length; i++) {
     if (String(headers[i] || "").trim() !== CONFIG.requestHeaders[i]) {
-      if (i >= CONFIG.requestHeaders.length - 3 && !String(headers[i] || "").trim()) {
+      if (i >= 20 && !String(headers[i] || "").trim()) {
         sheet.getRange(1, i + 1).setValue(CONFIG.requestHeaders[i]);
         continue;
       }
@@ -1507,7 +1599,8 @@ function requestSheet_() {
 function buildReceiptMovements_(requestRows, session, provider, transactionId, now) {
   var totals = requestTotals_(requestRows);
   return Object.keys(totals).map(function(id) {
-    return [transactionId, now, id, "Entrada", totals[id], session.usuario, "", provider, "Bogota", "Confirmado", "",
+    return [transactionId, now, id, "Entrada", totals[id], session.usuario, "", provider,
+      clean_(requestRows[0].values[4], 100) || "Bogota", "Confirmado", "",
       "Recepcion de solicitud " + clean_(requestRows[0].values[0], 100), "", "Comunicaciones"];
   });
 }
@@ -1532,16 +1625,31 @@ function requestTotals_(requestRows) {
 }
 
 function validateRequestStock_(requestRows) {
+  if (!hasRequestStockAvailability_(requestRows)) {
+    var totals = requestTotals_(requestRows);
+    var inventory = inventorySheet_();
+    var inventoryRows = inventory.getDataRange().getValues();
+    var ledger = calculateStockLedger_(inventoryRows, movementSheet_().getDataRange().getValues());
+    var stockChanges = Object.create(null);
+    Object.keys(totals).forEach(function(id) { stockChanges[id] = -totals[id]; });
+    validateStockChanges_(stockChanges, ledger, "entregar solicitud");
+  }
+}
+
+function hasRequestStockAvailability_(requestRows) {
   var inventory = inventorySheet_();
   var inventoryRows = inventory.getDataRange().getValues();
   var ledger = calculateStockLedger_(inventoryRows, movementSheet_().getDataRange().getValues());
   var totals = requestTotals_(requestRows);
-  var stockChanges = Object.create(null);
+  var available = true;
   Object.keys(totals).forEach(function(id) {
     if (!Object.prototype.hasOwnProperty.call(ledger.balances, id)) throw new Error("Articulo no existe: " + id);
-    stockChanges[id] = -totals[id];
+    if (ledger.unknownMovements[id]) {
+      throw new Error("No se puede revisar la disponibilidad de '" + id + "': audita el inventario primero");
+    }
+    if (number_(ledger.balances[id]) < totals[id]) available = false;
   });
-  validateStockChanges_(stockChanges, ledger, "entregar solicitud");
+  return available;
 }
 
 function ensureRequestTransaction_(movements, transactionId, movementRows) {

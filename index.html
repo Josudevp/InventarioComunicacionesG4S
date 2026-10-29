@@ -23,6 +23,11 @@
             <span class="confirm-icon" aria-hidden="true"><i class="fa-solid fa-circle-exclamation"></i></span>
             <h2 id="confirm-title">Confirmar acción</h2>
             <p id="confirm-message"></p>
+            <label id="confirm-reason-field" class="confirm-reason-field" for="confirm-reason" hidden>
+                Justificación de la anulación
+                <textarea id="confirm-reason" rows="4" maxlength="500" placeholder="Describe por qué se anula este registro" aria-describedby="confirm-reason-error"></textarea>
+                <small id="confirm-reason-error" class="confirm-reason-error" hidden>La justificación es obligatoria.</small>
+            </label>
             <div class="confirm-actions">
                 <button type="button" id="confirm-cancel" class="btn-secondary">Cancelar</button>
                 <button type="button" id="confirm-accept" class="btn-primary">Confirmar</button>
@@ -82,7 +87,7 @@
 
         <div class="tab-bar" role="tablist" aria-label="Secciones del inventario">
             <button type="button" class="tab active" role="tab" aria-selected="true" aria-controls="tab-dashboard" onclick="window.switchTab('dashboard', this)">Dashboard</button>
-            <button type="button" class="tab" role="tab" aria-selected="false" aria-controls="tab-registro" onclick="window.switchTab('registro', this)">Movimientos</button>
+            <button type="button" class="tab" role="tab" aria-selected="false" aria-controls="tab-registro" onclick="window.switchTab('registro', this)" data-admin-only hidden>Movimientos</button>
             <button type="button" class="tab" role="tab" aria-selected="false" aria-controls="tab-solicitudes" onclick="window.switchTab('solicitudes', this)">Solicitudes</button>
             <button type="button" class="tab" role="tab" aria-selected="false" aria-controls="tab-historial" onclick="window.switchTab('historial', this)">Historial</button>
             <button type="button" class="tab" role="tab" aria-selected="false" aria-controls="tab-catalogo" onclick="window.switchTab('catalogo', this)">Catálogo</button>
@@ -170,13 +175,13 @@
                     <section class="dashboard-panel dashboard-shortcuts">
                         <h2>Accesos rápidos</h2>
                         <button type="button" class="btn-secondary" onclick="window.switchTab('solicitudes', document.querySelector('[aria-controls=tab-solicitudes]'))"><i class="fa-solid fa-file-circle-plus"></i> Nueva solicitud</button>
-                        <button type="button" class="btn-secondary" onclick="window.switchTab('registro', document.querySelector('[aria-controls=tab-registro]'))"><i class="fa-solid fa-arrow-right-arrow-left"></i> Registrar movimiento</button>
+                        <button type="button" class="btn-secondary" onclick="window.switchTab('registro', document.querySelector('[aria-controls=tab-registro]'))" data-admin-only hidden><i class="fa-solid fa-arrow-right-arrow-left"></i> Registrar movimiento</button>
                     </section>
                 </div>
             </section>
 
             <!-- TAB REGISTRO -->
-            <div id="tab-registro" class="section">
+            <div id="tab-registro" class="section" data-admin-only hidden>
                 <div class="card">
                     <label for="tipoMov">Tipo de movimiento</label>
                     <select id="tipoMov" onchange="window.cambiarMovimientoUI(this.value)">
@@ -243,16 +248,46 @@
             <section id="tab-solicitudes" class="section" aria-labelledby="requests-title">
                 <div class="card">
                     <div class="section-heading">
-                        <div><h2 id="requests-title">Nueva solicitud</h2><p class="helper-text">Cada línea corresponde a un artículo y un destinatario.</p></div>
+                        <div><h2 id="requests-title">Nueva solicitud</h2><p class="helper-text" id="request-form-guidance">Todas las líneas comparten una regional y una persona destinataria.</p></div>
                     </div>
-                    <label class="request-email-field" for="requester-email">Correo de quien solicitó (opcional)
-                        <input type="email" id="requester-email" maxlength="200" autocomplete="email" placeholder="nombre@empresa.com">
-                        <small>Se usará para redactar un aviso si no vinculas el hilo original.</small>
+                    <label for="request-type">Tipo de solicitud
+                        <select id="request-type">
+                            <option value="Cliente">Solicitud para clientes</option>
+                            <option value="Comunicaciones">Solicitud para Comunicaciones</option>
+                        </select>
                     </label>
-                    <label class="request-email-field" for="request-thread-url">Enlace al hilo original de Gmail (opcional)
-                        <input type="url" id="request-thread-url" maxlength="500" placeholder="https://mail.google.com/mail/u/0/#inbox/...">
-                        <small>Al marcar la solicitud entregada, podrás abrir este hilo desde su seguimiento.</small>
-                    </label>
+                    <div id="request-communications-flow" class="request-flow-guide" role="status" hidden>
+                        <strong><i class="fa-solid fa-circle-info" aria-hidden="true"></i> Solicitud interna de Comunicaciones</strong>
+                        <span>Registra la solicitud, solicita al proveedor y recepciona. La recepción suma las unidades al stock y cierra la solicitud.</span>
+                        <small>Se preparará un correo nuevo para capmovil@gmail.com. No se usará un correo de solicitante ni un hilo anterior.</small>
+                    </div>
+                    <div class="request-shared-fields">
+                        <label id="request-regional-field" for="request-regional">Regional única para toda la solicitud
+                            <select id="request-regional">
+                                <option value="Bogota">Bogotá</option>
+                                <option value="Eje Cafetero">Eje Cafetero</option>
+                                <option value="Noroccidente">Noroccidente</option>
+                                <option value="Sabana">Sabana</option>
+                                <option value="Cordoba">Córdoba</option>
+                                <option value="Costa">Costa</option>
+                                <option value="Suroccidente">Suroccidente</option>
+                                <option value="Santanderes">Santanderes</option>
+                            </select>
+                        </label>
+                        <label id="request-recipient-field" for="request-recipient">Persona destinataria única
+                            <input type="text" id="request-recipient" maxlength="150" placeholder="Nombre de la persona">
+                        </label>
+                    </div>
+                    <div id="request-email-fields">
+                        <label class="request-email-field" for="requester-email">Correo de quien solicitó (opcional)
+                            <input type="email" id="requester-email" maxlength="200" autocomplete="email" placeholder="nombre@empresa.com">
+                            <small>Se usará para redactar un aviso si no vinculas el hilo original.</small>
+                        </label>
+                        <label class="request-email-field" for="request-thread-url">Enlace al hilo original de Gmail (opcional)
+                            <input type="url" id="request-thread-url" maxlength="500" placeholder="https://mail.google.com/mail/u/0/#inbox/...">
+                            <small>Al marcar la solicitud entregada, podrás abrir este hilo desde su seguimiento.</small>
+                        </label>
+                    </div>
                     <div id="request-draft-rows" class="request-draft-rows"></div>
                     <div class="request-form-actions">
                         <button type="button" class="btn-secondary" id="btn-add-request-line"><i class="fa-solid fa-plus"></i> Agregar línea</button>
@@ -266,9 +301,11 @@
                             <select id="request-status-filter" aria-label="Filtrar solicitudes por estado">
                                 <option value="">Todos los estados</option>
                                 <option value="Registrada">Registradas</option>
+                                <option value="Revisión de disponibilidad">Revisión de disponibilidad</option>
                                 <option value="Solicitada">Solicitadas al proveedor</option>
                                 <option value="Recibida">Recibidas</option>
                                 <option value="Entregada">Entregadas</option>
+                                <option value="Cerrada">Cerradas</option>
                                 <option value="Anulada">Anuladas</option>
                             </select>
                             <button type="button" class="btn-secondary" id="btn-process-email-requests" data-admin-only hidden>

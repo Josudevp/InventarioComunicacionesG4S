@@ -163,7 +163,14 @@ import { apiRequest } from "./services/api.js";
             const panel = modal.querySelector('.confirm-panel');
             const cancel = document.getElementById('confirm-cancel');
             const accept = document.getElementById('confirm-accept');
+            const reasonField = document.getElementById('confirm-reason-field');
+            const reasonInput = document.getElementById('confirm-reason');
+            const reasonError = document.getElementById('confirm-reason-error');
             const previousFocus = document.activeElement;
+            const requiresReason = Boolean(opciones.requireReason);
+            reasonField.hidden = !requiresReason;
+            reasonInput.value = '';
+            reasonError.hidden = true;
             document.getElementById('confirm-title').textContent = opciones.titulo || 'Confirmar acción';
             document.getElementById('confirm-message').textContent = mensaje;
             panel.classList.toggle('is-danger', Boolean(opciones.danger));
@@ -174,13 +181,18 @@ import { apiRequest } from "./services/api.js";
 
             return new Promise(resolve => {
                 const finish = confirmed => {
+                    if (confirmed && requiresReason && !reasonInput.value.trim()) {
+                        reasonError.hidden = false;
+                        reasonInput.focus();
+                        return;
+                    }
                     modal.hidden = true;
                     modal.onclick = null;
                     modal.onkeydown = null;
                     cancel.onclick = null;
                     accept.onclick = null;
                     if (previousFocus && previousFocus.isConnected) previousFocus.focus();
-                    resolve(confirmed);
+                    resolve(confirmed ? (requiresReason ? reasonInput.value.trim() : true) : false);
                 };
                 cancel.onclick = () => finish(false);
                 accept.onclick = () => finish(true);
@@ -191,11 +203,19 @@ import { apiRequest } from "./services/api.js";
                         finish(false);
                     }
                     if (event.key === 'Tab') {
+                        const focusable = requiresReason
+                            ? [reasonInput, cancel, accept]
+                            : [cancel, accept];
+                        const currentIndex = focusable.indexOf(document.activeElement);
+                        const nextIndex = event.shiftKey
+                            ? (currentIndex <= 0 ? focusable.length - 1 : currentIndex - 1)
+                            : (currentIndex < 0 || currentIndex === focusable.length - 1 ? 0 : currentIndex + 1);
                         event.preventDefault();
-                        (document.activeElement === cancel ? accept : cancel).focus();
+                        focusable[nextIndex].focus();
                     }
                 };
-                panel.focus();
+                if (requiresReason) reasonInput.focus();
+                else panel.focus();
             });
         };
 
@@ -321,6 +341,14 @@ import { apiRequest } from "./services/api.js";
             document.querySelectorAll('#app-screen input[type="text"], #app-screen input[type="number"]').forEach(input => { input.value = ''; });
             document.getElementById('app-screen').style.display = 'none';
             document.getElementById('login-pass').value = '';
+            document.getElementById('request-type').value = 'Cliente';
+            document.getElementById('request-regional').value = 'Bogota';
+            document.getElementById('request-recipient-field').hidden = false;
+            document.getElementById('request-regional-field').hidden = false;
+            document.getElementById('request-email-fields').hidden = false;
+            document.getElementById('request-communications-flow').hidden = true;
+            document.getElementById('request-form-guidance').textContent =
+                'Todas las líneas comparten una regional y una persona destinataria.';
             window.actualizarPermisosCatalogo();
 
             let btn = document.getElementById('btn-login');
@@ -954,15 +982,9 @@ import { apiRequest } from "./services/api.js";
             });
         });
 
-        const regionalOptions = [
-            ['Bogota', 'Bogotá'], ['Eje Cafetero', 'Eje Cafetero'], ['Noroccidente', 'Noroccidente'],
-            ['Sabana', 'Sabana'], ['Cordoba', 'Córdoba'], ['Costa', 'Costa'],
-            ['Suroccidente', 'Suroccidente'], ['Santanderes', 'Santanderes']
-        ];
-
         window.agregarLineaSolicitud = function() {
             const firstItem = catalogoActual.find(item => item && item.activo !== false);
-            requestDraft.push({ idArticulo: firstItem ? firstItem.idArticulo : '', cliente: '', regional: 'Bogota', entregadoA: '', cantidad: 1 });
+            requestDraft.push({ idArticulo: firstItem ? firstItem.idArticulo : '', cliente: '', cantidad: 1 });
             window.renderizarSolicitudBorrador();
         };
 
@@ -980,12 +1002,10 @@ import { apiRequest } from "./services/api.js";
             requestDraft.forEach(line => {
                 if (!line.idArticulo && items.length) line.idArticulo = items[0].idArticulo;
             });
-            const regions = selected => regionalOptions.map(([value, label]) => `<option value="${value}" ${selected === value ? 'selected' : ''}>${label}</option>`).join('');
+            const requestType = document.getElementById('request-type').value;
             container.innerHTML = requestDraft.map((line, index) => `<div class="request-draft-row">
                 <div class="request-field"><label for="request-article-${index}">Artículo</label><select id="request-article-${index}" aria-label="Artículo de la línea ${index + 1}" onchange="window.actualizarLineaSolicitud(${index}, 'idArticulo', this.value)"><option value="">Selecciona artículo</option>${itemOptions}</select></div>
-                <label>Cliente<input type="text" value="${window.escapeHtml(line.cliente)}" placeholder="Cliente" maxlength="150" onchange="window.actualizarLineaSolicitud(${index}, 'cliente', this.value)"></label>
-                <div class="request-field"><label for="request-regional-${index}">Regional</label><select id="request-regional-${index}" aria-label="Regional de la línea ${index + 1}" onchange="window.actualizarLineaSolicitud(${index}, 'regional', this.value)">${regions(line.regional)}</select></div>
-                <label>Entregado a<input type="text" value="${window.escapeHtml(line.entregadoA)}" placeholder="Persona destinataria" maxlength="150" onchange="window.actualizarLineaSolicitud(${index}, 'entregadoA', this.value)"></label>
+                ${requestType === 'Cliente' ? `<label>Cliente<input type="text" value="${window.escapeHtml(line.cliente)}" placeholder="Cliente" maxlength="150" onchange="window.actualizarLineaSolicitud(${index}, 'cliente', this.value)"></label>` : '<span class="request-communications-label"><span class="request-communications-icon"><i class="fa-solid fa-tower-broadcast" aria-hidden="true"></i></span><strong>Comunicaciones</strong><small>Solicitud interna</small></span>'}
                 <label class="request-quantity">Cantidad<input type="number" min="1" max="9999" value="${line.cantidad}" aria-label="Cantidad de la línea ${index + 1}" onchange="window.actualizarLineaSolicitud(${index}, 'cantidad', this.value)"></label>
                 <button type="button" class="btn-danger request-remove" aria-label="Eliminar línea ${index + 1}" onclick="window.eliminarLineaSolicitud(${index})"><i class="fa-solid fa-trash"></i></button>
             </div>`).join('');
@@ -1027,15 +1047,21 @@ import { apiRequest } from "./services/api.js";
         window.guardarSolicitud = function() {
             const correoSolicitante = document.getElementById('requester-email').value.trim();
             const gmailThreadUrl = document.getElementById('request-thread-url').value.trim();
+            const tipoSolicitud = document.getElementById('request-type').value;
+            const regional = tipoSolicitud === 'Comunicaciones'
+                ? 'Comunicaciones'
+                : document.getElementById('request-regional').value;
+            const entregadoA = tipoSolicitud === 'Comunicaciones'
+                ? 'Comunicaciones'
+                : document.getElementById('request-recipient').value.trim();
             const items = requestDraft.map(line => ({
                 idArticulo: line.idArticulo,
-                cliente: line.cliente.trim(),
-                regional: line.regional,
-                entregadoA: line.entregadoA.trim(),
+                cliente: tipoSolicitud === 'Comunicaciones' ? 'Comunicaciones' : line.cliente.trim(),
                 cantidad: Number(line.cantidad)
             }));
-            if (!items.length || items.some(line => !line.idArticulo || !line.cliente || !line.regional || !line.entregadoA || !Number.isInteger(line.cantidad) || line.cantidad < 1)) {
-                window.mostrarAlerta('Completa artículo, cliente, regional, destinatario y cantidad en cada línea', 'error');
+            if (!items.length || !regional || !entregadoA ||
+                items.some(line => !line.idArticulo || (tipoSolicitud === 'Cliente' && !line.cliente) || !Number.isInteger(line.cantidad) || line.cantidad < 1)) {
+                window.mostrarAlerta('Completa artículo, regional, destinatario común, cantidad y cliente en cada línea', 'error');
                 return;
             }
             if (correoSolicitante && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(correoSolicitante)) {
@@ -1044,19 +1070,46 @@ import { apiRequest } from "./services/api.js";
             }
             const button = document.getElementById('btn-save-request');
             button.disabled = true;
-            apiRequest({ action: 'crear_solicitud', correoSolicitante, gmailThreadUrl, items })
+            apiRequest({ action: 'crear_solicitud', tipoSolicitud, regional, entregadoA, correoSolicitante, gmailThreadUrl, items })
                 .then(response => response.json()).then(result => {
                     if (result.status !== 'success') throw new Error(result.message || 'No se pudo registrar la solicitud');
                     window.mostrarAlerta(`Solicitud ${result.idSolicitud.slice(0, 8)} registrada`, 'success');
                     requestDraft = [];
                     document.getElementById('requester-email').value = '';
                     document.getElementById('request-thread-url').value = '';
+                    document.getElementById('request-recipient').value = '';
+                    document.getElementById('request-type').value = 'Cliente';
+                    document.getElementById('request-recipient-field').hidden = false;
+                    document.getElementById('request-regional-field').hidden = false;
+                    document.getElementById('request-email-fields').hidden = false;
+                    document.getElementById('request-communications-flow').hidden = true;
+                    document.getElementById('request-form-guidance').textContent =
+                        'Todas las líneas comparten una regional y una persona destinataria.';
+                    window.renderizarSolicitudBorrador();
                     window.agregarLineaSolicitud();
                     window.cargarSolicitudes();
                     window.cargarDashboard();
                 }).catch(error => window.mostrarAlerta(error.message, 'error'))
                 .finally(() => { button.disabled = false; });
         };
+
+        document.getElementById('request-type').addEventListener('change', event => {
+            const isClientRequest = event.target.value === 'Cliente';
+            document.getElementById('request-recipient-field').hidden = !isClientRequest;
+            document.getElementById('request-regional-field').hidden = !isClientRequest;
+            const emailFields = document.getElementById('request-email-fields');
+            const communicationsFlow = document.getElementById('request-communications-flow');
+            emailFields.hidden = !isClientRequest;
+            communicationsFlow.hidden = isClientRequest;
+            document.getElementById('request-form-guidance').textContent = isClientRequest
+                ? 'Todas las líneas comparten una regional y una persona destinataria.'
+                : 'La solicitud se tramita con proveedor y se cierra al recepcionar el stock.';
+            if (!isClientRequest) {
+                document.getElementById('requester-email').value = '';
+                document.getElementById('request-thread-url').value = '';
+            }
+            window.renderizarSolicitudBorrador();
+        });
 
         window.cargarSolicitudes = function() {
             const list = document.getElementById('requests-list');
@@ -1087,6 +1140,8 @@ import { apiRequest } from "./services/api.js";
                 const safeId = request.idSolicitud.replace(/[^A-Za-z0-9_-]/g, '');
                 const detailsId = `request-details-${safeId}`;
                 const shortId = window.escapeHtml(request.idSolicitud.slice(0, 8).toUpperCase());
+                const requestStatusClass = request.estado.normalize('NFD')
+                    .replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-');
                 const date = request.fechaRegistro ? new Date(request.fechaRegistro).toLocaleDateString('es-CO') : '';
                 const total = request.items.reduce((sum, item) => sum + Number(item.cantidad || 0), 0);
                 const accessoryTotals = Array.isArray(request.resumenAccesorios) ? request.resumenAccesorios : [];
@@ -1109,6 +1164,30 @@ import { apiRequest } from "./services/api.js";
                 const deliveryMailto = request.correoSolicitante
                     ? `mailto:${encodeURIComponent(request.correoSolicitante)}?subject=${encodeURIComponent(deliverySubject)}&body=${encodeURIComponent(deliveryBody)}`
                     : '';
+                const communicationSubject = `Solicitud de accesorios para Comunicaciones SOL-${shortId}`;
+                const communicationBody = [
+                    'Buen día,',
+                    '',
+                    'Solicito gestionar los siguientes accesorios para Comunicaciones:',
+                    '',
+                    ...request.items.map(item => `- ${item.descripcion || item.idArticulo}: ${Number(item.cantidad)} unidades`),
+                    '',
+                    '+luis Espinoza Psi',
+                    '',
+                    'Quedo atento a la confirmación.',
+                    '',
+                    'Muchas gracias.'
+                ].join('\n');
+                const communicationCc = [
+                    'juan.quiroga@co.g4s.com',
+                    'josue.perez@co.g4s.com',
+                    'piedrahita.nataly@co.g4s.com',
+                    'maria.reyes@co.g4s.com',
+                    'luis.espinoza@co.g4s.com'
+                ].join(',');
+                const communicationMailto = request.tipoSolicitud === 'Comunicaciones'
+                    ? `mailto:capmovil@gmail.com?cc=${encodeURIComponent(communicationCc)}&subject=${encodeURIComponent(communicationSubject)}&body=${encodeURIComponent(communicationBody)}`
+                    : '';
                 const accessorySummary = accessoryTotals.length
                     ? `<section class="request-accessory-summary" aria-label="Totales por accesorio"><strong>Totales por accesorio</strong><div>${accessoryTotals.map(item => `<span><b>${window.escapeHtml(item.nombre)}</b><small>${Number(item.cantidad).toLocaleString('es-CO')} u.</small></span>`).join('')}</div></section>`
                     : '';
@@ -1119,9 +1198,15 @@ import { apiRequest } from "./services/api.js";
                 }).join('');
                 let action = '';
                 if (request.estado === 'Registrada') {
-                    action = `<label class="request-provider-field">Proveedor<input type="text" data-provider-for="${safeId}" placeholder="Proveedor solicitado" maxlength="150"></label><button type="button" class="btn-primary request-transition" onclick="window.actualizarEstadoSolicitud('${safeId}', 'Solicitada', this)">Marcar solicitada</button><button type="button" class="btn-secondary request-transition" onclick="window.actualizarEstadoSolicitud('${safeId}', 'Anulada', this)">Anular solicitud</button>`;
+                    action = request.tipoSolicitud === 'Comunicaciones'
+                        ? `<label class="request-provider-field">Proveedor<select data-provider-for="${safeId}" onchange="window.alternarProveedorSolicitud('${safeId}', this.value)"><option value="CAPMOVIL" selected>CAPMOVIL</option><option value="Otro">Otro…</option></select><input type="text" data-provider-other-for="${safeId}" placeholder="Nombre del proveedor" maxlength="150" hidden></label><button type="button" class="btn-primary request-transition" onclick="window.actualizarEstadoSolicitud('${safeId}', 'Solicitada', this)">Solicitar al proveedor</button>`
+                        : `<button type="button" class="btn-primary request-transition" onclick="window.actualizarEstadoSolicitud('${safeId}', 'Revisión de disponibilidad', this)">Iniciar revisión de disponibilidad</button>`;
+                } else if (request.estado === 'Revisión de disponibilidad') {
+                    action = `<button type="button" class="btn-primary request-transition" onclick="window.verificarYDespacharSolicitud('${safeId}', this)">Despachar directamente</button><label class="request-provider-field">Proveedor (si no hay disponibilidad)<select data-provider-for="${safeId}" onchange="window.alternarProveedorSolicitud('${safeId}', this.value)"><option value="CAPMOVIL" selected>CAPMOVIL</option><option value="Otro">Otro…</option></select><input type="text" data-provider-other-for="${safeId}" placeholder="Nombre del proveedor" maxlength="150" hidden></label><button type="button" class="btn-secondary request-transition" onclick="window.actualizarEstadoSolicitud('${safeId}', 'Solicitada', this)">Sin disponibilidad: solicitar al proveedor</button>`;
                 } else if (request.estado === 'Solicitada') {
-                    action = '<button type="button" class="btn-primary request-transition" onclick="window.actualizarEstadoSolicitud(\'' + safeId + '\', \'Recibida\', this)">Registrar recepción</button><button type="button" class="btn-secondary request-transition" onclick="window.actualizarEstadoSolicitud(\'' + safeId + '\', \'Anulada\', this)">Anular solicitud</button>';
+                    action = request.tipoSolicitud === 'Comunicaciones'
+                        ? `<button type="button" class="btn-primary request-transition" onclick="window.actualizarEstadoSolicitud('${safeId}', 'Cerrada', this)">Recepcionar</button>`
+                        : `<button type="button" class="btn-primary request-transition" onclick="window.actualizarEstadoSolicitud('${safeId}', 'Recibida', this)">Registrar recepción</button>`;
                 } else if (request.estado === 'Recibida') {
                     action = '<button type="button" class="btn-black request-transition" onclick="window.actualizarEstadoSolicitud(\'' + safeId + '\', \'Entregada\', this)">Marcar entregada</button>';
                 } else if (request.estado === 'Anulada') {
@@ -1133,21 +1218,30 @@ import { apiRequest } from "./services/api.js";
                         ? `<a class="btn-secondary request-transition" href="${window.escapeHtml(deliveryMailto)}"><i class="fa-solid fa-envelope"></i> Redactar aviso de entrega</a>`
                         : '<span class="request-no-email">Sin correo o hilo vinculado</span>';
                     const copyResponseButton = `<button type="button" class="btn-secondary request-transition" data-delivery-response="${window.escapeHtml(deliveryBody)}" onclick="window.copiarRespuestaEntrega(this)"><i class="fa-solid fa-copy" aria-hidden="true"></i> Copiar respuesta</button>`;
-                    const linkThreadControl = !request.gmailThreadUrl
+                    const linkThreadControl = request.tipoSolicitud !== 'Comunicaciones' && !request.gmailThreadUrl
                         ? `<label class="request-thread-link-field">Enlace del hilo<input type="url" data-thread-url-for="${safeId}" placeholder="Pega aquí la URL de Gmail" maxlength="500"></label><button type="button" class="btn-secondary request-transition" onclick="window.vincularHiloSolicitud('${safeId}', this)">Vincular hilo</button>`
                         : '';
                     action = `<span class="request-complete"><i class="fa-solid fa-circle-check"></i> Entregada</span>${composeButton}${copyResponseButton}${linkThreadControl}`;
+                } else if (request.estado === 'Cerrada') {
+                    action = '<span class="request-complete"><i class="fa-solid fa-circle-check"></i> Recepción registrada · solicitud cerrada</span>';
                 } else {
                     action = '<span class="request-complete"><i class="fa-solid fa-circle-check"></i> Entregada</span>';
+                }
+                if (request.estado !== 'Anulada' && canReconcileInventory &&
+                    ['Registrada', 'Revisión de disponibilidad', 'Solicitada'].includes(request.estado)) {
+                    action += `<button type="button" class="btn-secondary request-transition" onclick="window.actualizarEstadoSolicitud('${safeId}', 'Anulada', this)">Anular solicitud</button>`;
+                }
+                if (communicationMailto && request.estado !== 'Anulada') {
+                    action += `<a class="btn-secondary request-transition" href="${window.escapeHtml(communicationMailto)}" target="_blank" rel="noopener noreferrer"><i class="fa-solid fa-envelope"></i> Redactar correo a Comunicaciones</a>`;
                 }
                 return `<article class="request-card">
                     <button type="button" class="request-card-toggle" data-request-toggle aria-expanded="false" aria-controls="${detailsId}">
                         <span class="request-card-toggle-main">
                             <span class="request-card-identity"><strong class="request-reference">SOL-${shortId}</strong><small>${window.escapeHtml(date)} · ${window.escapeHtml(request.registradoPor)}</small></span>
-                            <span class="request-status status-${request.estado.toLowerCase()}">${window.escapeHtml(request.estado)}</span>
+                            <span class="request-status status-${requestStatusClass}">${window.escapeHtml(request.estado)}</span>
                         </span>
                         <span class="request-card-parties">
-                            <span><small>Cliente</small><strong>${window.escapeHtml(clients.join(', ') || 'Sin cliente')}</strong></span>
+                            <span><small>${request.tipoSolicitud === 'Comunicaciones' ? 'Solicitud' : 'Cliente'}</small><strong>${window.escapeHtml(request.tipoSolicitud === 'Comunicaciones' ? 'Comunicaciones' : clients.join(', ') || 'Sin cliente')}</strong></span>
                             <span><small>Regional</small><strong>${window.escapeHtml(regions.join(', ') || 'Sin regional')}</strong></span>
                             <i class="fa-solid fa-chevron-down request-card-chevron" aria-hidden="true"></i>
                         </span>
@@ -1194,36 +1288,92 @@ import { apiRequest } from "./services/api.js";
             }
         };
 
-        window.actualizarEstadoSolicitud = async function(idSolicitud, estado, button) {
-            const confirmation = estado === 'Recibida'
+        window.alternarProveedorSolicitud = function(idSolicitud, provider) {
+            const otherField = document.querySelector(`[data-provider-other-for="${idSolicitud}"]`);
+            if (otherField) {
+                otherField.hidden = provider !== 'Otro';
+                if (provider !== 'Otro') otherField.value = '';
+                else otherField.focus();
+            }
+        };
+
+        window.actualizarEstadoSolicitud = async function(idSolicitud, estado, button, availabilityConfirmed = false) {
+            let justificacion = '';
+            if (estado === 'Anulada') {
+                if (!canReconcileInventory) {
+                    window.mostrarAlerta('Solo un administrador puede anular solicitudes', 'error');
+                    return;
+                }
+            }
+            const confirmation = estado === 'Recibida' || estado === 'Cerrada'
                 ? 'La recepción sumará las unidades al inventario. ¿Confirmar?'
                 : estado === 'Entregada'
                     ? 'La entrega descontará las unidades del inventario. ¿Confirmar?'
-                    : estado === 'Anulada'
-                        ? 'La solicitud se anulará y no podrá avanzar a recepción o entrega. ¿Continuar?'
-                        : '';
-            if (confirmation && !(await window.confirmarAccion(confirmation, {
-                titulo: estado === 'Recibida' ? 'Confirmar recepción' : estado === 'Entregada' ? 'Confirmar entrega' : 'Anular solicitud'
+                    : '';
+            if (estado === 'Anulada') {
+                justificacion = await window.confirmarAccion(
+                        'La solicitud se anulará y no podrá avanzar a recepción o entrega.',
+                        { titulo: 'Anular solicitud', danger: true, confirmLabel: 'Anular solicitud', requireReason: true }
+                );
+                if (!justificacion) return;
+            } else if (confirmation && !availabilityConfirmed && !(await window.confirmarAccion(
+                estado === 'Cerrada'
+                    ? 'Al recepcionar, se sumarán las unidades al inventario y la solicitud de Comunicaciones quedará cerrada.'
+                    : confirmation,
+                {
+                titulo: estado === 'Cerrada' || estado === 'Recibida' ? 'Confirmar recepción' : 'Confirmar entrega'
             }))) return;
             let proveedor = '';
-            if (estado === 'Solicitada') {
+            if (estado === 'Solicitada' && document.querySelector(`[data-provider-for="${idSolicitud}"]`)) {
                 const field = document.querySelector(`[data-provider-for="${idSolicitud}"]`);
-                proveedor = field ? field.value.trim() : '';
+                if (field && field.tagName === 'SELECT') {
+                    proveedor = field.value === 'Otro'
+                        ? document.querySelector(`[data-provider-other-for="${idSolicitud}"]`)?.value.trim() || ''
+                        : field.value.trim();
+                } else {
+                    proveedor = field ? field.value.trim() : '';
+                }
                 if (!proveedor) {
                     window.mostrarAlerta('Indica el proveedor para avanzar la solicitud', 'error');
                     return;
                 }
             }
             button.disabled = true;
-            apiRequest({ action: 'actualizar_estado_solicitud', idSolicitud, estado, proveedor })
-                .then(response => response.json()).then(result => {
-                    if (result.status !== 'success') throw new Error(result.message || 'No se pudo actualizar la solicitud');
-                    window.mostrarAlerta(`Solicitud actualizada: ${result.estado}`, 'success');
-                    window.cargarSolicitudes();
-                    window.cargarDashboard();
-                    if (estado === 'Recibida' || estado === 'Entregada') window.cargarCatalogo();
-                }).catch(error => window.mostrarAlerta(error.message, 'error'))
-                .finally(() => { button.disabled = false; });
+            try {
+                const response = await apiRequest({ action: 'actualizar_estado_solicitud', idSolicitud, estado, proveedor, justificacion });
+                const result = await response.json();
+                if (result.status !== 'success') throw new Error(result.message || 'No se pudo actualizar la solicitud');
+                window.mostrarAlerta(`Solicitud actualizada: ${result.estado}`, 'success');
+                window.cargarSolicitudes();
+                window.cargarDashboard();
+                if (estado === 'Recibida' || estado === 'Entregada' || estado === 'Cerrada') window.cargarCatalogo();
+            } catch (error) {
+                window.mostrarAlerta(error.message, 'error');
+            } finally {
+                button.disabled = false;
+            }
+        };
+
+        window.verificarYDespacharSolicitud = async function(idSolicitud, button) {
+            button.disabled = true;
+            try {
+                const response = await apiRequest({ action: 'revisar_disponibilidad_solicitud', idSolicitud });
+                const result = await response.json();
+                if (result.status !== 'success') throw new Error(result.message || 'No se pudo verificar la disponibilidad');
+                if (!result.disponible) {
+                    window.mostrarAlerta('No hay stock suficiente para esta solicitud. Indica un proveedor y selecciona “Sin disponibilidad: solicitar al proveedor”.', 'warning');
+                    return;
+                }
+                const accepted = await window.confirmarAccion(
+                    'Hay stock suficiente. Si continúas, la solicitud cambiará a Entregada y se registrará una salida que descontará estas unidades del inventario.',
+                    { titulo: 'Confirmar disponibilidad y despacho', confirmLabel: 'Despachar y descontar stock' }
+                );
+                if (accepted) await window.actualizarEstadoSolicitud(idSolicitud, 'Entregada', button, true);
+            } catch (error) {
+                window.mostrarAlerta(error.message, 'error');
+            } finally {
+                button.disabled = false;
+            }
         };
 
         window.renderizarGraficoUnidades = function() {
@@ -1278,9 +1428,11 @@ import { apiRequest } from "./services/api.js";
             dashboardSelectedRequestState = state;
             const label = {
                 Registrada: 'Registradas',
+                'Revisión de disponibilidad': 'En revisión de disponibilidad',
                 Solicitada: 'Solicitadas',
                 Recibida: 'Recibidas',
                 Entregada: 'Entregadas',
+                Cerrada: 'Cerradas',
                 Anulada: 'Anuladas'
             }[state];
             document.getElementById('dashboard-request-detail').textContent =
@@ -1300,9 +1452,11 @@ import { apiRequest } from "./services/api.js";
             if (!chart || !legend) return;
             const categories = [
                 ['Registrada', 'Registradas', '#2563eb'],
+                ['Revisión de disponibilidad', 'Revisión de disponibilidad', '#06b6d4'],
                 ['Solicitada', 'Solicitadas', '#f59e0b'],
                 ['Recibida', 'Recibidas', '#8b5cf6'],
                 ['Entregada', 'Entregadas', '#10b981'],
+                ['Cerrada', 'Cerradas', '#0f766e'],
                 ['Anulada', 'Anuladas', '#94a3b8']
             ];
             const total = categories.reduce((sum, [key]) => sum + (Number(states[key]) || 0), 0);
@@ -1767,11 +1921,11 @@ import { apiRequest } from "./services/api.js";
             }
             body.innerHTML = rows.map(row => {
                 const date = row.fechaHora ? new Date(row.fechaHora).toLocaleString('es-CO') : '';
-                const canAnnul = row.estado === 'Confirmado' && !row.relacionada;
+                const canAnnul = canReconcileInventory && row.estado === 'Confirmado' && !row.relacionada;
                 const statusClass = String(row.estado || '').toLowerCase().replace(/[^a-z0-9]+/g, '-');
                 const actions = canAnnul
                     ? `<button type="button" class="btn-secondary photo-button" onclick="window.anularMovimiento('${window.escapeHtml(row.idTransaccion)}')">Anular</button>`
-                    : window.escapeHtml(row.relacionada || 'Sin acciones');
+                    : `${window.escapeHtml(row.relacionada || (row.justificacionAnulacion ? `Anulada: ${row.justificacionAnulacion}` : 'Sin acciones'))}`;
                 return `<tr class="history-row">
                     <td data-label="Fecha">${window.escapeHtml(date)}</td>
                     <td data-label="Artículo"><strong>${window.escapeHtml(window.nombreArticulo(row.idArticulo))}</strong></td>
@@ -1813,9 +1967,16 @@ import { apiRequest } from "./services/api.js";
         };
 
         window.procesarAnulacionMovimiento = async function(idTransaccion) {
-            const confirmation = 'El movimiento quedará marcado como anulado, no afectará el saldo y se conservará en el historial. No se creará una transacción inversa.';
-            if (!(await window.confirmarAccion(confirmation, { titulo: 'Anular movimiento', danger: true, confirmLabel: 'Anular' }))) return;
-            apiRequest({ action: 'anular_movimiento', idTransaccion })
+            if (!canReconcileInventory) {
+                window.mostrarAlerta('Solo un administrador puede anular movimientos', 'error');
+                return;
+            }
+            const justificacion = await window.confirmarAccion(
+                'El movimiento quedará marcado como anulado y se conservará en el historial.',
+                { titulo: 'Anular movimiento', danger: true, confirmLabel: 'Anular movimiento', requireReason: true }
+            );
+            if (!justificacion) return;
+            apiRequest({ action: 'anular_movimiento', idTransaccion, justificacion })
                 .then(response => response.json()).then(result => {
                     if (result.status !== 'success') throw new Error(result.message || 'No se pudo anular el movimiento');
                     window.mostrarAlerta('Movimiento anulado correctamente; no se creó una transacción inversa.', 'success');
