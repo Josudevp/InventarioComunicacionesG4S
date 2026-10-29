@@ -552,7 +552,13 @@ import { apiRequest } from "./services/api.js";
             });
             document.querySelectorAll('[data-admin-only]').forEach(control => {
                 control.hidden = !canReconcileInventory;
+                control.disabled = !canReconcileInventory;
             });
+            const movementType = document.getElementById('tipoMov');
+            if (movementType && movementType.selectedOptions[0]?.disabled) {
+                movementType.value = 'Salida';
+                window.cambiarMovimientoUI('Salida');
+            }
         };
 
         window.renderizarCatalogo = function() {

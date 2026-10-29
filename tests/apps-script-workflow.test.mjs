@@ -264,7 +264,7 @@ test('negative movement quantities are rejected and spreadsheet quantity columns
     validation.column === 5 && validation.rule.minimum === 1 && validation.rule.allowInvalid === false));
 });
 
-test('manual movements and annulments are restricted to administrators', () => {
+test('operators can record entries, customer exits, and damage write-offs only', () => {
   const { context, spreadsheet } = createRuntime();
   const admin = { usuario: 'administrador', rol: 'admin' };
   const operator = { usuario: 'operador', rol: 'usuario' };
@@ -278,7 +278,17 @@ test('manual movements and annulments are restricted to administrators', () => {
     tipoMovimiento: 'Ajuste positivo',
     motivo: 'Ajuste no autorizado',
     items: [{ idArticulo: 'CARG-USB', cantidad: 1 }]
-  }, operator), /Solo un administrador/);
+  }, operator), /reservado a administradores/);
+  assert.throws(() => context.registerMovement_({
+    tipoMovimiento: 'Ajuste negativo',
+    motivo: 'Ajuste no autorizado',
+    items: [{ idArticulo: 'CARG-USB', cantidad: 1 }]
+  }, operator), /reservado a administradores/);
+  assert.throws(() => context.registerMovement_({
+    tipoMovimiento: 'Devolucion',
+    proveedor: 'Proveedor A',
+    items: [{ idArticulo: 'CARG-USB', cantidad: 1 }]
+  }, operator), /reservado a administradores/);
   assert.throws(() => context.annulMovement_({
     idTransaccion: movement.idTransaccion,
     justificacion: 'Motivo'
@@ -287,6 +297,43 @@ test('manual movements and annulments are restricted to administrators', () => {
     idTransaccion: movement.idTransaccion
   }, admin), /justificacion.*obligatoria/i);
   assert.equal(stockFor(spreadsheet, 'CARG-USB'), 2);
+});
+
+test('non-admin users can register Entrada, Salida, and Baja por daño', () => {
+  const { context, spreadsheet } = createRuntime();
+  const operator = { usuario: 'operador', rol: 'usuario' };
+  const entry = response(context.registerMovement_({
+    tipoMovimiento: 'Entrada',
+    proveedor: 'CAPMOVIL',
+    items: [{ idArticulo: 'CARG-USB', cantidad: 5 }]
+  }, operator));
+  assert.equal(entry.status, 'success');
+
+  const exit = response(context.registerMovement_({
+    tipoMovimiento: 'Salida',
+    items: [{ idArticulo: 'CARG-USB', cantidad: 2 }],
+    distribution: [{
+      cliente: 'Cliente A',
+      idArticulo: 'CARG-USB',
+      regional: 'Bogota',
+      usuario: 'Ana',
+      cantidad: 2
+    }]
+  }, operator));
+  assert.equal(exit.status, 'success');
+
+  const damage = response(context.registerMovement_({
+    tipoMovimiento: 'Baja por daño',
+    motivo: 'Equipo averiado',
+    items: [{ idArticulo: 'CARG-USB', cantidad: 1 }]
+  }, operator));
+  assert.equal(damage.status, 'success');
+  assert.equal(stockFor(spreadsheet, 'CARG-USB'), 2);
+  assert.deepEqual(spreadsheet.getSheetByName('Registro de Movimientos').rows.slice(1).map(row => row[3]), [
+    'Entrada',
+    'Salida',
+    'Baja por daño'
+  ]);
 });
 
 test('inventory formulas retain both sides of corrected movements', () => {

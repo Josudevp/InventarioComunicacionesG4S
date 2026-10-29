@@ -1190,9 +1190,11 @@ function checkRequestAvailability_(data, session) {
 }
 
 function registerMovement_(data, session) {
-  if (!isAdmin_(session)) throw new Error("Solo un administrador puede registrar movimientos manuales; usa una solicitud");
   var type = String(data.tipoMovimiento || "Salida");
   if (CONFIG.movementTypes.indexOf(type) < 0) throw new Error("Tipo de movimiento invalido");
+  if (!isAdmin_(session) && ["Entrada", "Salida", "Baja por daño"].indexOf(type) < 0) {
+    throw new Error("Este tipo de movimiento esta reservado a administradores; puedes registrar Entrada, Salida o Baja por daño");
+  }
   var items = normalizeItems_(data.items);
   if (!items.length) throw new Error("El movimiento no tiene articulos");
   var distribution = Array.isArray(data.distribution) ? data.distribution : [];

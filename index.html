@@ -87,7 +87,7 @@
 
         <div class="tab-bar" role="tablist" aria-label="Secciones del inventario">
             <button type="button" class="tab active" role="tab" aria-selected="true" aria-controls="tab-dashboard" onclick="window.switchTab('dashboard', this)">Dashboard</button>
-            <button type="button" class="tab" role="tab" aria-selected="false" aria-controls="tab-registro" onclick="window.switchTab('registro', this)" data-admin-only hidden>Movimientos</button>
+            <button type="button" class="tab" role="tab" aria-selected="false" aria-controls="tab-registro" onclick="window.switchTab('registro', this)">Movimientos</button>
             <button type="button" class="tab" role="tab" aria-selected="false" aria-controls="tab-solicitudes" onclick="window.switchTab('solicitudes', this)">Solicitudes</button>
             <button type="button" class="tab" role="tab" aria-selected="false" aria-controls="tab-historial" onclick="window.switchTab('historial', this)">Historial</button>
             <button type="button" class="tab" role="tab" aria-selected="false" aria-controls="tab-catalogo" onclick="window.switchTab('catalogo', this)">Catálogo</button>
@@ -175,21 +175,21 @@
                     <section class="dashboard-panel dashboard-shortcuts">
                         <h2>Accesos rápidos</h2>
                         <button type="button" class="btn-secondary" onclick="window.switchTab('solicitudes', document.querySelector('[aria-controls=tab-solicitudes]'))"><i class="fa-solid fa-file-circle-plus"></i> Nueva solicitud</button>
-                        <button type="button" class="btn-secondary" onclick="window.switchTab('registro', document.querySelector('[aria-controls=tab-registro]'))" data-admin-only hidden><i class="fa-solid fa-arrow-right-arrow-left"></i> Registrar movimiento</button>
+                        <button type="button" class="btn-secondary" onclick="window.switchTab('registro', document.querySelector('[aria-controls=tab-registro]'))"><i class="fa-solid fa-arrow-right-arrow-left"></i> Registrar movimiento</button>
                     </section>
                 </div>
             </section>
 
             <!-- TAB REGISTRO -->
-            <div id="tab-registro" class="section" data-admin-only hidden>
+            <div id="tab-registro" class="section">
                 <div class="card">
                     <label for="tipoMov">Tipo de movimiento</label>
                     <select id="tipoMov" onchange="window.cambiarMovimientoUI(this.value)">
                         <option value="Salida">Salida</option>
                         <option value="Entrada">Entrada</option>
-                        <option value="Devolucion">Devolución</option>
-                        <option value="Ajuste positivo">Ajuste positivo</option>
-                        <option value="Ajuste negativo">Ajuste negativo</option>
+                        <option value="Devolucion" data-admin-only>Devolución</option>
+                        <option value="Ajuste positivo" data-admin-only>Ajuste positivo</option>
+                        <option value="Ajuste negativo" data-admin-only>Ajuste negativo</option>
                         <option value="Baja por daño">Baja por daño</option>
                     </select>
 
