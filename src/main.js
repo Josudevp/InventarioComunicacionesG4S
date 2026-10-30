@@ -54,6 +54,13 @@ import { apiRequest } from "./services/api.js";
         let carrito = [];
         let html5QrcodeScanner = null;
         let catalogoActual = [];
+        let equipmentRows = [];
+        let equipmentMasterMatches = [];
+        let pendingEquipmentBatch = [];
+        const selectedEquipmentIds = new Set();
+        const equipmentStatusOptions = [
+            'Disponible', 'Dañado', 'Disposición final', 'Garantía', 'Enviados CAP', 'Despachado a puesto'
+        ];
         let distributionRows = [];
         let distributionConfirmed = false;
         let canManageCatalog = false;
@@ -1615,6 +1622,31 @@ import { apiRequest } from "./services/api.js";
                         : averageHours >= 24 ? `${(averageHours / 24).toFixed(1)} días` : `${averageHours.toLocaleString('es-CO', { maximumFractionDigits: 1 })} h`;
                     document.getElementById('kpi-entrega-promedio').textContent = averageDelivery;
                     document.getElementById('kpi-entregadas-mes').textContent = Number(data.solicitudesEntregadasMes || 0).toLocaleString('es-CO');
+                    const phones = data.celulares || {};
+                    document.getElementById('dashboard-phone-total').textContent = Number(phones.total || 0).toLocaleString('es-CO');
+                    document.getElementById('dashboard-phone-warehouse').textContent = Number(phones.bodega || 0).toLocaleString('es-CO');
+                    document.getElementById('dashboard-phone-service').textContent =
+                        (Number(phones.enReparacion || 0) + Number(phones.enGarantia || 0)).toLocaleString('es-CO');
+                    document.getElementById('dashboard-phone-return-average').textContent = phones.promedioRetornoDias == null
+                        ? 'Sin datos'
+                        : `${Number(phones.promedioRetornoDias).toLocaleString('es-CO', { maximumFractionDigits: 1 })} días`;
+                    document.getElementById('dashboard-phone-return-count').textContent =
+                        `${Number(phones.retornosMedidos || 0).toLocaleString('es-CO')} retornos medidos`;
+                    const pendingBody = document.getElementById('dashboard-phone-pending');
+                    const pendingPhones = Array.isArray(phones.pendientes) ? phones.pendientes : [];
+                    pendingBody.innerHTML = pendingPhones.length
+                        ? pendingPhones.map(phone => {
+                            const date = phone.fechaEnvio ? new Date(phone.fechaEnvio).toLocaleDateString('es-CO') : '—';
+                            return `<tr>
+                                <td data-label="Modelo"><strong>${window.escapeHtml(phone.modelo || '')}</strong></td>
+                                <td data-label="IMEI">${window.escapeHtml(phone.imei || '')}</td>
+                                <td data-label="Ubicación SAM">${window.escapeHtml(phone.ubicacionSam || '')}</td>
+                                <td data-label="Estado">${window.escapeHtml(phone.estado || '')}</td>
+                                <td data-label="Enviado">${window.escapeHtml(date)}</td>
+                                <td data-label="Días esperando">${phone.diasEspera == null ? '—' : Number(phone.diasEspera).toLocaleString('es-CO')}</td>
+                            </tr>`;
+                        }).join('')
+                        : '<tr><td colspan="6">No hay equipos pendientes de retorno.</td></tr>';
                     const states = data.solicitudesPorEstado || {};
                     dashboardChartData = Array.isArray(data.unidadesPorMes) ? data.unidadesPorMes : [];
                     dashboardRequestStates = states;
@@ -1800,6 +1832,15 @@ import { apiRequest } from "./services/api.js";
                 { header: 'Fecha entrega', value: ({ solicitud }) => reportDate(solicitud.fechaEntrega) },
                 { header: 'Observaciones', value: ({ solicitud }) => solicitud.observaciones },
                 { header: 'Justificación de anulación', value: ({ solicitud }) => solicitud.justificacionAnulacion }
+            ],
+            celulares: [
+                { header: 'Fecha de recepción', value: item => item.fechaRecepcion || '' },
+                { header: 'Modelo', value: item => item.modelo || '' },
+                { header: 'IMEI', value: item => item.imei || '' },
+                { header: 'Ubicación SAM', value: item => item.ubicacionSam || '' },
+                { header: 'Daño / reparación', value: item => item.danoReparacion || '' },
+                { header: 'Estado', value: item => item.estado || '' },
+                { header: 'Registrado por', value: item => item.registradoPor || '' }
             ]
         };
         let reportCatalog = new Map();
@@ -1853,12 +1894,25 @@ import { apiRequest } from "./services/api.js";
             );
             if (kinds.includes('movimientos')) tasks.push(fetchAllReportPages('obtener_movimientos').then(data => ['movimientos', data]));
             if (kinds.includes('solicitudes')) tasks.push(fetchAllReportPages('obtener_solicitudes').then(data => ['solicitudes', data]));
+            if (kinds.includes('celulares')) {
+                tasks.push(apiRequest({ action: 'obtener_equipos' }).then(async response => {
+                    const result = await response.json();
+                    if (result.status !== 'success') throw new Error(result.message || 'No se pudo consultar celulares');
+                    return ['celulares', Array.isArray(result.data) ? result.data : []];
+                }));
+                tasks.push(apiRequest({ action: 'obtener_dashboard' }).then(async response => {
+                    const result = await response.json();
+                    if (result.status !== 'success') throw new Error(result.message || 'No se pudieron consultar KPI celulares');
+                    return ['dashboardCelulares', result.data?.celulares || {}];
+                }));
+            }
             return Object.fromEntries(await Promise.all(tasks));
         };
         const reportSheets = {
             inventario: { name: 'Inventario', columns: reportColumns.inventario },
             movimientos: { name: 'Movimientos', columns: reportColumns.movimientos },
-            solicitudes: { name: 'Solicitudes', columns: reportColumns.solicitudes }
+            solicitudes: { name: 'Solicitudes', columns: reportColumns.solicitudes },
+            celulares: { name: 'Celulares', columns: reportColumns.celulares }
         };
         const appendReportSheet = (workbook, { name, columns }, rows) => {
             const sheetRows = rows.map(row => columns.map(column => column.value(row)));
@@ -2014,6 +2068,7 @@ import { apiRequest } from "./services/api.js";
                     ['Referencias con alerta de stock', alertInventory.length],
                     ['Movimientos incluidos', movements.length],
                     ['Solicitudes incluidas', requests.length],
+                    ['Celulares activos incluidos', (data.celulares || []).length],
                     ['Líneas de solicitud', requests.reduce((total, request) => total + (Array.isArray(request.items) ? request.items.length : 0), 0)]
                 ];
                 const worksheet = XLSX.utils.aoa_to_sheet([['Indicador', 'Valor'], ...summary]);
@@ -2028,16 +2083,49 @@ import { apiRequest } from "./services/api.js";
                 appendReportSheet(workbook, reportSheets.solicitudes, requests.flatMap(solicitud =>
                     (solicitud.items || []).map(item => ({ solicitud, item }))
                 ));
+                appendReportSheet(workbook, reportSheets.celulares, data.celulares || []);
+                appendEquipmentKpiSheets(workbook, data.dashboardCelulares || {});
             } else if (kind === 'solicitudes') {
                 appendReportSheet(workbook, reportSheets.solicitudes, (data.solicitudes || []).flatMap(solicitud =>
                     (solicitud.items || []).map(item => ({ solicitud, item }))
                 ));
+            } else if (kind === 'celulares') {
+                appendReportSheet(workbook, reportSheets.celulares, data.celulares || []);
+                appendEquipmentKpiSheets(workbook, data.dashboardCelulares || {});
             } else if (kind === 'analitica') {
                 appendInsightReportSheets(workbook, data.analitica || {});
             } else {
                 appendReportSheet(workbook, reportSheets[kind], data[kind] || []);
             }
             return workbook;
+        };
+
+        const appendEquipmentKpiSheets = (workbook, metrics) => {
+            appendReportSheet(workbook, {
+                name: 'KPI CAPMOVIL',
+                columns: [
+                    { header: 'Indicador', value: item => item.indicador },
+                    { header: 'Valor', value: item => item.valor }
+                ]
+            }, [
+                { indicador: 'Equipos activos', valor: Number(metrics.total) || 0 },
+                { indicador: 'En Bodega', valor: Number(metrics.bodega) || 0 },
+                { indicador: 'En reparación', valor: Number(metrics.enReparacion) || 0 },
+                { indicador: 'En garantía', valor: Number(metrics.enGarantia) || 0 },
+                { indicador: 'Retornos medidos', valor: Number(metrics.retornosMedidos) || 0 },
+                { indicador: 'Promedio de retorno (días)', valor: metrics.promedioRetornoDias ?? '' }
+            ]);
+            appendReportSheet(workbook, {
+                name: 'CAPMOVIL pendientes',
+                columns: [
+                    { header: 'Modelo', value: item => item.modelo || '' },
+                    { header: 'IMEI', value: item => item.imei || '' },
+                    { header: 'Ubicación SAM', value: item => item.ubicacionSam || '' },
+                    { header: 'Estado', value: item => item.estado || '' },
+                    { header: 'Enviado', value: item => reportDate(item.fechaEnvio) },
+                    { header: 'Días esperando', value: item => item.diasEspera ?? '' }
+                ]
+            }, Array.isArray(metrics.pendientes) ? metrics.pendientes : []);
         };
         document.querySelectorAll('[data-report-download]').forEach(button => {
             button.addEventListener('click', async () => {
@@ -2050,7 +2138,7 @@ import { apiRequest } from "./services/api.js";
                 try {
                     XLSX ||= (await import('xlsx/dist/xlsx.core.min.js')).default;
                     const kinds = kind === 'completo'
-                        ? ['inventario', 'movimientos', 'solicitudes']
+                        ? ['inventario', 'movimientos', 'solicitudes', 'celulares']
                         : kind === 'analitica' ? [] : [kind];
                     const data = await fetchReportData(kinds);
                     if (kind === 'analitica') {
@@ -2342,6 +2430,387 @@ import { apiRequest } from "./services/api.js";
         };
         document.getElementById('btn-inventory-insights-refresh').addEventListener('click', window.cargarAnaliticaInventario);
 
+        const localDateValue = () => {
+            const date = new Date();
+            return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+        };
+
+        const updateEquipmentSelectionUi = () => {
+            const visible = [...document.querySelectorAll('#equipment-table-body [data-equipment-select]')];
+            const selectedVisible = visible.filter(input => selectedEquipmentIds.has(input.value)).length;
+            const selectedCount = selectedEquipmentIds.size;
+            document.getElementById('equipment-selection-count').textContent = `${selectedCount.toLocaleString('es-CO')} seleccionados`;
+            document.getElementById('btn-apply-equipment-status').disabled = selectedCount === 0;
+            ['equipment-select-visible', 'equipment-select-all-visible'].forEach(id => {
+                const checkbox = document.getElementById(id);
+                checkbox.checked = visible.length > 0 && selectedVisible === visible.length;
+                checkbox.indeterminate = selectedVisible > 0 && selectedVisible < visible.length;
+            });
+        };
+
+        const selectVisibleEquipmentRows = selected => {
+            document.querySelectorAll('#equipment-table-body [data-equipment-select]').forEach(input => {
+                if (selected) selectedEquipmentIds.add(input.value);
+                else selectedEquipmentIds.delete(input.value);
+                input.checked = selected;
+            });
+            updateEquipmentSelectionUi();
+        };
+
+        window.renderizarLoteEquipos = function() {
+            const body = document.getElementById('equipment-batch-body');
+            const count = pendingEquipmentBatch.length;
+            document.getElementById('equipment-batch-count').textContent = `${count.toLocaleString('es-CO')} en el lote`;
+            document.getElementById('btn-clear-equipment-batch').disabled = count === 0;
+            document.getElementById('btn-save-equipment-batch').disabled = count === 0;
+            if (!count) {
+                body.innerHTML = '<tr><td colspan="6">Añade celulares al lote.</td></tr>';
+                return;
+            }
+            body.innerHTML = pendingEquipmentBatch.map((item, index) => `<tr>
+                <td data-label="Modelo"><strong>${window.escapeHtml(item.modelo)}</strong></td>
+                <td data-label="IMEI">${window.escapeHtml(item.imei)}</td>
+                <td data-label="Ubicación SAM">${window.escapeHtml(item.ubicacionSam)}</td>
+                <td data-label="Daño / reparación">${window.escapeHtml(item.danoReparacion)}</td>
+                <td data-label="Estado">${window.escapeHtml(item.estado)}</td>
+                <td><button type="button" class="btn-secondary equipment-batch-remove" data-remove-batch-item="${index}" aria-label="Quitar IMEI ${window.escapeHtml(item.imei)} del lote" title="Quitar del lote"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button></td>
+            </tr>`).join('');
+        };
+
+        window.renderizarEquipos = function() {
+            const body = document.getElementById('equipment-table-body');
+            const search = document.getElementById('equipment-search').value.trim().toLocaleLowerCase('es');
+            const status = document.getElementById('equipment-status-filter').value;
+            const availableIds = new Set(equipmentRows.map(item => item.id));
+            selectedEquipmentIds.forEach(id => { if (!availableIds.has(id)) selectedEquipmentIds.delete(id); });
+            const serviceStatuses = new Set([
+                'Dañado', 'Garantía', 'Enviados CAP'
+            ]);
+            document.getElementById('equipment-count-total').textContent = equipmentRows.length.toLocaleString('es-CO');
+            document.getElementById('equipment-count-warehouse').textContent = equipmentRows
+                .filter(item => item.estado === 'Disponible').length.toLocaleString('es-CO');
+            document.getElementById('equipment-count-service').textContent = equipmentRows
+                .filter(item => serviceStatuses.has(item.estado)).length.toLocaleString('es-CO');
+            const rows = equipmentRows.filter(item => {
+                const matchesSearch = `${item.modelo} ${item.imei} ${item.ubicacionSam}`.toLocaleLowerCase('es').includes(search);
+                return matchesSearch && (status === 'all' || item.estado === status);
+            });
+            document.getElementById('equipment-result-count').textContent =
+                `${rows.length.toLocaleString('es-CO')} de ${equipmentRows.length.toLocaleString('es-CO')} equipos`;
+            if (!rows.length) {
+                body.innerHTML = '<tr><td colspan="7">No hay equipos que coincidan con la búsqueda.</td></tr>';
+                updateEquipmentSelectionUi();
+                return;
+            }
+            body.innerHTML = rows.map(item => {
+                const date = item.fechaRecepcion || '';
+                const id = window.escapeHtml(item.id);
+                const imei = window.escapeHtml(item.imei || '');
+                const deleteButton = canReconcileInventory
+                    ? `<button type="button" class="btn-secondary equipment-delete-btn" data-equipment-delete="${id}" aria-label="Eliminar celular IMEI ${imei}" title="Eliminar celular"><i class="fa-solid fa-trash" aria-hidden="true"></i></button>`
+                    : '';
+                const options = equipmentStatusOptions.map(option =>
+                    `<option value="${window.escapeHtml(option)}" ${item.estado === option ? 'selected' : ''}>${window.escapeHtml(option)}</option>`
+                ).join('');
+                return `<tr>
+                    <td data-label="Seleccionar"><input type="checkbox" data-equipment-select value="${id}" ${selectedEquipmentIds.has(item.id) ? 'checked' : ''} aria-label="Seleccionar IMEI ${imei}"></td>
+                    <td data-label="Fecha">${window.escapeHtml(date)}</td>
+                    <td data-label="Modelo"><strong>${window.escapeHtml(item.modelo)}</strong></td>
+                    <td data-label="IMEI">${imei}</td>
+                    <td data-label="Ubicación SAM">${window.escapeHtml(item.ubicacionSam || '')}</td>
+                    <td data-label="Daño / reparación">${window.escapeHtml(item.danoReparacion)}</td>
+                    <td data-label="Estado actual"><div class="equipment-state-actions">
+                        <select data-equipment-state="${id}" aria-label="Nuevo estado para IMEI ${imei}">${options}</select>
+                        <button type="button" class="btn-secondary" data-equipment-save="${id}" aria-label="Guardar estado del IMEI ${imei}" title="Guardar estado"><i class="fa-solid fa-check" aria-hidden="true"></i></button>
+                        ${deleteButton}
+                    </div></td>
+                </tr>`;
+            }).join('');
+            updateEquipmentSelectionUi();
+        };
+
+        window.cargarEquipos = async function() {
+            const body = document.getElementById('equipment-table-body');
+            if (!body) return;
+            body.innerHTML = '<tr><td colspan="7">Cargando equipos...</td></tr>';
+            const dateField = document.getElementById('equipment-date');
+            if (!dateField.value) dateField.value = localDateValue();
+            try {
+                const response = await apiRequest({ action: 'obtener_equipos' });
+                const result = await response.json();
+                if (result.status !== 'success') throw new Error(result.message || 'No se pudo consultar el inventario de celulares');
+                equipmentRows = Array.isArray(result.data) ? result.data : [];
+                if (Array.isArray(result.estados)) equipmentStatusOptions.splice(0, equipmentStatusOptions.length, ...result.estados);
+                window.renderizarEquipos();
+                const feedback = document.getElementById('equipment-feedback');
+                feedback.textContent = '';
+                feedback.classList.remove('is-error');
+            } catch (error) {
+                body.innerHTML = `<tr><td colspan="7">${window.escapeHtml(error.message)}</td></tr>`;
+                document.getElementById('equipment-result-count').textContent = 'No se pudo cargar el inventario';
+            }
+        };
+
+        window.agregarEquipoLote = function(event) {
+            event.preventDefault();
+            const form = event.currentTarget;
+            const feedback = document.getElementById('equipment-feedback');
+            if (!form.reportValidity()) return;
+            const item = {
+                fechaRecepcion: document.getElementById('equipment-date').value,
+                modelo: document.getElementById('equipment-model').value.trim(),
+                imei: document.getElementById('equipment-imei').value.trim(),
+                ubicacionSam: document.getElementById('equipment-location').value.trim(),
+                danoReparacion: document.getElementById('equipment-condition').value.trim(),
+                estado: document.getElementById('equipment-state').value
+            };
+            if (pendingEquipmentBatch.some(row => row.imei === item.imei) || equipmentRows.some(row => row.imei === item.imei)) {
+                feedback.textContent = `El IMEI ${item.imei} ya está en el lote o en el inventario.`;
+                feedback.classList.add('is-error');
+                return;
+            }
+            if (pendingEquipmentBatch.length >= 500) {
+                feedback.textContent = 'El lote admite máximo 500 celulares.';
+                feedback.classList.add('is-error');
+                return;
+            }
+            pendingEquipmentBatch.push(item);
+            const date = item.fechaRecepcion;
+            const state = item.estado;
+            const condition = item.danoReparacion;
+            form.reset();
+            document.getElementById('equipment-date').value = date;
+            document.getElementById('equipment-state').value = state;
+            document.getElementById('equipment-condition').value = condition;
+            document.getElementById('equipment-imei-suffix').value = '';
+            document.getElementById('equipment-imei-results').textContent = '';
+            feedback.classList.remove('is-error');
+            feedback.textContent = `IMEI ${item.imei} añadido al lote.`;
+            window.renderizarLoteEquipos();
+            document.getElementById('equipment-imei-suffix').focus();
+        };
+
+        window.vaciarLoteEquipos = function() {
+            pendingEquipmentBatch = [];
+            window.renderizarLoteEquipos();
+            document.getElementById('equipment-feedback').textContent = 'Lote vacío.';
+        };
+
+        window.registrarLoteEquipos = async function() {
+            if (!pendingEquipmentBatch.length) return;
+            const button = document.getElementById('btn-save-equipment-batch');
+            const feedback = document.getElementById('equipment-feedback');
+            button.disabled = true;
+            feedback.classList.remove('is-error');
+            feedback.textContent = `Registrando ${pendingEquipmentBatch.length} celulares...`;
+            try {
+                const response = await apiRequest({ action: 'registrar_equipos_lote', items: pendingEquipmentBatch });
+                const result = await response.json();
+                if (result.status !== 'success') throw new Error(result.message || 'No se pudo registrar el lote');
+                const count = result.count || pendingEquipmentBatch.length;
+                pendingEquipmentBatch = [];
+                window.renderizarLoteEquipos();
+                feedback.textContent = `${count} celulares registrados.`;
+                await Promise.all([window.cargarEquipos(), window.cargarDashboard()]);
+                window.mostrarAlerta(`${count} celulares registrados correctamente.`, 'success');
+            } catch (error) {
+                feedback.textContent = error.message;
+                feedback.classList.add('is-error');
+            } finally {
+                button.disabled = pendingEquipmentBatch.length === 0;
+            }
+        };
+
+        window.aplicarEstadoMasivoEquipos = async function() {
+            const ids = [...selectedEquipmentIds];
+            const status = document.getElementById('equipment-bulk-status').value;
+            if (!ids.length) return;
+            const serviceStates = ['Enviados CAP', 'Garantía'];
+            const returnStates = ['Disponible', 'Dañado', 'Despachado a puesto'];
+            const selected = equipmentRows.filter(item => ids.includes(item.id));
+            const startsCycle = serviceStates.includes(status) && selected.some(item => !serviceStates.includes(item.estado));
+            const closesCycle = returnStates.includes(status) && selected.some(item => serviceStates.includes(item.estado));
+            if (startsCycle || closesCycle) {
+                const message = startsCycle
+                    ? 'Se iniciará la traza de retorno para los celulares seleccionados en CAPMOVIL/garantía.'
+                    : 'El cambio cerrará la medición de retorno para los celulares que están en servicio.';
+                const confirmed = await window.confirmarAccion(message, {
+                    titulo: startsCycle ? 'Iniciar seguimiento CAPMOVIL' : 'Registrar retornos',
+                    confirmLabel: startsCycle ? 'Iniciar medición' : 'Cerrar mediciones'
+                });
+                if (!confirmed) return;
+            }
+            const button = document.getElementById('btn-apply-equipment-status');
+            const feedback = document.getElementById('equipment-bulk-feedback');
+            button.disabled = true;
+            try {
+                const response = await apiRequest({ action: 'actualizar_estados_equipos', ids, estado: status });
+                const result = await response.json();
+                if (result.status !== 'success') throw new Error(result.message || 'No se pudieron cambiar los estados');
+                selectedEquipmentIds.clear();
+                document.getElementById('equipment-select-visible').checked = false;
+                document.getElementById('equipment-select-all-visible').checked = false;
+                feedback.textContent = `${result.updated} estados actualizados${startsCycle ? '; inició el KPI de retorno' : closesCycle ? '; se cerraron los KPI de retorno' : ''}.`;
+                await Promise.all([window.cargarEquipos(), window.cargarDashboard()]);
+            } catch (error) {
+                feedback.textContent = error.message;
+            } finally {
+                button.disabled = selectedEquipmentIds.size === 0;
+            }
+        };
+
+        document.getElementById('equipment-form').addEventListener('submit', window.agregarEquipoLote);
+        document.getElementById('equipment-condition').addEventListener('keydown', event => {
+            if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                document.getElementById('equipment-form').requestSubmit();
+            }
+        });
+        document.getElementById('btn-clear-equipment-batch').addEventListener('click', window.vaciarLoteEquipos);
+        document.getElementById('btn-save-equipment-batch').addEventListener('click', window.registrarLoteEquipos);
+        document.getElementById('equipment-batch-body').addEventListener('click', event => {
+            const button = event.target.closest('[data-remove-batch-item]');
+            if (!button) return;
+            pendingEquipmentBatch.splice(Number(button.dataset.removeBatchItem), 1);
+            window.renderizarLoteEquipos();
+        });
+        document.getElementById('equipment-search').addEventListener('input', window.renderizarEquipos);
+        document.getElementById('equipment-status-filter').addEventListener('change', window.renderizarEquipos);
+        document.getElementById('btn-equipment-refresh').addEventListener('click', window.cargarEquipos);
+        document.getElementById('equipment-table-body').addEventListener('change', event => {
+            const checkbox = event.target.closest('[data-equipment-select]');
+            if (!checkbox) return;
+            if (checkbox.checked) selectedEquipmentIds.add(checkbox.value);
+            else selectedEquipmentIds.delete(checkbox.value);
+            updateEquipmentSelectionUi();
+        });
+        document.getElementById('equipment-select-visible').addEventListener('change', event => selectVisibleEquipmentRows(event.currentTarget.checked));
+        document.getElementById('equipment-select-all-visible').addEventListener('change', event => selectVisibleEquipmentRows(event.currentTarget.checked));
+        document.getElementById('btn-apply-equipment-status').addEventListener('click', window.aplicarEstadoMasivoEquipos);
+
+        window.actualizarEstadoEquipo = async function(id, status, button) {
+            const currentEquipment = equipmentRows.find(item => item.id === id);
+            const serviceStates = ['Enviados CAP', 'Garantía'];
+            const returnStates = ['Disponible', 'Dañado', 'Despachado a puesto'];
+            const startsServiceCycle = serviceStates.includes(status) && !serviceStates.includes(currentEquipment?.estado);
+            const closesServiceCycle = serviceStates.includes(currentEquipment?.estado) && returnStates.includes(status);
+            if (startsServiceCycle) {
+                const confirmed = await window.confirmarAccion(
+                    'Se guardará la fecha de envío y comenzará el KPI de tiempo de retorno CAPMOVIL. El ciclo se cerrará cuando el estado cambie al regresar el equipo.',
+                    { titulo: status === 'Garantía' ? 'Iniciar seguimiento de garantía' : 'Registrar envío a CAPMOVIL', confirmLabel: 'Iniciar seguimiento' }
+                );
+                if (!confirmed) return;
+            }
+            button.disabled = true;
+            try {
+                const response = await apiRequest({ action: 'actualizar_estado_equipo', id, estado: status });
+                const result = await response.json();
+                if (result.status !== 'success') throw new Error(result.message || 'No se pudo actualizar el estado');
+                await Promise.all([window.cargarEquipos(), window.cargarDashboard()]);
+                const message = startsServiceCycle
+                    ? 'Trazabilidad iniciada; se medirá el tiempo hasta el retorno del celular.'
+                    : closesServiceCycle
+                        ? 'Retorno registrado; el ciclo de tiempo de CAPMOVIL quedó cerrado.'
+                        : 'Estado del celular actualizado.';
+                window.mostrarAlerta(message, 'success');
+            } catch (error) {
+                button.disabled = false;
+                window.mostrarAlerta(error.message, 'error');
+            }
+        };
+
+        window.eliminarEquipo = async function(id) {
+            if (!canReconcileInventory) {
+                window.mostrarAlerta('Solo un administrador puede eliminar celulares.', 'error');
+                return;
+            }
+            const confirmed = await window.confirmarAccion(
+                'El celular dejará de aparecer en el inventario activo. Se conservará archivado para auditoría.',
+                { titulo: 'Eliminar celular', danger: true, confirmLabel: 'Eliminar celular' }
+            );
+            if (!confirmed) return;
+            try {
+                const response = await apiRequest({ action: 'eliminar_equipo', id });
+                const result = await response.json();
+                if (result.status !== 'success') throw new Error(result.message || 'No se pudo archivar el celular');
+                selectedEquipmentIds.delete(id);
+                await Promise.all([window.cargarEquipos(), window.cargarDashboard()]);
+                window.mostrarAlerta('Celular eliminado del inventario activo y archivado.', 'success');
+            } catch (error) {
+                window.mostrarAlerta(error.message, 'error');
+            }
+        };
+
+        window.buscarEquipoMaestro = async function() {
+            const input = document.getElementById('equipment-imei-suffix');
+            const button = document.getElementById('btn-equipment-imei-search');
+            const results = document.getElementById('equipment-imei-results');
+            const suffix = input.value.trim();
+            if (!/^\d{6,15}$/.test(suffix)) {
+                results.textContent = 'Escribe al menos 6 dígitos del IMEI; puedes ingresar más para precisar la búsqueda.';
+                input.focus();
+                return;
+            }
+            button.disabled = true;
+            results.textContent = 'Buscando en el maestro de celulares...';
+            try {
+                const response = await apiRequest({ action: 'buscar_equipo_maestro', imeiConsulta: suffix });
+                const result = await response.json();
+                if (result.status !== 'success') throw new Error(result.message || 'No se pudo consultar el maestro');
+                equipmentMasterMatches = Array.isArray(result.data) ? result.data : [];
+                if (!equipmentMasterMatches.length) {
+                    results.textContent = 'No se encontraron equipos con ese IMEI.';
+                    return;
+                }
+                results.innerHTML = equipmentMasterMatches.map((item, index) => {
+                    const description = [item.modelo, item.imei ? `IMEI ${item.imei}` : '', item.ubicacionSam]
+                        .filter(Boolean).map(window.escapeHtml).join(' · ') || 'Equipo sin modelo ni serial en el maestro';
+                    return `<div class="equipment-imei-match">
+                        <p>${description}</p>
+                        <button type="button" class="btn-secondary" data-master-match="${index}"><i class="fa-solid fa-arrow-down-to-bracket" aria-hidden="true"></i> Usar datos</button>
+                    </div>`;
+                }).join('');
+            } catch (error) {
+                equipmentMasterMatches = [];
+                results.textContent = error.message;
+            } finally {
+                button.disabled = false;
+            }
+        };
+
+        document.getElementById('equipment-imei-suffix').addEventListener('input', event => {
+            event.currentTarget.value = event.currentTarget.value.replace(/\D/g, '').slice(0, 15);
+        });
+        document.getElementById('btn-equipment-imei-search').addEventListener('click', window.buscarEquipoMaestro);
+        document.getElementById('equipment-imei-suffix').addEventListener('keydown', event => {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                window.buscarEquipoMaestro();
+            }
+        });
+        document.getElementById('equipment-imei-results').addEventListener('click', event => {
+            const button = event.target.closest('[data-master-match]');
+            if (!button) return;
+            const match = equipmentMasterMatches[Number(button.dataset.masterMatch)];
+            if (!match) return;
+            if (match.modelo) document.getElementById('equipment-model').value = match.modelo;
+            if (match.imei) document.getElementById('equipment-imei').value = match.imei;
+            document.getElementById('equipment-location').value = match.ubicacionSam || '';
+            document.getElementById('equipment-condition').focus();
+            document.getElementById('equipment-feedback').textContent = 'Modelo, IMEI y ubicación cargados; verifica la condición y el estado del celular.';
+        });
+        document.getElementById('equipment-table-body').addEventListener('click', event => {
+            const deleteButton = event.target.closest('[data-equipment-delete]');
+            if (deleteButton) {
+                window.eliminarEquipo(deleteButton.dataset.equipmentDelete);
+                return;
+            }
+            const saveButton = event.target.closest('[data-equipment-save]');
+            if (!saveButton) return;
+            const select = saveButton.closest('tr').querySelector('[data-equipment-state]');
+            window.actualizarEstadoEquipo(saveButton.dataset.equipmentSave, select.value, saveButton);
+        });
+
         window.switchTab = function(tabName, tabElement) {
             document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
@@ -2353,6 +2822,7 @@ import { apiRequest } from "./services/api.js";
             });
             tabElement.classList.add('active');
             if (tabName === 'dashboard') window.cargarDashboard();
+            if (tabName === 'equipos') window.cargarEquipos();
             if (tabName === 'reportes') window.cargarAnaliticaInventario();
             if (tabName === 'solicitudes') window.cargarSolicitudes();
             if (tabName === 'historial') window.cargarHistorial();

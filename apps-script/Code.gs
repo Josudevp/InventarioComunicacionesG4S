@@ -1,6 +1,6 @@
 // API de Inventario Comunicaciones G4S.
 // Hojas del archivo principal:
-//   Maestro de inventario: A=ID, B=Categoria, C=Descripcion, D=Stock inicial,
+//   Inventario accesorios: A=ID, B=Categoria, C=Descripcion, D=Stock inicial,
 //   E=Entradas, F=Salidas, G=Stock_Actual, H=Stock_Minimo_Alerta, I=Foto_URL.
 //   Registro de Movimientos: A=ID_Transaccion, B=Fecha_Hora, C=ID_Articulo,
 //   D=Tipo_Movimiento, E=Cantidad, F=Registrado_Por, G=Entregado_A_Usuario,
@@ -30,9 +30,21 @@ var CONFIG = {
   emailErrorLabel: "Inventario/Error de procesamiento",
   emailRequestObservation: "Solicitud generada automaticamente desde correo",
   usersSheetIndex: 0,
-  inventorySheet: "Maestro de inventario",
+  inventorySheet: "Inventario accesorios",
+  legacyInventorySheet: "Maestro de inventario",
   movementsSheet: "Registro de Movimientos",
-  requestsSheet: "Solicitudes",
+  requestsSheet: "Solicitudes accesorios",
+  legacyRequestsSheet: "Solicitudes",
+  equipmentMasterSheet: "Equipos",
+  equipmentSourceSpreadsheetId: "12r2OlaIV8HH_HdenI2BST2_zsNmpA-UB-C3AK4-yUxg",
+  equipmentSourceImportProperty: "EQUIPMENT_SOURCE_SPREADSHEET_ID",
+  equipmentSheet: "Inventario de celulares",
+  equipmentHistorySheet: "Historial de celulares",
+  equipmentArchiveSheet: "Celulares archivados",
+  equipmentHeaders: ["ID_Equipo", "Fecha_Recepcion", "Modelo", "Dato legado", "Dano_Reparacion", "Estado", "Registrado_Por", "Fecha_Actualizacion", "Actualizado_Por", "IMEI", "Ubicacion_SAM"],
+  equipmentArchiveHeaders: ["ID_Equipo", "Fecha_Recepcion", "Modelo", "Dato legado", "Dano_Reparacion", "Estado", "Registrado_Por", "Fecha_Actualizacion", "Actualizado_Por", "IMEI", "Ubicacion_SAM", "Fecha_Archivado", "Motivo_Archivo", "Archivado_Por"],
+  equipmentHistoryHeaders: ["ID_Cambio", "Fecha_Hora", "ID_Equipo", "Dato legado", "Modelo", "Estado_Anterior", "Estado_Nuevo", "Registrado_Por"],
+  equipmentStatuses: ["Disponible", "Dañado", "Disposición final", "Garantía", "Enviados CAP", "Despachado a puesto"],
   requestHeaders: ["ID_Solicitud", "Fecha_Registro", "Registrado_Por", "Cliente", "Regional", "Entregado_A", "ID_Articulo", "Descripcion", "Cantidad", "Estado", "Proveedor", "Fecha_Solicitud_Proveedor", "Fecha_Recepcion", "Fecha_Entrega", "ID_Transaccion_Recepcion", "ID_Transaccion_Entrega", "Observaciones", "Actualizado_Por", "Fecha_Actualizacion", "Costo_Unitario_COP", "Correo_Solicitante", "Gmail_Thread_ID", "Gmail_Thread_URL", "Fecha_Revision_Disponibilidad", "Justificacion_Anulacion", "Tipo_Solicitud"],
   requestStatuses: ["Registrada", "Revisión de disponibilidad", "Solicitada", "Recibida", "Entregada", "Cerrada", "Anulada"],
   movementHeaders: ["ID_Transaccion", "Fecha_Hora", "ID_Articulo", "Tipo_Movimiento", "Cantidad", "Registrado_Por", "Entregado_A_Usuario", "Cliente_Proveedor", "Regional", "Estado", "ID_Transaccion_Relacionada", "Motivo", "Regional_Origen", "Regional_Destino", "Clave_Idempotencia", "Huella_Solicitud", "Justificacion_Anulacion"],
@@ -177,6 +189,13 @@ function doPost(e) {
     if (action === "obtener_dashboard") return getDashboard_(session);
     if (action === "obtener_analitica_inventario") return getInventoryInsights_(data, session);
     if (action === "obtener_solicitudes") return getRequests_(data, session);
+    if (action === "obtener_equipos") return getEquipment_(session);
+    if (action === "buscar_equipo_maestro") return searchEquipmentMaster_(data);
+    if (action === "registrar_equipo") return registerEquipment_(data, session);
+    if (action === "registrar_equipos_lote") return registerEquipmentBatch_(data, session);
+    if (action === "actualizar_estado_equipo") return updateEquipmentStatus_(data, session);
+    if (action === "actualizar_estados_equipos") return updateEquipmentStatuses_(data, session);
+    if (action === "eliminar_equipo") return deleteEquipment_(data, session);
     if (action === "crear_solicitud") return createRequest_(data, session);
     if (action === "revisar_disponibilidad_solicitud") return checkRequestAvailability_(data, session);
     if (action === "vincular_hilo_solicitud") return linkRequestThread_(data, session);
@@ -546,6 +565,7 @@ function getDashboard_(session) {
     }
   });
   var purchasesLastSixMonths = purchaseMonthKeys.reduce(function(total, key) { return total + purchaseCounts[key]; }, 0);
+  var equipmentMetrics = getEquipmentDashboardMetrics_(now);
   var movementRows = movementSheet_().getDataRange().getValues();
   var movementsThisMonth = 0;
   for (var k = 1; k < movementRows.length; k++) {
@@ -613,6 +633,7 @@ function getDashboard_(session) {
       agotados: metrics.agotados,
       solicitudesPendientes: states.Registrada + states["Revisión de disponibilidad"] + states.Solicitada + states.Recibida,
       solicitudesPorEstado: states,
+      celulares: equipmentMetrics,
       unidadesPorMes: movementMonths.map(function(key) {
         return {
           mes: key,
@@ -654,6 +675,82 @@ function getDashboard_(session) {
       lineasCompraConCostoMes: costedLinesThisMonth
     }
   });
+}
+
+function getEquipmentDashboardMetrics_(now) {
+  archivarEquiposDisposicionFinal();
+  var sheet = equipmentSheet_();
+  sincronizarUbicacionesEquipos_(sheet);
+  var equipmentRows = sheet.getDataRange().getValues();
+  var historyRows = equipmentHistorySheet_().getDataRange().getValues();
+  var serviceStates = ["Enviados CAP", "Garantía"];
+  var returnStates = ["Disponible", "Dañado", "Despachado a puesto"];
+  var openCycles = Object.create(null);
+  var completedDurations = [];
+
+  for (var i = 1; i < historyRows.length; i++) {
+    var history = historyRows[i];
+    var equipmentId = clean_(history[2], 100);
+    var previousStatus = clean_(history[5], 100);
+    var nextStatus = clean_(history[6], 100);
+    var eventDate = history[1] instanceof Date ? history[1] : new Date(history[1]);
+    if (!equipmentId || isNaN(eventDate.getTime())) continue;
+    if (serviceStates.indexOf(nextStatus) >= 0) {
+      if (!openCycles[equipmentId]) openCycles[equipmentId] = { fechaEnvio: eventDate, estado: nextStatus };
+      continue;
+    }
+    if (!openCycles[equipmentId]) continue;
+    if (returnStates.indexOf(nextStatus) >= 0 && eventDate >= openCycles[equipmentId].fechaEnvio) {
+      completedDurations.push((eventDate.getTime() - openCycles[equipmentId].fechaEnvio.getTime()) / 86400000);
+      delete openCycles[equipmentId];
+    } else if (nextStatus === "Disposición final") {
+      delete openCycles[equipmentId];
+    }
+  }
+
+  var metrics = {
+    total: 0,
+    bodega: 0,
+    enReparacion: 0,
+    enGarantia: 0,
+    disposicionFinal: 0,
+    pendientesRetorno: 0,
+    retornosMedidos: completedDurations.length,
+    promedioRetornoDias: completedDurations.length
+      ? Math.round(completedDurations.reduce(function(total, value) { return total + value; }, 0) / completedDurations.length * 10) / 10
+      : null,
+    pendientes: []
+  };
+  var pendingById = Object.create(null);
+  for (var row = 1; row < equipmentRows.length; row++) {
+    var equipment = equipmentRows[row];
+    var id = clean_(equipment[0], 100);
+    if (!id) continue;
+    metrics.total++;
+    var status = clean_(equipment[5], 100);
+    if (status === "Disponible") metrics.bodega++;
+    if (status === "Disposición final") metrics.disposicionFinal++;
+    if (serviceStates.indexOf(status) < 0) continue;
+    if (status === "Garantía") metrics.enGarantia++;
+    else metrics.enReparacion++;
+    var cycle = openCycles[id];
+    var sentAt = cycle ? cycle.fechaEnvio : (equipment[7] instanceof Date ? equipment[7] : new Date(equipment[7]));
+    var waitingDays = isNaN(sentAt.getTime()) ? null : Math.max(0, Math.floor((now.getTime() - sentAt.getTime()) / 86400000));
+    pendingById[id] = {
+      id: id,
+      modelo: clean_(equipment[2], 100),
+      imei: clean_(equipment[9], 20),
+      ubicacionSam: clean_(equipment[10], 200),
+      estado: status,
+      fechaEnvio: isNaN(sentAt.getTime()) ? "" : sentAt,
+      diasEspera: waitingDays
+    };
+  }
+  var pendingRows = Object.keys(pendingById).map(function(id) { return pendingById[id]; })
+    .sort(function(first, second) { return (second.diasEspera || 0) - (first.diasEspera || 0); });
+  metrics.pendientesRetorno = pendingRows.length;
+  metrics.pendientes = pendingRows.slice(0, 10);
+  return metrics;
 }
 
 function getInventoryInsights_(data, session) {
@@ -2003,6 +2100,564 @@ function ensureInventoryCostColumn_(sheet) {
   setMinimumNumberValidation_(sheet, 8, 0);
 }
 
+function getEquipment_(session) {
+  archivarEquiposDisposicionFinal();
+  var sheet = equipmentSheet_();
+  sincronizarUbicacionesEquipos_(sheet);
+  var rows = sheet.getDataRange().getValues();
+  var equipment = rows.slice(1).filter(function(row) { return clean_(row[0], 100); })
+    .map(function(row) {
+      return {
+        id: clean_(row[0], 100),
+        fechaRecepcion: equipmentDateDisplay_(row[1]),
+        modelo: clean_(row[2], 100),
+        serial: clean_(row[3], 100),
+        imei: clean_(row[9], 20),
+        ubicacionSam: clean_(row[10], 200),
+        danoReparacion: clean_(row[4], 500),
+        estado: canonicalEquipmentStatus_(row[5]),
+        registradoPor: clean_(row[6], 100),
+        actualizado: row[7] || "",
+        actualizadoPor: clean_(row[8], 100)
+      };
+    }).reverse();
+  return json_({ status: "success", data: equipment, estados: CONFIG.equipmentStatuses });
+}
+
+function deleteEquipment_(data, session) {
+  if (!isAdmin_(session)) throw new Error("Solo un administrador puede eliminar celulares");
+  var id = clean_(data.id, 100);
+  if (!id) throw new Error("Equipo no válido");
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    var sheet = equipmentSheet_();
+    var rows = sheet.getDataRange().getValues();
+    for (var i = 1; i < rows.length; i++) {
+      if (clean_(rows[i][0], 100) !== id) continue;
+      archiveEquipmentRow_(sheet, i + 1, rows[i], "Eliminación manual", session.usuario);
+      return json_({ status: "success" });
+    }
+    throw new Error("No se encontró el celular");
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function configurarArchivadoAutomaticoCelulares() {
+  var handler = "archivarEquiposDisposicionFinal";
+  var exists = ScriptApp.getProjectTriggers().some(function(trigger) {
+    return trigger.getHandlerFunction() === handler;
+  });
+  if (!exists) ScriptApp.newTrigger(handler).timeBased().everyDays(1).atHour(3).create();
+  return "Archivado diario de disposición final configurado";
+}
+
+function archivarEquiposDisposicionFinal() {
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    return archivarEquiposDisposicionFinal_();
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function archivarEquiposDisposicionFinal_() {
+  var sheet = equipmentSheet_();
+  var rows = sheet.getDataRange().getValues();
+  var cutoff = Date.now() - 30 * 86400000;
+  var archived = 0;
+  for (var i = rows.length - 1; i >= 1; i--) {
+    if (clean_(rows[i][5], 100) !== "Disposición final") continue;
+    var disposedAt = rows[i][7] instanceof Date ? rows[i][7] : new Date(rows[i][7]);
+    if (isNaN(disposedAt.getTime()) || disposedAt.getTime() > cutoff) continue;
+    archiveEquipmentRow_(sheet, i + 1, rows[i], "Disposición final por más de 30 días", "Automático");
+    archived++;
+  }
+  return archived;
+}
+
+function archiveEquipmentRow_(sheet, rowNumber, row, reason, user) {
+  var archive = equipmentArchiveSheet_();
+  var values = row.slice(0, CONFIG.equipmentHeaders.length);
+  while (values.length < CONFIG.equipmentHeaders.length) values.push("");
+  values.push(new Date(), reason, clean_(user, 100));
+  archive.getRange(archive.getLastRow() + 1, 1, 1, CONFIG.equipmentArchiveHeaders.length).setValues([values]);
+  sheet.deleteRow(rowNumber);
+}
+
+function equipmentArchiveSheet_() {
+  var spreadsheet = mainSpreadsheet_();
+  var sheet = spreadsheet.getSheetByName(CONFIG.equipmentArchiveSheet);
+  if (!sheet) sheet = spreadsheet.insertSheet(CONFIG.equipmentArchiveSheet);
+  if (!sheet.getLastRow()) {
+    sheet.getRange(1, 1, 1, CONFIG.equipmentArchiveHeaders.length).setValues([CONFIG.equipmentArchiveHeaders]);
+    return sheet;
+  }
+  var current = sheet.getRange(1, 1, 1, CONFIG.equipmentArchiveHeaders.length).getValues()[0];
+  CONFIG.equipmentArchiveHeaders.forEach(function(header, index) {
+    if (index === 3 && String(current[index] || "").trim() === "Serial") {
+      sheet.getRange(1, index + 1).setValue(header);
+      sheet.hideColumns(index + 1);
+      current[index] = header;
+      return;
+    }
+    if (String(current[index] || "").trim() !== header) {
+      throw new Error("La hoja " + CONFIG.equipmentArchiveSheet + " existe con encabezados incompatibles");
+    }
+  });
+  sheet.hideColumns(4);
+  return sheet;
+}
+
+function sincronizarUbicacionesEquipos_(equipmentSheet) {
+  var master = mainSpreadsheet_().getSheetByName(CONFIG.equipmentMasterSheet);
+  if (!master) return;
+  var header = equipmentMasterHeader_(master);
+  if (!header || !header.locationColumn) return;
+  var masterRowCount = master.getLastRow() - header.row;
+  if (masterRowCount < 1) return;
+  var imeiValues = header.imeiColumns.map(function(column) {
+    return master.getRange(header.row + 1, column, masterRowCount, 1).getDisplayValues();
+  });
+  var modelValues = header.modelColumn
+    ? master.getRange(header.row + 1, header.modelColumn, masterRowCount, 1).getDisplayValues()
+    : null;
+  var typeValues = header.typeColumn
+    ? master.getRange(header.row + 1, header.typeColumn, masterRowCount, 1).getDisplayValues()
+    : null;
+  var locationValues = master.getRange(header.row + 1, header.locationColumn, masterRowCount, 1).getDisplayValues();
+  var locations = Object.create(null);
+  for (var masterRow = 0; masterRow < masterRowCount; masterRow++) {
+    if ((modelValues && isSimRecord_(modelValues[masterRow][0])) ||
+        (typeValues && isSimRecord_(typeValues[masterRow][0]))) continue;
+    imeiValues.forEach(function(columnValues) {
+      var imei = String(columnValues[masterRow][0] || "").replace(/\D/g, "");
+      if (imei) locations[imei] = clean_(locationValues[masterRow][0], 200);
+    });
+  }
+  var rows = equipmentSheet.getDataRange().getValues();
+  for (var equipmentRow = 1; equipmentRow < rows.length; equipmentRow++) {
+    var equipmentImei = String(rows[equipmentRow][9] || "").replace(/\D/g, "");
+    if (!equipmentImei || !Object.prototype.hasOwnProperty.call(locations, equipmentImei)) continue;
+    if (clean_(rows[equipmentRow][10], 200) !== locations[equipmentImei]) {
+      equipmentSheet.getRange(equipmentRow + 1, 11).setValue(locations[equipmentImei]);
+    }
+  }
+}
+
+function searchEquipmentMaster_(data) {
+  var suffix = String(data.imeiConsulta || "").replace(/\D/g, "");
+  if (!/^\d{6,15}$/.test(suffix)) throw new Error("Escribe al menos 6 dígitos del IMEI; puedes ingresar hasta los 15");
+
+  var sheet = mainSpreadsheet_().getSheetByName(CONFIG.equipmentMasterSheet);
+  if (!sheet) throw new Error("No se encontró la hoja " + CONFIG.equipmentMasterSheet + " en el spreadsheet de la aplicación");
+  var header = equipmentMasterHeader_(sheet);
+  if (!header) throw new Error("No se encontró la columna IMEI_ICCID en la hoja Equipos");
+
+  var rowCount = sheet.getLastRow() - header.row;
+  if (rowCount < 1) return json_({ status: "success", data: [], total: 0 });
+  var imeiColumns = header.imeiColumns.map(function(column) {
+    return sheet.getRange(header.row + 1, column, rowCount, 1).getDisplayValues();
+  });
+  var typeValues = header.typeColumn
+    ? sheet.getRange(header.row + 1, header.typeColumn, rowCount, 1).getDisplayValues()
+    : null;
+  var modelValues = header.modelColumn
+    ? sheet.getRange(header.row + 1, header.modelColumn, rowCount, 1).getDisplayValues()
+    : null;
+  var locationValues = header.locationColumn
+    ? sheet.getRange(header.row + 1, header.locationColumn, rowCount, 1).getDisplayValues()
+    : null;
+  var matches = [];
+
+  for (var row = 0; row < rowCount; row++) {
+    if ((typeValues && isSimRecord_(typeValues[row][0])) ||
+        (modelValues && isSimRecord_(modelValues[row][0]))) continue;
+    var fullImei = "";
+    for (var column = 0; column < imeiColumns.length; column++) {
+      var candidate = String(imeiColumns[column][row][0] || "").replace(/\D/g, "");
+      if (candidate.endsWith(suffix)) {
+        fullImei = candidate;
+        break;
+      }
+    }
+    if (!fullImei) continue;
+    matches.push({
+      modelo: modelValues ? clean_(modelValues[row][0], 100) : "",
+      imei: fullImei,
+      ubicacionSam: locationValues ? clean_(locationValues[row][0], 200) : ""
+    });
+  }
+  return json_({ status: "success", data: matches.slice(0, 20), total: matches.length });
+}
+
+function equipmentMasterHeader_(sheet) {
+  var headerRowLimit = Math.min(sheet.getLastRow(), 20);
+  var columnCount = sheet.getLastColumn();
+  if (headerRowLimit < 1 || columnCount < 1) return null;
+  var rows = sheet.getRange(1, 1, headerRowLimit, columnCount).getDisplayValues();
+  for (var row = 0; row < rows.length; row++) {
+    var imeiColumns = [];
+    var typeColumn = 0;
+    var modelColumn = 0;
+    var locationColumn = 0;
+    rows[row].forEach(function(value, index) {
+      var name = normalizeEquipmentHeader_(value);
+      var tokens = name.split(" ");
+      if (tokens.indexOf("imei") >= 0 || /^imei\d+$/.test(name)) imeiColumns.push(index + 1);
+      if (!typeColumn && /^(tipo|categoria|clase|elemento|producto|clasificacion|estado)( |$)/.test(name)) typeColumn = index + 1;
+      if (!modelColumn && /^(modelo|model|marca|referencia|equipo)( |$)/.test(name)) modelColumn = index + 1;
+      if (!locationColumn && /^(ubicacion|location)( |$)/.test(name)) locationColumn = index + 1;
+    });
+    if (imeiColumns.length) {
+      return {
+        row: row + 1,
+        imeiColumns: imeiColumns,
+        typeColumn: typeColumn,
+        modelColumn: modelColumn,
+        locationColumn: locationColumn
+      };
+    }
+  }
+  return null;
+}
+
+function normalizeEquipmentHeader_(value) {
+  return String(value || "").toLowerCase().normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function isSimRecord_(value) {
+  return normalizeEquipmentHeader_(value).split(" ").some(function(token) {
+    return token === "sim" || token === "simcard" || token === "chip";
+  });
+}
+
+function equipmentDateDisplay_(value) {
+  var date = value instanceof Date ? value : new Date(value);
+  if (isNaN(date.getTime())) return clean_(value, 20);
+  return Utilities.formatDate(date, Session.getScriptTimeZone(), "dd/MM/yyyy");
+}
+
+function registerEquipment_(data, session) {
+  var date = clean_(data.fechaRecepcion, 10);
+  var model = clean_(data.modelo, 100);
+  var imei = String(data.imei || "").replace(/\D/g, "");
+  var location = clean_(data.ubicacionSam, 200);
+  var condition = clean_(data.danoReparacion, 500);
+  var status = canonicalEquipmentStatus_(data.estado) || "Disponible";
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || isNaN(new Date(date + "T00:00:00").getTime())) {
+    throw new Error("La fecha de recepción no es válida");
+  }
+  if (!model || !/^\d{15}$/.test(imei) || !condition) throw new Error("Completa modelo, IMEI completo y daño o reparación");
+  if (CONFIG.equipmentStatuses.indexOf(status) < 0) throw new Error("Estado de equipo no permitido");
+
+  var sheet = equipmentSheet_();
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    var rows = sheet.getDataRange().getValues();
+    for (var i = 1; i < rows.length; i++) {
+      if (String(rows[i][9] || "").replace(/\D/g, "") === imei) {
+        throw new Error("Ya existe un equipo registrado con ese IMEI");
+      }
+    }
+    var id = Utilities.getUuid();
+    var now = new Date();
+    var row = [id, date, model, "", condition, status, session.usuario, now, session.usuario, imei, location];
+    sheet.getRange(sheet.getLastRow() + 1, 1, 1, CONFIG.equipmentHeaders.length).setValues([row]);
+    appendEquipmentHistory_(id, "", model, "", status, session.usuario, now);
+    return json_({ status: "success", data: equipmentRecord_(row) });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function registerEquipmentBatch_(data, session) {
+  var items = Array.isArray(data.items) ? data.items : [];
+  if (!items.length || items.length > 500) throw new Error("El lote debe contener entre 1 y 500 celulares");
+  var prepared = items.map(function(item) {
+    var date = clean_(item.fechaRecepcion, 10);
+    var model = clean_(item.modelo, 100);
+    var imei = String(item.imei || "").replace(/\D/g, "");
+    var location = clean_(item.ubicacionSam, 200);
+    var condition = clean_(item.danoReparacion, 500);
+    var status = canonicalEquipmentStatus_(item.estado) || "Disponible";
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || isNaN(new Date(date + "T00:00:00").getTime())) {
+      throw new Error("Hay una fecha de recepción no válida en el lote");
+    }
+    if (!model || !/^\d{15}$/.test(imei) || !condition) throw new Error("Cada celular requiere modelo, IMEI completo y daño/reparación");
+    if (CONFIG.equipmentStatuses.indexOf(status) < 0) throw new Error("Hay un estado no permitido en el lote");
+    return { date: date, model: model, imei: imei, location: location, condition: condition, status: status };
+  });
+
+  var requestedImeis = Object.create(null);
+  prepared.forEach(function(item) {
+    if (requestedImeis[item.imei]) throw new Error("El lote contiene el IMEI repetido " + item.imei);
+    requestedImeis[item.imei] = true;
+  });
+
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    var sheet = equipmentSheet_();
+    var existingRows = sheet.getDataRange().getValues();
+    var existingImeis = Object.create(null);
+    for (var i = 1; i < existingRows.length; i++) {
+      var existingImei = String(existingRows[i][9] || "").replace(/\D/g, "");
+      if (existingImei) existingImeis[existingImei] = true;
+    }
+    prepared.forEach(function(item) {
+      if (existingImeis[item.imei]) throw new Error("Ya existe un equipo registrado con el IMEI " + item.imei);
+    });
+
+    var now = new Date();
+    var records = prepared.map(function(item) {
+      return [Utilities.getUuid(), item.date, item.model, "", item.condition, item.status,
+        session.usuario, now, session.usuario, item.imei, item.location];
+    });
+    var history = equipmentHistorySheet_();
+    sheet.getRange(sheet.getLastRow() + 1, 1, records.length, CONFIG.equipmentHeaders.length).setValues(records);
+    history.getRange(history.getLastRow() + 1, 1, records.length, CONFIG.equipmentHistoryHeaders.length)
+      .setValues(records.map(function(record) {
+        return [Utilities.getUuid(), now, record[0], "", record[2], "", record[5], session.usuario];
+      }));
+    return json_({ status: "success", count: records.length, ids: records.map(function(record) { return record[0]; }) });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function updateEquipmentStatus_(data, session) {
+  var id = clean_(data.id, 100);
+  var status = clean_(data.estado, 100);
+  if (!id || CONFIG.equipmentStatuses.indexOf(status) < 0) throw new Error("Equipo o estado no válido");
+  var sheet = equipmentSheet_();
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    var rows = sheet.getDataRange().getValues();
+    for (var i = 1; i < rows.length; i++) {
+      if (clean_(rows[i][0], 100) !== id) continue;
+      var previousStatus = canonicalEquipmentStatus_(rows[i][5]);
+      if (previousStatus !== status) {
+        var now = new Date();
+        sheet.getRange(i + 1, 6).setValue(status);
+        sheet.getRange(i + 1, 8, 1, 2).setValues([[now, session.usuario]]);
+        appendEquipmentHistory_(id, "", clean_(rows[i][2], 100),
+          previousStatus, status, session.usuario, now);
+      }
+      return json_({ status: "success" });
+    }
+    throw new Error("No se encontró el equipo");
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function updateEquipmentStatuses_(data, session) {
+  var ids = Array.isArray(data.ids) ? data.ids.map(function(id) { return clean_(id, 100); }).filter(Boolean) : [];
+  var status = canonicalEquipmentStatus_(data.estado);
+  if (!ids.length || ids.length > 500 || CONFIG.equipmentStatuses.indexOf(status) < 0) {
+    throw new Error("Selecciona entre 1 y 500 celulares y un estado válido");
+  }
+  var uniqueIds = Object.create(null);
+  ids = ids.filter(function(id) {
+    if (uniqueIds[id]) return false;
+    uniqueIds[id] = true;
+    return true;
+  });
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    var sheet = equipmentSheet_();
+    var rows = sheet.getDataRange().getValues();
+    var rowById = Object.create(null);
+    for (var i = 1; i < rows.length; i++) {
+      var rowId = clean_(rows[i][0], 100);
+      if (uniqueIds[rowId]) rowById[rowId] = { rowNumber: i + 1, values: rows[i] };
+    }
+    ids.forEach(function(id) {
+      if (!rowById[id]) throw new Error("No se encontró el celular " + id);
+    });
+    var now = new Date();
+    var changed = ids.map(function(id) {
+      var match = rowById[id];
+      var oldStatus = canonicalEquipmentStatus_(match.values[5]);
+      if (oldStatus === status) return null;
+      sheet.getRange(match.rowNumber, 6).setValue(status);
+      sheet.getRange(match.rowNumber, 8, 1, 2).setValues([[now, session.usuario]]);
+      return [Utilities.getUuid(), now, id, "", clean_(match.values[2], 100), oldStatus, status, session.usuario];
+    }).filter(Boolean);
+    if (changed.length) {
+      var history = equipmentHistorySheet_();
+      history.getRange(history.getLastRow() + 1, 1, changed.length, CONFIG.equipmentHistoryHeaders.length).setValues(changed);
+    }
+    return json_({ status: "success", requested: ids.length, updated: changed.length, estado: status });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function equipmentRecord_(row) {
+  return {
+    id: clean_(row[0], 100), fechaRecepcion: clean_(row[1], 20), modelo: clean_(row[2], 100),
+    serial: clean_(row[3], 100), danoReparacion: clean_(row[4], 500), estado: clean_(row[5], 100), imei: clean_(row[9], 20),
+    ubicacionSam: clean_(row[10], 200),
+    registradoPor: clean_(row[6], 100), actualizado: row[7] || "", actualizadoPor: clean_(row[8], 100)
+  };
+}
+
+function equipmentSheet_() {
+  var sheet = ensureEquipmentSheet_(CONFIG.equipmentSheet, CONFIG.equipmentHeaders, 6);
+  sheet.hideColumns(4);
+  normalizeEquipmentStatuses_(sheet);
+  return sheet;
+}
+
+function inicializarHojasEquipos() {
+  equipmentSheet_();
+  equipmentHistorySheet_();
+  equipmentArchiveSheet_();
+  configurarArchivadoAutomaticoCelulares();
+  return "Hojas de inventario e historial de celulares inicializadas; archivado diario configurado";
+}
+
+function importarMaestroCelularesDesdeFuente() {
+  return sincronizarMaestroCelularesDesdeFuente_(true);
+}
+
+function sincronizarMaestroCelularesDesdeFuente() {
+  return sincronizarMaestroCelularesDesdeFuente_(false);
+}
+
+function sincronizarMaestroCelularesDesdeFuente_(initialImport) {
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    var source;
+    try {
+      source = SpreadsheetApp.openById(CONFIG.equipmentSourceSpreadsheetId);
+    } catch (error) {
+      throw new Error("No se pudo leer el maestro. Comparte el archivo como lector con la cuenta que ejecuta este Apps Script y vuelve a intentar");
+    }
+    var destination = mainSpreadsheet_();
+    if (source.getId() === destination.getId()) {
+      throw new Error("El archivo maestro ya es el spreadsheet de la aplicación; no se puede copiar sobre sí mismo");
+    }
+    var sourceSheet = source.getSheets()[0];
+    if (!sourceSheet) throw new Error("El archivo maestro no contiene pestañas");
+    var sourceRows = sourceSheet.getDataRange().getValues();
+    if (!sourceRows.length || !sourceRows[0].length || !equipmentMasterHeader_(sourceSheet)) {
+      throw new Error("La primera pestaña del maestro debe incluir encabezados de Modelo e IMEI_ICCID");
+    }
+
+    var properties = PropertiesService.getScriptProperties();
+    var importedSourceId = properties.getProperty(CONFIG.equipmentSourceImportProperty) || "";
+    var target = destination.getSheetByName(CONFIG.equipmentMasterSheet);
+    var staging = sourceSheet.copyTo(destination);
+    staging.setName("Importacion celulares " + Utilities.getUuid().replace(/-/g, "").slice(0, 12));
+    if (target && importedSourceId !== CONFIG.equipmentSourceSpreadsheetId && target.getLastRow() > 0) {
+      var backupName = "Equipos respaldo " + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyyMMdd_HHmmss");
+      if (destination.getSheetByName(backupName)) backupName += "_" + new Date().getTime();
+      target.setName(backupName);
+    } else if (target) {
+      destination.deleteSheet(target);
+    }
+    staging.setName(CONFIG.equipmentMasterSheet);
+    properties.setProperty(CONFIG.equipmentSourceImportProperty, CONFIG.equipmentSourceSpreadsheetId);
+    SpreadsheetApp.flush();
+
+    if (initialImport) configurarSincronizacionMaestroCelulares();
+    return "Maestro copiado a " + CONFIG.equipmentMasterSheet + ": " + Math.max(sourceRows.length - 1, 0) + " filas de datos";
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function configurarSincronizacionMaestroCelulares() {
+  var handler = "sincronizarMaestroCelularesDesdeFuente";
+  var exists = ScriptApp.getProjectTriggers().some(function(trigger) {
+    return trigger.getHandlerFunction() === handler;
+  });
+  if (!exists) ScriptApp.newTrigger(handler).timeBased().everyDays(1).atHour(4).create();
+  return "Sincronización diaria del maestro de celulares configurada";
+}
+
+function equipmentHistorySheet_() {
+  var sheet = ensureEquipmentSheet_(CONFIG.equipmentHistorySheet, CONFIG.equipmentHistoryHeaders, 0);
+  sheet.hideColumns(4);
+  normalizeEquipmentHistory_(sheet);
+  return sheet;
+}
+
+function ensureEquipmentSheet_(name, headers, statusColumn) {
+  var spreadsheet = mainSpreadsheet_();
+  var sheet = spreadsheet.getSheetByName(name);
+  if (!sheet) sheet = spreadsheet.insertSheet(name);
+  if (sheet.getLastRow() === 0) {
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  } else {
+    var current = sheet.getRange(1, 1, 1, headers.length).getValues()[0];
+    for (var i = 0; i < headers.length; i++) {
+      if (String(current[i] || "").trim() !== headers[i]) {
+        if ((name === CONFIG.equipmentSheet || name === CONFIG.equipmentHistorySheet) &&
+            i === 3 && String(current[i] || "").trim() === "Serial") {
+          sheet.getRange(1, i + 1).setValue(headers[i]);
+          sheet.hideColumns(i + 1);
+          continue;
+        }
+        if (name === CONFIG.equipmentSheet && i >= 9 && !String(current[i] || "").trim()) {
+          sheet.getRange(1, i + 1).setValue(headers[i]);
+          continue;
+        }
+        throw new Error("La hoja " + name + " existe con encabezados incompatibles");
+      }
+    }
+  }
+  if (statusColumn) {
+    var rule = SpreadsheetApp.newDataValidation().requireValueInList(CONFIG.equipmentStatuses, true)
+      .setAllowInvalid(false).build();
+    sheet.getRange(2, statusColumn, Math.max(sheet.getMaxRows() - 1, 1), 1).setDataValidation(rule);
+  }
+  return sheet;
+}
+
+function canonicalEquipmentStatus_(status) {
+  var value = clean_(status, 100);
+  if (value === "Bodega Comunicaciones") return "Disponible";
+  if (value === "Comunicaciones dañado") return "Dañado";
+  if (value === "Enviado CAP" || value === "Enviado a CAPMOVIL (reparación)" || value === "Enviado a CAPMOVIL") return "Enviados CAP";
+  return value;
+}
+
+function normalizeEquipmentStatuses_(sheet) {
+  var rows = sheet.getDataRange().getValues();
+  for (var i = 1; i < rows.length; i++) {
+    var status = canonicalEquipmentStatus_(rows[i][5]);
+    if (status && status !== clean_(rows[i][5], 100)) sheet.getRange(i + 1, 6).setValue(status);
+  }
+}
+
+function normalizeEquipmentHistory_(sheet) {
+  var rows = sheet.getDataRange().getValues();
+  for (var i = 1; i < rows.length; i++) {
+    var previous = canonicalEquipmentStatus_(rows[i][5]);
+    var next = canonicalEquipmentStatus_(rows[i][6]);
+    if (previous !== clean_(rows[i][5], 100)) sheet.getRange(i + 1, 6).setValue(previous);
+    if (next !== clean_(rows[i][6], 100)) sheet.getRange(i + 1, 7).setValue(next);
+  }
+}
+
+function appendEquipmentHistory_(id, serial, model, previousStatus, nextStatus, user, date) {
+  var sheet = equipmentHistorySheet_();
+  sheet.getRange(sheet.getLastRow() + 1, 1, 1, CONFIG.equipmentHistoryHeaders.length).setValues([[
+    Utilities.getUuid(), date, id, serial, model, previousStatus, nextStatus, user
+  ]]);
+}
+
 function setMinimumNumberValidation_(sheet, column, minimum) {
   var rule = SpreadsheetApp.newDataValidation()
     .requireNumberGreaterThanOrEqualTo(minimum)
@@ -2013,7 +2668,7 @@ function setMinimumNumberValidation_(sheet, column, minimum) {
 
 function requestSheet_() {
   var spreadsheet = mainSpreadsheet_();
-  var sheet = spreadsheet.getSheetByName(CONFIG.requestsSheet);
+  var sheet = sheetWithLegacyName_(CONFIG.requestsSheet, CONFIG.legacyRequestsSheet);
   if (!sheet) sheet = spreadsheet.insertSheet(CONFIG.requestsSheet);
   if (sheet.getLastRow() === 0) {
     sheet.getRange(1, 1, 1, CONFIG.requestHeaders.length).setValues([CONFIG.requestHeaders]);
@@ -2027,7 +2682,7 @@ function requestSheet_() {
         sheet.getRange(1, i + 1).setValue(CONFIG.requestHeaders[i]);
         continue;
       }
-      throw new Error("La hoja Solicitudes existe con encabezados incompatibles");
+      throw new Error("La hoja " + CONFIG.requestsSheet + " existe con encabezados incompatibles");
     }
   }
   setMinimumNumberValidation_(sheet, 9, 1);
@@ -2106,7 +2761,25 @@ function ensureRequestTransaction_(movements, transactionId, movementRows) {
 }
 
 function inventorySheet_() {
-  return mainSpreadsheet_().getSheetByName(CONFIG.inventorySheet);
+  return sheetWithLegacyName_(CONFIG.inventorySheet, CONFIG.legacyInventorySheet);
+}
+
+function migrarNombresHojasAccesorios() {
+  inventorySheet_();
+  requestSheet_();
+  return "Hojas renombradas a Inventario accesorios y Solicitudes accesorios";
+}
+
+function sheetWithLegacyName_(name, legacyName) {
+  var spreadsheet = mainSpreadsheet_();
+  var sheet = spreadsheet.getSheetByName(name);
+  var legacySheet = spreadsheet.getSheetByName(legacyName);
+  if (sheet && legacySheet) {
+    throw new Error("Existen ambas hojas '" + name + "' y '" + legacyName + "'; revisa cuál conservar antes de migrar");
+  }
+  if (sheet) return sheet;
+  if (legacySheet) return legacySheet.setName(name);
+  return null;
 }
 
 function movementSheet_() {

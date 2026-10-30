@@ -51,7 +51,8 @@
   input[type="number"],
   input[type="search"],
   input[type="date"],
-  select {
+  select,
+  textarea {
     @apply w-full rounded-lg border-2 border-slate-300 bg-gray-50 p-3 text-[15px] transition-colors;
     font-family: inherit;
   }
@@ -62,6 +63,7 @@
 
   input:focus,
   select:focus,
+  textarea:focus,
   button:focus-visible {
     @apply border-blue-600 bg-white outline-none ring-2 ring-blue-600/20;
   }
@@ -135,6 +137,345 @@
 
   .card {
     @apply mb-4 rounded-xl border border-slate-300 bg-white p-5 shadow-lg shadow-slate-900/5;
+  }
+
+  .inventory-section-title {
+    @apply mb-4 text-xl font-extrabold text-slate-900;
+  }
+
+  .equipment-form {
+    @apply grid grid-cols-1 gap-4 md:grid-cols-3;
+  }
+
+  .equipment-form label {
+    @apply m-0 flex flex-col gap-1.5;
+  }
+
+  .equipment-form textarea {
+    @apply min-h-24 resize-y;
+  }
+
+  .equipment-condition-field {
+    grid-column: span 2;
+  }
+
+  .equipment-form > button {
+    @apply m-0 min-h-11 w-auto self-end justify-self-end px-5 py-2.5;
+    grid-column: 1 / -1;
+  }
+
+  .equipment-page-heading {
+    @apply mb-5 flex items-center justify-between gap-5;
+  }
+
+  .equipment-page-heading h1 {
+    @apply m-0 text-2xl font-extrabold text-slate-900;
+  }
+
+  .equipment-page-heading > div > p:last-child {
+    @apply mb-0 mt-1.5 text-sm text-slate-600;
+  }
+
+  .equipment-eyebrow {
+    @apply mb-1 text-[11px] font-extrabold uppercase text-g4s-red;
+  }
+
+  .equipment-refresh-btn {
+    @apply m-0 aspect-square h-11 w-11 shrink-0 p-0 text-base;
+  }
+
+  .equipment-summary {
+    @apply mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3;
+  }
+
+  .equipment-summary-stat {
+    @apply flex min-h-16 items-center justify-between gap-3 border-l-4 border-g4s-red bg-white px-4 py-3 shadow-sm;
+  }
+
+  .equipment-summary-stat:nth-child(2) {
+    @apply border-emerald-500;
+  }
+
+  .equipment-summary-stat:nth-child(3) {
+    @apply border-amber-500;
+  }
+
+  .equipment-summary-stat span {
+    @apply text-xs font-bold text-slate-600;
+  }
+
+  .equipment-summary-stat strong {
+    @apply text-2xl font-extrabold leading-none text-slate-900;
+  }
+
+  .equipment-dashboard {
+    @apply mt-8 border-t-2 border-slate-300 pt-6;
+  }
+
+  .equipment-dashboard-heading {
+    @apply mb-4 flex items-end justify-between gap-4;
+  }
+
+  .equipment-dashboard-heading h2 {
+    @apply m-0 text-xl font-extrabold text-slate-900;
+  }
+
+  .equipment-dashboard-heading > p {
+    @apply mb-0 text-xs text-slate-500;
+  }
+
+  .equipment-dashboard-kpis {
+    @apply mb-5 grid grid-cols-2 gap-4 md:grid-cols-4;
+  }
+
+  .equipment-dashboard-kpis article {
+    @apply flex min-h-17 flex-col justify-center border-l-4 border-g4s-red bg-white px-4 py-2.5;
+  }
+
+  .equipment-dashboard-kpis article:nth-child(2) {
+    @apply border-emerald-500;
+  }
+
+  .equipment-dashboard-kpis article:nth-child(3) {
+    @apply border-amber-500;
+  }
+
+  .equipment-dashboard-kpis article:nth-child(4) {
+    @apply border-sky-600;
+  }
+
+  .equipment-dashboard-kpis span {
+    @apply text-xs font-bold text-slate-600;
+  }
+
+  .equipment-dashboard-kpis strong {
+    @apply mt-1 text-2xl font-extrabold leading-none text-slate-900;
+  }
+
+  .equipment-dashboard-kpis small {
+    @apply mt-1 text-[11px] text-slate-500;
+  }
+
+  .equipment-dashboard-waiting h3 {
+    @apply mb-2 text-sm font-extrabold text-slate-800;
+  }
+
+  .equipment-dashboard-table {
+    min-width: 760px;
+  }
+
+  .equipment-delete-btn {
+    @apply m-0 aspect-square w-10 shrink-0 border-red-300 p-0 text-red-700 hover:bg-red-50;
+  }
+
+  .equipment-card-heading {
+    @apply mb-5 flex items-center gap-3 border-b border-slate-200 pb-4;
+  }
+
+  .equipment-card-heading h2,
+  .equipment-list-heading h2 {
+    @apply m-0 text-lg font-extrabold text-slate-900;
+  }
+
+  .equipment-card-heading p {
+    @apply mb-0 mt-1 text-sm text-slate-600;
+  }
+
+  .equipment-batch-panel {
+    @apply mt-5 border-t border-slate-200 pt-4;
+  }
+
+  .equipment-batch-panel .equipment-list-heading {
+    @apply mb-2;
+  }
+
+  .equipment-batch-panel .equipment-list-heading h3 {
+    @apply m-0 text-sm font-extrabold text-slate-800;
+  }
+
+  .equipment-batch-table-wrap:has(tbody tr:first-child:last-child td[colspan]) {
+    @apply hidden;
+  }
+
+  .equipment-batch-table {
+    min-width: 760px;
+  }
+
+  .equipment-batch-actions {
+    @apply mt-3 flex justify-end gap-3;
+  }
+
+  .equipment-batch-actions button {
+    @apply m-0 w-auto px-4 py-2.5 text-sm;
+  }
+
+  .equipment-batch-remove {
+    @apply m-0 aspect-square w-9 p-0 text-red-700;
+  }
+
+  .equipment-bulk-toolbar {
+    @apply mb-2 flex flex-wrap items-end gap-3 border-y border-slate-200 bg-slate-50 px-3 py-2;
+  }
+
+  .equipment-select-visible {
+    @apply m-0 inline-flex min-h-10 items-center gap-2 text-xs font-bold text-slate-700;
+  }
+
+  .equipment-select-visible input,
+  .equipment-table thead input,
+  .equipment-table tbody input {
+    @apply h-4 w-4 accent-blue-700;
+  }
+
+  #equipment-selection-count {
+    @apply mr-auto text-xs text-slate-500;
+  }
+
+  .equipment-bulk-status-label {
+    @apply m-0 flex w-48 flex-col gap-1 text-[11px] font-bold;
+  }
+
+  .equipment-bulk-status-label select {
+    @apply p-2 text-xs;
+  }
+
+  .equipment-bulk-toolbar button {
+    @apply m-0 min-h-10 w-auto px-3 py-2 text-xs;
+  }
+
+  .equipment-lookup-row {
+    @apply grid max-w-2xl grid-cols-1 items-end gap-3 sm:grid-cols-[minmax(0,1fr)_auto];
+  }
+
+  .equipment-lookup-row label {
+    @apply m-0 flex flex-col gap-1.5;
+  }
+
+  .equipment-lookup-btn {
+    @apply m-0 min-h-11 w-auto whitespace-nowrap px-4 py-2.5;
+  }
+
+  .equipment-lookup-hint {
+    @apply mb-0 mt-2 text-xs text-slate-500;
+  }
+
+  .equipment-imei-results:empty {
+    display: none;
+  }
+
+  .equipment-imei-results {
+    @apply mt-3 max-w-2xl;
+  }
+
+  .equipment-imei-match {
+    @apply flex items-center justify-between gap-4 border-t border-slate-200 py-3;
+  }
+
+  .equipment-imei-match p {
+    @apply mb-0 text-sm text-slate-700;
+  }
+
+  .equipment-imei-match button {
+    @apply m-0 min-h-10 w-auto shrink-0 px-3 py-2 text-xs;
+  }
+
+  .equipment-imei-match button i {
+    @apply text-sm;
+  }
+
+  .equipment-heading-icon {
+    @apply flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-red-50 text-lg text-g4s-red;
+  }
+
+  .equipment-list-heading {
+    @apply mb-4 flex items-center justify-between;
+  }
+
+  .equipment-list-heading p {
+    @apply mb-0 mt-1 text-xs text-slate-500;
+  }
+
+  .equipment-table {
+    min-width: 1120px;
+  }
+
+  .equipment-state-actions {
+    @apply flex min-w-56 items-center gap-2;
+  }
+
+  .equipment-state-actions select {
+    @apply min-w-0 flex-1;
+  }
+
+  .equipment-state-actions button {
+    @apply m-0 aspect-square w-10 shrink-0 p-0;
+  }
+
+  :root[data-theme="dark"] #app-screen .inventory-section-title {
+    @apply text-slate-100;
+  }
+
+  :root[data-theme="dark"] #app-screen .equipment-page-heading h1,
+  :root[data-theme="dark"] #app-screen .equipment-summary-stat strong,
+  :root[data-theme="dark"] #app-screen .equipment-card-heading h2,
+  :root[data-theme="dark"] #app-screen .equipment-list-heading h2 {
+    @apply text-slate-100;
+  }
+
+  :root[data-theme="dark"] #app-screen .equipment-summary-stat,
+  :root[data-theme="dark"] #app-screen .equipment-heading-icon {
+    @apply bg-slate-800;
+  }
+
+  :root[data-theme="dark"] #app-screen .equipment-summary-stat span,
+  :root[data-theme="dark"] #app-screen .equipment-page-heading > div > p:last-child,
+  :root[data-theme="dark"] #app-screen .equipment-card-heading p,
+  :root[data-theme="dark"] #app-screen .equipment-list-heading p,
+  :root[data-theme="dark"] #app-screen .equipment-lookup-hint,
+  :root[data-theme="dark"] #app-screen .equipment-imei-match p {
+    @apply text-slate-400;
+  }
+
+  :root[data-theme="dark"] #app-screen .equipment-card-heading {
+    @apply border-slate-700;
+  }
+
+  :root[data-theme="dark"] #app-screen .equipment-batch-panel,
+  :root[data-theme="dark"] #app-screen .equipment-bulk-toolbar {
+    @apply border-slate-700 bg-slate-800;
+  }
+
+  :root[data-theme="dark"] #app-screen .equipment-batch-panel .equipment-list-heading h3,
+  :root[data-theme="dark"] #app-screen .equipment-select-visible {
+    @apply text-slate-200;
+  }
+
+  :root[data-theme="dark"] #app-screen #equipment-selection-count {
+    @apply text-slate-400;
+  }
+
+  :root[data-theme="dark"] #app-screen .equipment-dashboard {
+    @apply border-slate-700;
+  }
+
+  :root[data-theme="dark"] #app-screen .equipment-dashboard-heading h2,
+  :root[data-theme="dark"] #app-screen .equipment-dashboard-waiting h3,
+  :root[data-theme="dark"] #app-screen .equipment-dashboard-kpis strong {
+    @apply text-slate-100;
+  }
+
+  :root[data-theme="dark"] #app-screen .equipment-dashboard-kpis article {
+    @apply bg-slate-800;
+  }
+
+  :root[data-theme="dark"] #app-screen .equipment-dashboard-heading > p,
+  :root[data-theme="dark"] #app-screen .equipment-dashboard-kpis span,
+  :root[data-theme="dark"] #app-screen .equipment-dashboard-kpis small {
+    @apply text-slate-400;
+  }
+
+  :root[data-theme="dark"] #app-screen .equipment-imei-match {
+    @apply border-slate-700;
   }
 
   .reports-card {
@@ -1843,6 +2184,71 @@
     @apply p-4;
   }
 
+  .equipment-page-heading {
+    @apply items-start gap-3;
+  }
+
+  .equipment-page-heading h1 {
+    @apply text-xl;
+  }
+
+  .equipment-page-heading > div > p:last-child {
+    @apply max-w-[42ch] text-xs;
+  }
+
+  .equipment-lookup-row {
+    @apply grid-cols-1;
+  }
+
+  .equipment-lookup-btn {
+    @apply w-full;
+  }
+
+  .equipment-imei-match {
+    @apply items-start gap-2;
+  }
+
+  .equipment-refresh-btn {
+    @apply h-10 w-10;
+  }
+
+  .equipment-summary {
+    @apply grid-cols-2;
+  }
+
+  .equipment-summary-stat:last-child {
+    grid-column: 1 / -1;
+  }
+
+  .equipment-dashboard-heading {
+    @apply items-start flex-col;
+  }
+
+  .equipment-batch-actions {
+    @apply flex-col-reverse;
+  }
+
+  .equipment-batch-actions button,
+  .equipment-bulk-toolbar button {
+    @apply w-full;
+  }
+
+  .equipment-bulk-status-label {
+    @apply w-full;
+  }
+
+  #equipment-selection-count {
+    @apply w-full;
+  }
+
+  .equipment-condition-field {
+    grid-column: auto;
+  }
+
+  .equipment-form > button {
+    @apply w-full justify-self-stretch;
+  }
+
   .search-row {
     @apply flex-wrap;
   }
@@ -2266,6 +2672,28 @@
     @apply border-slate-700 bg-slate-800/80 text-slate-200;
   }
 
+  :root[data-theme="dark"] #app-screen .request-flow-guide strong {
+    @apply text-slate-100;
+  }
+
+  :root[data-theme="dark"] #app-screen .request-flow-guide > span,
+  :root[data-theme="dark"] #app-screen .request-flow-guide small {
+    @apply text-slate-300;
+  }
+
+  :root[data-theme="dark"] #app-screen .request-email-field {
+    @apply text-slate-300;
+  }
+
+  :root[data-theme="dark"] #app-screen .request-email-field small {
+    @apply text-slate-400;
+  }
+
+  :root[data-theme="dark"] #app-screen .request-flow-guide a,
+  :root[data-theme="dark"] #app-screen .request-email-field a {
+    @apply text-cyan-300 underline decoration-cyan-700 underline-offset-2;
+  }
+
   :root[data-theme="dark"] #app-screen .request-card-header,
   :root[data-theme="dark"] #app-screen .request-card-details,
   :root[data-theme="dark"] #app-screen .request-card-actions,
@@ -2296,6 +2724,11 @@
 
   :root[data-theme="dark"] #app-screen .catalog-table th {
     @apply border-slate-700 bg-slate-900 text-slate-200;
+  }
+
+  :root[data-theme="dark"] #app-screen .catalog-table caption,
+  :root[data-theme="dark"] #app-screen .catalog-table td small {
+    @apply text-slate-400;
   }
 
   :root[data-theme="dark"] #app-screen .catalog-table td {

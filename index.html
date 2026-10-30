@@ -94,9 +94,10 @@
 
         <div class="tab-bar" role="tablist" aria-label="Secciones del inventario">
             <button id="tab-dashboard-trigger" type="button" class="tab active" role="tab" aria-selected="true" aria-controls="tab-dashboard" tabindex="0" onclick="window.switchTab('dashboard', this)">Dashboard</button>
-            <button id="tab-registro-trigger" type="button" class="tab" role="tab" aria-selected="false" aria-controls="tab-registro" tabindex="-1" onclick="window.switchTab('registro', this)">Movimientos</button>
+            <button id="tab-registro-trigger" type="button" class="tab" role="tab" aria-selected="false" aria-controls="tab-registro" tabindex="-1" onclick="window.switchTab('registro', this)">Mov. accesorios</button>
             <button id="tab-solicitudes-trigger" type="button" class="tab" role="tab" aria-selected="false" aria-controls="tab-solicitudes" tabindex="-1" onclick="window.switchTab('solicitudes', this)">Solicitudes</button>
-            <button id="tab-catalogo-trigger" type="button" class="tab" role="tab" aria-selected="false" aria-controls="tab-catalogo" tabindex="-1" onclick="window.switchTab('catalogo', this)">Catálogo</button>
+            <button id="tab-catalogo-trigger" type="button" class="tab" role="tab" aria-selected="false" aria-controls="tab-catalogo" tabindex="-1" onclick="window.switchTab('catalogo', this)">Accesorios</button>
+            <button id="tab-equipos-trigger" type="button" class="tab" role="tab" aria-selected="false" aria-controls="tab-equipos" tabindex="-1" onclick="window.switchTab('equipos', this)">Equipos</button>
             <button id="tab-historial-trigger" type="button" class="tab" role="tab" aria-selected="false" aria-controls="tab-historial" tabindex="-1" onclick="window.switchTab('historial', this)">Historial</button>
             <button id="tab-reportes-trigger" type="button" class="tab" role="tab" aria-selected="false" aria-controls="tab-reportes" tabindex="-1" onclick="window.switchTab('reportes', this)">Reportes</button>
         </div>
@@ -186,10 +187,32 @@
                         <button type="button" class="btn-secondary" onclick="window.switchTab('registro', document.querySelector('[aria-controls=tab-registro]'))"><i class="fa-solid fa-arrow-right-arrow-left"></i> Registrar movimiento</button>
                     </section>
                 </div>
+                <section class="equipment-dashboard" aria-labelledby="equipment-dashboard-title">
+                    <div class="equipment-dashboard-heading">
+                        <div><p class="equipment-eyebrow">SEGUIMIENTO INDEPENDIENTE</p><h2 id="equipment-dashboard-title">Equipos celulares</h2></div>
+                        <p>Reparación y garantía gestionadas por CAPMOVIL.</p>
+                    </div>
+                    <div class="equipment-dashboard-kpis" aria-live="polite">
+                        <article><span>En inventario</span><strong id="dashboard-phone-total">—</strong></article>
+                        <article><span>Disponibles</span><strong id="dashboard-phone-warehouse">—</strong></article>
+                        <article><span>En CAPMOVIL / garantía</span><strong id="dashboard-phone-service">—</strong></article>
+                        <article><span>Retorno promedio</span><strong id="dashboard-phone-return-average">—</strong><small id="dashboard-phone-return-count">—</small></article>
+                    </div>
+                    <div class="equipment-dashboard-waiting">
+                        <h3>Equipos pendientes de retorno</h3>
+                        <div class="catalog-table-wrap">
+                            <table class="catalog-table equipment-dashboard-table">
+                                <thead><tr><th>Modelo</th><th>IMEI</th><th>Ubicación SAM</th><th>Estado</th><th>Enviado</th><th>Días esperando</th></tr></thead>
+                                <tbody id="dashboard-phone-pending"><tr><td colspan="6">Cargando...</td></tr></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
             </section>
 
             <!-- TAB REGISTRO -->
             <div id="tab-registro" class="section" role="tabpanel" aria-labelledby="tab-registro-trigger">
+                <h1 class="inventory-section-title">Movimientos de accesorios</h1>
                 <div class="card">
                     <label for="tipoMov">Tipo de movimiento</label>
                     <select id="tipoMov" onchange="window.cambiarMovimientoUI(this.value)">
@@ -472,15 +495,17 @@
                         <button type="button" class="btn-secondary" data-report-download="inventario"><i class="fa-solid fa-boxes-stacked"></i> Inventario actual</button>
                         <button type="button" class="btn-secondary" data-report-download="movimientos"><i class="fa-solid fa-arrow-right-arrow-left"></i> Movimientos</button>
                         <button type="button" class="btn-secondary" data-report-download="solicitudes"><i class="fa-solid fa-clipboard-list"></i> Solicitudes</button>
+                        <button type="button" class="btn-secondary" data-report-download="celulares"><i class="fa-solid fa-mobile-screen-button"></i> Equipos celulares</button>
                     </div>
                     <p id="reports-feedback" class="reports-feedback" role="status" aria-live="polite"></p>
                     <p class="helper-text">El libro completo incluye resumen, inventario valorizado, alertas de stock, movimientos y solicitudes. Los datos se consultan al momento de descargar.</p>
                 </div>
             </section>
 
-            <!-- TAB CATÁLOGO (CRUD) -->
+            <!-- TAB ACCESORIOS (CRUD) -->
             <div id="tab-catalogo" class="section" role="tabpanel" aria-labelledby="tab-catalogo-trigger">
                 <div class="card">
+                    <h1 class="inventory-section-title">Inventario de accesorios</h1>
                     <h3 style="margin-top:0; color:var(--g4s-black);">Catálogo actual</h3>
                     <p class="helper-text">Consulta existencias e identifica artículos con sus imágenes locales.</p>
                     <div class="catalog-toolbar">
@@ -552,6 +577,122 @@
                         <div id="inventory-audit-result" class="inventory-audit-result" aria-live="polite" hidden></div>
                 </div>
             </div>
+            <section id="tab-equipos" class="section" role="tabpanel" aria-labelledby="tab-equipos-trigger">
+                <div class="equipment-page-heading">
+                    <div>
+                        <p class="equipment-eyebrow">COMUNICACIONES · EQUIPOS MÓVILES</p>
+                        <h1>Inventario de celulares</h1>
+                        <p>Registro individual y seguimiento por serial, independiente del inventario de accesorios.</p>
+                    </div>
+                    <button type="button" class="btn-secondary equipment-refresh-btn" id="btn-equipment-refresh" aria-label="Actualizar inventario de celulares" title="Actualizar inventario de celulares"><i class="fa-solid fa-rotate" aria-hidden="true"></i></button>
+                </div>
+                <div class="equipment-summary" aria-live="polite">
+                    <div class="equipment-summary-stat"><span>Equipos registrados</span><strong id="equipment-count-total">0</strong></div>
+                    <div class="equipment-summary-stat"><span>Disponibles</span><strong id="equipment-count-warehouse">0</strong></div>
+                    <div class="equipment-summary-stat"><span>En reparación o garantía</span><strong id="equipment-count-service">0</strong></div>
+                </div>
+                <div class="card equipment-lookup-card">
+                    <div class="equipment-card-heading">
+                        <span class="equipment-heading-icon equipment-lookup-icon" aria-hidden="true"><i class="fa-solid fa-magnifying-glass"></i></span>
+                        <div><h2>Consultar equipo por IMEI</h2><p>Busca en el maestro de celulares usando sus últimos seis dígitos.</p></div>
+                    </div>
+                    <div class="equipment-lookup-row">
+                        <label for="equipment-imei-suffix">IMEI
+                            <input id="equipment-imei-suffix" type="text" inputmode="numeric" autocomplete="off" maxlength="15" placeholder="Últimos 6 o más dígitos" aria-describedby="equipment-imei-hint">
+                        </label>
+                        <button type="button" class="btn-secondary equipment-lookup-btn" id="btn-equipment-imei-search"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i> Buscar equipo</button>
+                    </div>
+                    <p id="equipment-imei-hint" class="equipment-lookup-hint">Ingresa mínimo 6 dígitos; con más dígitos reduces las coincidencias.</p>
+                    <div id="equipment-imei-results" class="equipment-imei-results" role="status" aria-live="polite"></div>
+                </div>
+                <div class="card equipment-card">
+                    <div class="equipment-card-heading">
+                        <span class="equipment-heading-icon" aria-hidden="true"><i class="fa-solid fa-mobile-screen-button"></i></span>
+                        <div><h2>Registrar celular</h2><p>Completa la recepción con los datos del equipo y su condición.</p></div>
+                    </div>
+                    <form id="equipment-form" class="equipment-form">
+                        <label for="equipment-date">Fecha de recepción
+                            <input id="equipment-date" name="fechaRecepcion" type="date" required>
+                        </label>
+                        <label for="equipment-model">Modelo
+                            <input id="equipment-model" name="modelo" type="text" maxlength="100" placeholder="Ej. MOTO G23" required>
+                        </label>
+                        <label for="equipment-imei">IMEI completo
+                            <input id="equipment-imei" name="imei" type="text" inputmode="numeric" maxlength="15" pattern="[0-9]{15}" autocomplete="off" readonly required>
+                        </label>
+                        <label for="equipment-location">Ubicación SAM
+                            <input id="equipment-location" name="ubicacionSam" type="text" maxlength="200" readonly>
+                        </label>
+                        <label for="equipment-condition" class="equipment-condition-field">Daño / reparación
+                            <textarea id="equipment-condition" name="danoReparacion" rows="2" maxlength="500" placeholder="BUEN ESTADO o detalle del daño / reparación" required></textarea>
+                        </label>
+                        <label for="equipment-state">Estado
+                            <select id="equipment-state" name="estado">
+                                <option>Disponible</option>
+                                <option>Dañado</option>
+                                <option>Disposición final</option>
+                                <option>Garantía</option>
+                                <option>Enviados CAP</option>
+                                <option>Despachado a puesto</option>
+                            </select>
+                        </label>
+                        <button class="btn-secondary equipment-submit-btn" type="submit" id="btn-save-equipment"><i class="fa-solid fa-plus" aria-hidden="true"></i> Añadir al lote</button>
+                    </form>
+                    <p id="equipment-feedback" class="helper-text" role="status" aria-live="polite"></p>
+                    <div class="equipment-batch-panel">
+                        <div class="equipment-list-heading"><div><h3>Celulares por registrar</h3><p id="equipment-batch-count">0 en el lote</p></div></div>
+                        <div class="catalog-table-wrap equipment-batch-table-wrap">
+                            <table class="catalog-table equipment-batch-table">
+                                <thead><tr><th>Modelo</th><th>IMEI</th><th>Ubicación SAM</th><th>Daño / reparación</th><th>Estado</th><th></th></tr></thead>
+                                <tbody id="equipment-batch-body"><tr><td colspan="6">Añade celulares al lote.</td></tr></tbody>
+                            </table>
+                        </div>
+                        <div class="equipment-batch-actions">
+                            <button type="button" class="btn-secondary" id="btn-clear-equipment-batch" disabled><i class="fa-solid fa-trash" aria-hidden="true"></i> Vaciar lote</button>
+                            <button type="button" class="btn-primary" id="btn-save-equipment-batch" disabled><i class="fa-solid fa-cloud-arrow-up" aria-hidden="true"></i> Registrar lote</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="card equipment-card">
+                    <div class="equipment-list-heading">
+                        <div><h2>Equipos registrados</h2><p id="equipment-result-count">Cargando equipos...</p></div>
+                    </div>
+                    <div class="catalog-toolbar">
+                        <input type="search" id="equipment-search" placeholder="Buscar modelo, IMEI o ubicación SAM" aria-label="Buscar celulares por modelo, IMEI o ubicación SAM">
+                        <select id="equipment-status-filter" aria-label="Filtrar celulares por estado">
+                            <option value="all">Todos los estados</option>
+                            <option>Disponible</option>
+                            <option>Dañado</option>
+                            <option>Disposición final</option>
+                            <option>Garantía</option>
+                            <option>Enviados CAP</option>
+                            <option>Despachado a puesto</option>
+                        </select>
+                    </div>
+                    <div class="equipment-bulk-toolbar">
+                        <label class="equipment-select-visible"><input id="equipment-select-visible" type="checkbox"> Seleccionar visibles</label>
+                        <span id="equipment-selection-count" aria-live="polite">0 seleccionados</span>
+                        <label for="equipment-bulk-status" class="equipment-bulk-status-label">Nuevo estado
+                            <select id="equipment-bulk-status">
+                                <option>Disponible</option>
+                                <option>Dañado</option>
+                                <option>Disposición final</option>
+                                <option>Garantía</option>
+                                <option>Enviados CAP</option>
+                                <option>Despachado a puesto</option>
+                            </select>
+                        </label>
+                        <button type="button" class="btn-secondary" id="btn-apply-equipment-status" disabled><i class="fa-solid fa-check-double" aria-hidden="true"></i> Aplicar estado</button>
+                    </div>
+                    <p id="equipment-bulk-feedback" class="helper-text" role="status" aria-live="polite"></p>
+                    <div class="catalog-table-wrap">
+                        <table class="catalog-table equipment-table">
+                            <thead><tr><th><input id="equipment-select-all-visible" type="checkbox" aria-label="Seleccionar equipos visibles"></th><th>Fecha</th><th>Modelo</th><th>IMEI</th><th>Ubicación SAM</th><th>Daño / reparación</th><th>Estado actual</th></tr></thead>
+                            <tbody id="equipment-table-body"><tr><td colspan="7">Cargando equipos...</td></tr></tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
         </main>
     </div>
 

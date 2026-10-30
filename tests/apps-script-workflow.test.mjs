@@ -16,6 +16,10 @@ class Range {
         this.sheet.getCell(this.row + rowOffset, this.column + columnOffset)));
   }
 
+  getDisplayValues() {
+    return this.getValues().map(row => row.map(value => String(value ?? '')));
+  }
+
   getValue() {
     return this.sheet.getCell(this.row, this.column);
   }
@@ -28,6 +32,11 @@ class Range {
 
   setValue(value) {
     this.sheet.setCell(this.row, this.column, value);
+    return this;
+  }
+
+  clearContent() {
+    this.sheet.clearContents();
     return this;
   }
 
@@ -46,6 +55,9 @@ class Sheet {
     this.name = name;
     this.rows = rows;
     this.validations = [];
+    this.hiddenColumns = new Set();
+    this.maxRows = 100;
+    this.maxColumns = 26;
   }
 
   getLastRow() {
@@ -55,7 +67,20 @@ class Sheet {
     return 0;
   }
 
-  getMaxRows() { return 100; }
+  getLastColumn() {
+    return Math.max(0, ...this.rows.map(row => row.length));
+  }
+
+  getMaxRows() { return this.maxRows; }
+  getMaxColumns() { return this.maxColumns; }
+
+  insertRowsAfter(_row, count) { this.maxRows += count; return this; }
+  insertColumnsAfter(_column, count) { this.maxColumns += count; return this; }
+
+  clearContents() {
+    this.rows = [];
+    return this;
+  }
 
   getDataRange() {
     const lastRow = Math.max(this.getLastRow(), 1);
@@ -67,11 +92,33 @@ class Sheet {
     return new Range(this, row, column, rowCount, columnCount);
   }
 
+  deleteRow(row) {
+    this.rows.splice(row - 1, 1);
+    return this;
+  }
+
+  setName(name) {
+    this.spreadsheet.sheets.delete(this.name);
+    this.name = name;
+    this.spreadsheet.sheets.set(name, this);
+    return this;
+  }
+
+  copyTo(spreadsheet) {
+    const copy = new Sheet(`Copy of ${this.name}`, this.rows.map(row => [...row]));
+    return spreadsheet.addSheet(copy);
+  }
+
+  hideColumns(column, count = 1) {
+    for (let index = column; index < column + count; index++) this.hiddenColumns.add(index);
+    return this;
+  }
+
   getCell(row, column) {
     const override = this.formulaOverrides && this.formulaOverrides[`${row}:${column}`];
     if (override != null) return override;
     const raw = this.rows[row - 1]?.[column - 1] ?? '';
-    if (this.name !== 'Maestro de inventario' || row === 1 || column < 5 || column > 7) return raw;
+    if (this.name !== 'Inventario accesorios' || row === 1 || column < 5 || column > 7) return raw;
     const sku = this.rows[row - 1][0];
     const movements = this.spreadsheet.getSheetByName('Registro de Movimientos').rows.slice(1);
     const incoming = movements.filter(item => item[2] === sku && ['Entrada', 'Ajuste positivo'].includes(item[3]) && ['Confirmado', 'Reversado'].includes(item[9] || 'Confirmado'))
@@ -89,9 +136,10 @@ class Sheet {
 }
 
 class Spreadsheet {
-  constructor() {
+  constructor(id = 'mock-spreadsheet') {
+    this.id = id;
     this.sheets = new Map();
-    const inventory = new Sheet('Maestro de inventario', [
+    const inventory = new Sheet('Inventario accesorios', [
       ['ID', 'Categoria', 'Descripcion', 'Stock inicial', 'Entradas', 'Salidas', 'Stock_Actual', 'Minimo', 'Foto', 'Activo', 'Costo_Unitario_COP'],
       ['CARG-USB', 'Cargador', 'Cargador USB', 0, 0, 0, 0, 5, '', true, 25000]
     ]);
@@ -111,13 +159,17 @@ class Spreadsheet {
   }
 
   getSheetByName(name) { return this.sheets.get(name) || null; }
+  getSheets() { return [...this.sheets.values()]; }
+  getId() { return this.id; }
   insertSheet(name) { return this.addSheet(new Sheet(name)); }
+  deleteSheet(sheet) { this.sheets.delete(sheet.name); }
 }
 
 function createRuntime() {
-  const spreadsheet = new Spreadsheet();
+  const spreadsheet = new Spreadsheet('internal-spreadsheet');
   const sessionEntries = new Map();
   const cacheWrites = [];
+  const scheduledTriggers = [];
   let uuid = 0;
   const properties = {
     MAIN_SHEET: '',
@@ -160,6 +212,21 @@ function createRuntime() {
       })
     },
     LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
+    ScriptApp: {
+      getProjectTriggers: () => scheduledTriggers,
+      newTrigger(handler) {
+        return {
+          timeBased() { return this; },
+          everyDays() { return this; },
+          atHour() { return this; },
+          create() {
+            const trigger = { getHandlerFunction: () => handler };
+            scheduledTriggers.push(trigger);
+            return trigger;
+          }
+        };
+      }
+    },
     Utilities: {
       getUuid: () => `test-id-${++uuid}`,
       DigestAlgorithm: { SHA_256: 'SHA_256' },
@@ -167,7 +234,9 @@ function createRuntime() {
       computeDigest: (_algorithm, value) => Array.from(value).map(character => character.charCodeAt(0)),
       base64EncodeWebSafe: bytes => bytes.join(''),
       sleep() {},
-      formatDate: date => date.toISOString().slice(0, 7)
+      formatDate: (date, _timezone, pattern) => pattern === 'dd/MM/yyyy'
+        ? `${String(date.getDate()).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')}/${date.getFullYear()}`
+        : date.toISOString().slice(0, 7)
     },
     Session: {
       getScriptTimeZone: () => 'UTC',
@@ -179,7 +248,7 @@ function createRuntime() {
     }
   };
   runInNewContext(code, context, { filename: 'Code.gs' });
-  return { context, spreadsheet, sessionEntries, cacheWrites };
+  return { context, spreadsheet, sessionEntries, cacheWrites, scheduledTriggers };
 }
 
 function mockAi(context, content) {
@@ -203,7 +272,7 @@ function response(output) {
 }
 
 function stockFor(spreadsheet, sku) {
-  const inventory = spreadsheet.getSheetByName('Maestro de inventario');
+  const inventory = spreadsheet.getSheetByName('Inventario accesorios');
   const row = inventory.rows.findIndex(values => values[0] === sku) + 1;
   return inventory.getRange(row, 7).getValue();
 }
@@ -338,7 +407,7 @@ test('non-admin users can register Entrada, Salida, and Baja por daño', () => {
 
 test('inventory formulas retain both sides of corrected movements', () => {
   const { context, spreadsheet } = createRuntime();
-  const inventory = spreadsheet.getSheetByName('Maestro de inventario');
+  const inventory = spreadsheet.getSheetByName('Inventario accesorios');
 
   context.refreshInventoryFormulas_(inventory, 2);
 
@@ -389,7 +458,7 @@ test('inventory insights calculate coverage, replenishment, request aging, SLA, 
   const { context, spreadsheet } = createRuntime();
   const now = new Date();
   const daysAgo = days => new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
-  const inventory = spreadsheet.getSheetByName('Maestro de inventario');
+  const inventory = spreadsheet.getSheetByName('Inventario accesorios');
   inventory.getRange(2, 4).setValue(128);
   inventory.getRange(3, 1, 1, 11).setValues([
     ['CABLE-HDMI', 'Cable', 'Cable HDMI', 30, 0, 0, 0, 5, '', true, 10000]
@@ -519,7 +588,7 @@ test('dashboard ranks delivered accessories and excludes corrected movements', (
   const session = { usuario: 'operador', rol: 'usuario' };
   const now = new Date();
   const daysAgo = days => new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
-  spreadsheet.getSheetByName('Maestro de inventario').getRange(3, 1, 1, 11).setValues([
+  spreadsheet.getSheetByName('Inventario accesorios').getRange(3, 1, 1, 11).setValues([
     ['ADAPT-HDMI', 'Adaptador', 'Adaptador HDMI', 0, 0, 0, 0, 1, '', true, 15000]
   ]);
   const movements = spreadsheet.getSheetByName('Registro de Movimientos');
@@ -669,7 +738,7 @@ test('request receipt adds stock and delivery removes it exactly once', () => {
   assert.throws(() => context.createRequest_({ correoSolicitante: 'correo-invalido', items: requestItems }, session), /correo del solicitante/);
   const created = response(context.createRequest_({ correoSolicitante: 'solicitante@example.com', items: requestItems }, session));
   const request = { idSolicitud: created.idSolicitud };
-  const requestSheet = spreadsheet.getSheetByName('Solicitudes');
+  const requestSheet = spreadsheet.getSheetByName('Solicitudes accesorios');
   assert.equal(requestSheet.rows[1][19], 25000);
   assert.equal(requestSheet.rows[1][20], 'solicitante@example.com');
   assert.equal(response(context.getRequests_({}, session)).data[0].correoSolicitante, 'solicitante@example.com');
@@ -745,7 +814,7 @@ test('linking a delivered request preserves the original Gmail URL for redirect'
   const created = response(context.createRequest_({
     items: [{ idArticulo: 'CARG-USB', cantidad: 2, cliente: 'Cliente A', regional: 'Bogota', entregadoA: 'Ana' }]
   }, session));
-  const requestSheet = spreadsheet.getSheetByName('Solicitudes');
+  const requestSheet = spreadsheet.getSheetByName('Solicitudes accesorios');
   requestSheet.rows[1][9] = 'Entregada';
   context.linkRequestThread_({ idSolicitud: created.idSolicitud, gmailThreadUrl: threadUrl }, session);
   assert.equal(requestSheet.rows[1][22], threadUrl);
@@ -755,7 +824,7 @@ test('linking a delivered request preserves the original Gmail URL for redirect'
 
 test('availability review validates client stock and dispatches directly when available', () => {
   const { context, spreadsheet } = createRuntime();
-  const inventory = spreadsheet.getSheetByName('Maestro de inventario');
+  const inventory = spreadsheet.getSheetByName('Inventario accesorios');
   inventory.rows[1][3] = 5;
   const session = { usuario: 'solicitante', rol: 'usuario' };
   const created = response(context.createRequest_({
@@ -763,7 +832,7 @@ test('availability review validates client stock and dispatches directly when av
     entregadoA: 'Ana',
     items: [{ idArticulo: 'CARG-USB', cantidad: 2, cliente: 'Cliente A' }]
   }, session));
-  const requestSheet = spreadsheet.getSheetByName('Solicitudes');
+  const requestSheet = spreadsheet.getSheetByName('Solicitudes accesorios');
 
   context.updateRequestStatus_({
     idSolicitud: created.idSolicitud,
@@ -799,7 +868,7 @@ test('Communications requests go directly to supplier and close on receipt', () 
     items: [{ idArticulo: 'CARG-USB', cantidad: 2 }]
   }, session));
 
-  assert.equal(spreadsheet.getSheetByName('Solicitudes').rows[1][4], 'Comunicaciones');
+  assert.equal(spreadsheet.getSheetByName('Solicitudes accesorios').rows[1][4], 'Comunicaciones');
   assert.throws(() => context.updateRequestStatus_({
     idSolicitud: created.idSolicitud,
     estado: 'Revisión de disponibilidad'
@@ -842,7 +911,7 @@ test('request schema adds email and Gmail thread columns without shifting existi
   const oldHeaders = context.CONFIG.requestHeaders.slice(0, 20);
   const oldRow = ['legacy-request', new Date(), 'operador', 'Cliente A', 'Bogota', 'Ana', 'CARG-USB', 'Cargador USB', 1,
     'Entregada', '', '', '', new Date(), '', '', '', 'operador', new Date(), 25000];
-  const sheet = spreadsheet.insertSheet('Solicitudes');
+  const sheet = spreadsheet.insertSheet('Solicitudes accesorios');
   sheet.getRange(1, 1, 1, oldHeaders.length).setValues([oldHeaders]);
   sheet.getRange(2, 1, 1, oldRow.length).setValues([oldRow]);
 
@@ -884,7 +953,7 @@ test('registered or ordered requests can be annulled before receipt without inve
   const registered = response(context.createRequest_({ items: [{
     idArticulo: 'CARG-USB', cantidad: 3, cliente: 'Cliente A', regional: 'Bogota', entregadoA: 'Ana'
   }] }, session));
-  const requestSheet = spreadsheet.getSheetByName('Solicitudes');
+  const requestSheet = spreadsheet.getSheetByName('Solicitudes accesorios');
   const movements = spreadsheet.getSheetByName('Registro de Movimientos');
 
   assert.throws(() => context.updateRequestStatus_({
@@ -941,7 +1010,7 @@ test('AI extraction requests JSON and maps an email request to inventory exactly
   assert.match(payload.contents[0].parts[0].text, /CARG-USB/);
 
   const requestId = context.insertEmailRequest_(extracted, 'gmail-message-1');
-  const sheet = spreadsheet.getSheetByName('Solicitudes');
+  const sheet = spreadsheet.getSheetByName('Solicitudes accesorios');
   assert.equal(sheet.rows.length, 2);
   assert.equal(sheet.rows[1][0], requestId);
   assert.equal(sheet.rows[1][2], 'Correo automatico');
@@ -1026,7 +1095,7 @@ test('email processing isolates invalid messages and labels them for review', ()
   assert.equal(invalidMessage.read, true);
   assert.equal(createdLabel, 'Inventario/Error de procesamiento');
   assert.equal(thread.label.name, createdLabel);
-  assert.equal(spreadsheet.getSheetByName('Solicitudes').rows.length, 2);
+  assert.equal(spreadsheet.getSheetByName('Solicitudes accesorios').rows.length, 2);
   assert.deepEqual(searchArguments, ['in:inbox is:unread', 0, 50]);
 });
 
@@ -1096,7 +1165,7 @@ test('temporary Gemini 503 retries and leaves email unread until a later run suc
   assert.equal(failedResult.detalleErrores[0].errorServicio, false);
   assert.equal(unread, true);
   assert.equal(fetchCalls, 3);
-  assert.equal(spreadsheet.getSheetByName('Solicitudes'), null);
+  assert.equal(spreadsheet.getSheetByName('Solicitudes accesorios'), null);
 
   const successfulRun = context.procesarCorreosInventario();
   assert.deepEqual(JSON.parse(JSON.stringify(successfulRun)), {
@@ -1110,7 +1179,7 @@ test('temporary Gemini 503 retries and leaves email unread until a later run suc
     detalleErrores: []
   });
   assert.equal(unread, false);
-  assert.equal(spreadsheet.getSheetByName('Solicitudes').rows.length, 2);
+  assert.equal(spreadsheet.getSheetByName('Solicitudes accesorios').rows.length, 2);
 });
 
 test('Gemini quota 429 observes retry time and does not spend quota again before reset', () => {
@@ -1302,7 +1371,7 @@ test('request quantity column rejects negative values in the spreadsheet', () =>
 
 test('catalog initializes the cost column without overwriting existing inventory fields', () => {
   const { context, spreadsheet } = createRuntime();
-  const inventory = spreadsheet.getSheetByName('Maestro de inventario');
+  const inventory = spreadsheet.getSheetByName('Inventario accesorios');
   inventory.rows[0] = inventory.rows[0].slice(0, 10);
   inventory.rows[1] = inventory.rows[1].slice(0, 10);
 
@@ -1314,7 +1383,7 @@ test('catalog initializes the cost column without overwriting existing inventory
 
 test('outgoing movements use the ledger when the inventory formula is stale', () => {
   const { context, spreadsheet } = createRuntime();
-  const inventory = spreadsheet.getSheetByName('Maestro de inventario');
+  const inventory = spreadsheet.getSheetByName('Inventario accesorios');
   inventory.rows[1][3] = 3;
   inventory.formulaOverrides = { '2:7': 3 };
   const movements = spreadsheet.getSheetByName('Registro de Movimientos');
@@ -1345,4 +1414,320 @@ test('inventory audit identifies the transaction that first made a SKU negative'
   assert.equal(audit.data.inconsistencias[0].stockSegunMovimientos, -1);
   assert.equal(audit.data.inconsistencias[0].primerMovimientoNegativo.idTransaccion, 'bad-sale');
   assert.equal(audit.data.inconsistencias[0].primerMovimientoNegativo.saldoDespues, -1);
+});
+
+test('returned phones register by IMEI and retain state transition history', () => {
+  const { context, spreadsheet, sessionEntries } = createRuntime();
+  const token = 'equipment-session-token';
+  const session = JSON.stringify({ usuario: 'operador', rol: 'usuario' });
+  sessionEntries.set(context.sessionKey_(token), session);
+  const post = payload => response(context.doPost({
+    postData: { contents: JSON.stringify({ ...payload, token }) }
+  }));
+
+  const created = post({
+    action: 'registrar_equipo',
+    fechaRecepcion: '2026-10-23',
+    modelo: 'MOTO G23',
+    imei: '354696572315130',
+    ubicacionSam: 'BODEGA COMUNICACIONES',
+    danoReparacion: 'BUEN ESTADO',
+    estado: 'Disponible'
+  });
+  assert.equal(created.status, 'success');
+  assert.equal(created.data.modelo, 'MOTO G23');
+  assert.equal(created.data.fechaRecepcion, '2026-10-23');
+  assert.equal(created.data.imei, '354696572315130');
+  assert.equal(created.data.ubicacionSam, 'BODEGA COMUNICACIONES');
+  assert.equal(stockFor(spreadsheet, 'CARG-USB'), 0);
+  assert.equal(spreadsheet.getSheetByName('Registro de Movimientos').getLastRow(), 1);
+
+  const duplicate = post({
+    action: 'registrar_equipo', fechaRecepcion: '2026-10-23', modelo: 'MOTO G23',
+    imei: '354696572315130', danoReparacion: 'BUEN ESTADO'
+  });
+  assert.match(duplicate.message, /IMEI/i);
+
+  assert.equal(post({
+    action: 'actualizar_estado_equipo', id: created.data.id, estado: 'Enviados CAP'
+  }).status, 'success');
+  const savedEquipment = post({ action: 'obtener_equipos' }).data[0];
+  assert.equal(savedEquipment.estado, 'Enviados CAP');
+  assert.equal(savedEquipment.fechaRecepcion, '23/10/2026');
+  assert.equal(savedEquipment.ubicacionSam, 'BODEGA COMUNICACIONES');
+  const history = spreadsheet.getSheetByName(context.CONFIG.equipmentHistorySheet);
+  assert.equal(history.getLastRow(), 3);
+  assert.equal(history.getRange(3, 6).getValue(), 'Disponible');
+  assert.equal(history.getRange(3, 7).getValue(), 'Enviados CAP');
+});
+
+test('cellphone batch registration writes multiple unique IMEIs in one request', () => {
+  const { context, spreadsheet, sessionEntries } = createRuntime();
+  const token = 'phone-batch-session';
+  sessionEntries.set(context.sessionKey_(token), JSON.stringify({ usuario: 'operador', rol: 'usuario' }));
+  const post = payload => response(context.doPost({
+    postData: { contents: JSON.stringify({ ...payload, token }) }
+  }));
+  const items = [
+    { fechaRecepcion: '2026-10-30', modelo: 'MOTO G23', imei: '111111111111111', ubicacionSam: 'BODEGA', danoReparacion: 'BUEN ESTADO', estado: 'Disponible' },
+    { fechaRecepcion: '2026-10-30', modelo: 'MOTO G24', imei: '222222222222222', ubicacionSam: 'PUESTO 4', danoReparacion: 'PANTALLA ROTA', estado: 'Dañado' }
+  ];
+
+  const result = post({ action: 'registrar_equipos_lote', items });
+  assert.equal(result.status, 'success');
+  assert.equal(result.count, 2);
+  assert.equal(spreadsheet.getSheetByName(context.CONFIG.equipmentSheet).getLastRow(), 3);
+  assert.equal(spreadsheet.getSheetByName(context.CONFIG.equipmentHistorySheet).getLastRow(), 3);
+  assert.equal(post({ action: 'registrar_equipos_lote', items }).status, 'error');
+  assert.equal(spreadsheet.getSheetByName(context.CONFIG.equipmentSheet).getLastRow(), 3);
+});
+
+test('bulk cellphone status change records a separate KPI trace for each selected device', () => {
+  const { context, spreadsheet, sessionEntries } = createRuntime();
+  const token = 'phone-bulk-state-session';
+  sessionEntries.set(context.sessionKey_(token), JSON.stringify({ usuario: 'operador', rol: 'usuario' }));
+  const post = payload => response(context.doPost({
+    postData: { contents: JSON.stringify({ ...payload, token }) }
+  }));
+  const created = post({
+    action: 'registrar_equipos_lote',
+    items: [
+      { fechaRecepcion: '2026-10-30', modelo: 'MOTO G23', imei: '111111111111111', danoReparacion: 'BUEN ESTADO', estado: 'Disponible' },
+      { fechaRecepcion: '2026-10-30', modelo: 'MOTO G24', imei: '222222222222222', danoReparacion: 'BUEN ESTADO', estado: 'Disponible' }
+    ]
+  });
+
+  const changed = post({ action: 'actualizar_estados_equipos', ids: created.ids, estado: 'Enviados CAP' });
+  assert.equal(changed.status, 'success');
+  assert.equal(changed.updated, 2);
+  assert.deepEqual(post({ action: 'obtener_equipos' }).data.map(item => item.estado), ['Enviados CAP', 'Enviados CAP']);
+  const history = spreadsheet.getSheetByName(context.CONFIG.equipmentHistorySheet);
+  assert.equal(history.getLastRow(), 5);
+  assert.equal(history.getRange(4, 6).getValue(), 'Disponible');
+  assert.equal(history.getRange(4, 7).getValue(), 'Enviados CAP');
+  assert.equal(history.getRange(5, 6).getValue(), 'Disponible');
+  assert.equal(history.getRange(5, 7).getValue(), 'Enviados CAP');
+});
+
+test('equipment sheet initializer creates sheets, preserves rows, and installs one daily archive trigger', () => {
+  const { context, spreadsheet, scheduledTriggers } = createRuntime();
+
+  assert.match(context.inicializarHojasEquipos(), /inicializadas/);
+  const equipment = spreadsheet.getSheetByName(context.CONFIG.equipmentSheet);
+  const history = spreadsheet.getSheetByName(context.CONFIG.equipmentHistorySheet);
+  assert.deepEqual(Array.from(equipment.getRange(1, 1, 1, context.CONFIG.equipmentHeaders.length).getValues()[0]), Array.from(context.CONFIG.equipmentHeaders));
+  assert.deepEqual(Array.from(history.getRange(1, 1, 1, context.CONFIG.equipmentHistoryHeaders.length).getValues()[0]), Array.from(context.CONFIG.equipmentHistoryHeaders));
+
+  equipment.getRange(2, 1).setValue('existing-equipment');
+  context.inicializarHojasEquipos();
+  assert.equal(equipment.getRange(2, 1).getValue(), 'existing-equipment');
+  assert.equal(spreadsheet.getSheetByName(context.CONFIG.equipmentArchiveSheet).getRange(1, 1).getValue(), 'ID_Equipo');
+  assert.equal(scheduledTriggers.length, 1);
+  assert.equal(scheduledTriggers[0].getHandlerFunction(), 'archivarEquiposDisposicionFinal');
+});
+
+test('existing equipment sheet gains SAM location column without changing stored rows', () => {
+  const { context, spreadsheet } = createRuntime();
+  const equipment = spreadsheet.insertSheet(context.CONFIG.equipmentSheet);
+  const oldHeaders = Array.from(context.CONFIG.equipmentHeaders).slice(0, 10);
+  oldHeaders[3] = 'Serial';
+  equipment.getRange(1, 1, 1, oldHeaders.length).setValues([oldHeaders]);
+  equipment.getRange(2, 1, 1, oldHeaders.length).setValues([[
+    'existing-id', '2026-10-23', 'MOTO G23', '', 'BUEN ESTADO', 'Bodega Comunicaciones',
+    'operador', new Date(), 'operador', '354696572315130'
+  ]]);
+
+  context.equipmentSheet_();
+
+  assert.equal(equipment.getRange(1, 4).getValue(), 'Dato legado');
+  assert.equal(equipment.hiddenColumns.has(4), true);
+  assert.equal(equipment.getRange(1, 11).getValue(), 'Ubicacion_SAM');
+  assert.equal(equipment.getRange(2, 1).getValue(), 'existing-id');
+  assert.equal(equipment.getRange(2, 10).getValue(), '354696572315130');
+});
+
+test('manual cellphone deletion is admin-only and keeps an archive copy', () => {
+  const { context, spreadsheet, sessionEntries } = createRuntime();
+  const equipment = context.equipmentSheet_();
+  equipment.getRange(2, 1, 1, context.CONFIG.equipmentHeaders.length).setValues([[
+    'phone-delete-1', '2026-10-23', 'MOTO G23', '', 'BUEN ESTADO', 'Bodega Comunicaciones',
+    'operador', new Date(), 'operador', '354696572315130', 'BODEGA'
+  ]]);
+  const operatorToken = 'phone-delete-operator';
+  const adminToken = 'phone-delete-admin';
+  sessionEntries.set(context.sessionKey_(operatorToken), JSON.stringify({ usuario: 'operador', rol: 'usuario' }));
+  sessionEntries.set(context.sessionKey_(adminToken), JSON.stringify({ usuario: 'admin', rol: 'admin' }));
+  const post = (token, payload) => response(context.doPost({
+    postData: { contents: JSON.stringify({ ...payload, token }) }
+  }));
+
+  assert.match(post(operatorToken, { action: 'eliminar_equipo', id: 'phone-delete-1' }).message, /administrador/i);
+  assert.equal(post(adminToken, { action: 'eliminar_equipo', id: 'phone-delete-1' }).status, 'success');
+  assert.equal(equipment.getLastRow(), 1);
+  const archive = spreadsheet.getSheetByName(context.CONFIG.equipmentArchiveSheet);
+  assert.equal(archive.getRange(2, 1).getValue(), 'phone-delete-1');
+  assert.equal(archive.getRange(2, 13).getValue(), 'Eliminación manual');
+});
+
+test('existing cellphone archive migrates the Serial header and preserves its data', () => {
+  const { context, spreadsheet } = createRuntime();
+  const archive = spreadsheet.insertSheet(context.CONFIG.equipmentArchiveSheet);
+  const oldHeaders = Array.from(context.CONFIG.equipmentArchiveHeaders);
+  oldHeaders[3] = 'Serial';
+  archive.getRange(1, 1, 1, oldHeaders.length).setValues([oldHeaders]);
+  const oldRow = Array(oldHeaders.length).fill('');
+  oldRow[0] = 'archived-phone';
+  oldRow[3] = 'legacy-serial-value';
+  archive.getRange(2, 1, 1, oldRow.length).setValues([oldRow]);
+
+  context.inicializarHojasEquipos();
+
+  assert.equal(archive.getRange(1, 4).getValue(), 'Dato legado');
+  assert.equal(archive.getRange(2, 4).getValue(), 'legacy-serial-value');
+  assert.equal(archive.hiddenColumns.has(4), true);
+});
+
+test('disposal rows are archived after 30 days but remain active before the cutoff', () => {
+  const { context, spreadsheet } = createRuntime();
+  const equipment = context.equipmentSheet_();
+  const now = new Date();
+  const row = (id, ageDays) => [
+    id, '2026-09-01', 'MOTO G23', '', 'Daño', 'Disposición final', 'operador',
+    new Date(now.getTime() - ageDays * 86400000), 'operador', `1234567890123${id.endsWith('old') ? '01' : '02'}`, 'BODEGA'
+  ];
+  equipment.getRange(2, 1, 2, context.CONFIG.equipmentHeaders.length).setValues([
+    row('phone-old', 31), row('phone-recent', 29)
+  ]);
+
+  assert.equal(context.archivarEquiposDisposicionFinal(), 1);
+  assert.equal(equipment.getLastRow(), 2);
+  assert.equal(equipment.getRange(2, 1).getValue(), 'phone-recent');
+  const archive = spreadsheet.getSheetByName(context.CONFIG.equipmentArchiveSheet);
+  assert.equal(archive.getRange(2, 1).getValue(), 'phone-old');
+  assert.equal(archive.getRange(2, 13).getValue(), 'Disposición final por más de 30 días');
+});
+
+test('cellphone dashboard measures CAPMOVIL and warranty return durations separately from stock', () => {
+  const { context, spreadsheet } = createRuntime();
+  const equipment = context.equipmentSheet_();
+  const history = context.equipmentHistorySheet_();
+  const now = new Date('2026-10-30T12:00:00Z');
+  equipment.getRange(2, 1, 2, context.CONFIG.equipmentHeaders.length).setValues([
+    ['phone-returned', '2026-10-10', 'MOTO G22', '', 'BUEN ESTADO', 'Bodega Comunicaciones', 'op', now, 'op', '123456789012345', 'BODEGA'],
+    ['phone-warranty', '2026-10-25', 'MOTO G24', '', 'Revisión', 'Garantía', 'op', new Date('2026-10-25T12:00:00Z'), 'op', '543210987654321', 'TALLER']
+  ]);
+  history.getRange(2, 1, 3, context.CONFIG.equipmentHistoryHeaders.length).setValues([
+    ['event-1', new Date('2026-10-20T12:00:00Z'), 'phone-returned', '', 'MOTO G22', 'Bodega Comunicaciones', 'Enviado a CAPMOVIL (reparación)', 'op'],
+    ['event-2', new Date('2026-10-24T12:00:00Z'), 'phone-returned', '', 'MOTO G22', 'Enviado a CAPMOVIL (reparación)', 'Bodega Comunicaciones', 'op'],
+    ['event-3', new Date('2026-10-25T12:00:00Z'), 'phone-warranty', '', 'MOTO G24', 'Bodega Comunicaciones', 'Garantía', 'op']
+  ]);
+
+  const metrics = context.getEquipmentDashboardMetrics_(now);
+  assert.equal(metrics.total, 2);
+  assert.equal(metrics.bodega, 1);
+  assert.equal(metrics.enGarantia, 1);
+  assert.equal(metrics.retornosMedidos, 1);
+  assert.equal(metrics.promedioRetornoDias, 4);
+  assert.equal(metrics.pendientes[0].diasEspera, 5);
+  assert.equal(stockFor(spreadsheet, 'CARG-USB'), 0);
+
+  const dashboard = response(context.getDashboard_({ usuario: 'operador', rol: 'usuario' }));
+  assert.equal(dashboard.data.celulares.total, 2);
+  assert.equal(dashboard.data.celulares.promedioRetornoDias, 4);
+  assert.equal(dashboard.data.unidades, 0);
+});
+
+test('equipment list refreshes SAM location from the current master row', () => {
+  const { context, spreadsheet } = createRuntime();
+  const equipment = context.equipmentSheet_();
+  equipment.getRange(2, 1, 1, context.CONFIG.equipmentHeaders.length).setValues([[
+    'phone-location-1', '2026-10-23', 'MOTO G23', '', 'BUEN ESTADO', 'Bodega Comunicaciones',
+    'operador', new Date(), 'operador', '354696572315130', 'UBICACIÓN ANTERIOR'
+  ]]);
+  const master = spreadsheet.insertSheet('Equipos');
+  master.getRange(1, 1, 2, 4).setValues([
+    ['Modelo', 'IMEI_ICCID', 'ubicacion', 'Estado'],
+    ['MOTO G23', '354696572315130', 'NUEVA UBICACION', 'Activo']
+  ]);
+
+  const result = response(context.getEquipment_({ usuario: 'operador', rol: 'usuario' }));
+
+  assert.equal(result.data[0].ubicacionSam, 'NUEVA UBICACION');
+  assert.equal(equipment.getRange(2, 11).getValue(), 'NUEVA UBICACION');
+});
+
+test('master spreadsheet import copies its first tab and synchronizes later updates', () => {
+  const { context, spreadsheet, scheduledTriggers } = createRuntime();
+  const source = new Spreadsheet(context.CONFIG.equipmentSourceSpreadsheetId);
+  source.sheets.clear();
+  const sourceSheet = source.insertSheet('Maestro telefónico');
+  const sourceRows = [
+    ['id', 'Modelo', 'linea', 'IMEI_ICCID', 'ubicacion', 'Estado'],
+    [25387, 'MOTO G23', '3222634305', '354696572315130', 'BODEGA', 'Activo'],
+    [25388, 'SIM Card', 'sin linea', '000000000123456', 'BODEGA', 'Activo']
+  ];
+  sourceSheet.getRange(1, 1, sourceRows.length, sourceRows[0].length).setValues(sourceRows);
+  const oldMaster = spreadsheet.insertSheet('Equipos');
+  oldMaster.getRange(1, 1, 2, 2).setValues([['Maestro anterior'], ['conservar']]);
+  const openById = context.SpreadsheetApp.openById;
+  context.SpreadsheetApp.openById = id => id === context.CONFIG.equipmentSourceSpreadsheetId ? source : openById(id);
+
+  assert.match(context.importarMaestroCelularesDesdeFuente(), /2 filas de datos/);
+  const imported = spreadsheet.getSheetByName(context.CONFIG.equipmentMasterSheet);
+  assert.deepEqual(imported.getDataRange().getValues(), sourceRows);
+  assert.equal(spreadsheet.getSheetByName('Equipos').name, context.CONFIG.equipmentMasterSheet);
+  assert.equal([...spreadsheet.sheets.keys()].some(name => name.indexOf('Equipos respaldo ') === 0), true);
+  assert.equal(scheduledTriggers.filter(trigger => trigger.getHandlerFunction() === 'sincronizarMaestroCelularesDesdeFuente').length, 1);
+
+  sourceSheet.getRange(2, 5).setValue('NUEVA UBICACION');
+  context.sincronizarMaestroCelularesDesdeFuente();
+  const updatedMaster = spreadsheet.getSheetByName(context.CONFIG.equipmentMasterSheet);
+  assert.equal(updatedMaster.getRange(2, 5).getValue(), 'NUEVA UBICACION');
+  assert.equal(scheduledTriggers.filter(trigger => trigger.getHandlerFunction() === 'sincronizarMaestroCelularesDesdeFuente').length, 1);
+});
+
+test('accessory sheet migration renames legacy sheets without losing rows', () => {
+  const { context, spreadsheet } = createRuntime();
+  const inventory = spreadsheet.getSheetByName(context.CONFIG.inventorySheet);
+  inventory.setName(context.CONFIG.legacyInventorySheet);
+  const requests = spreadsheet.insertSheet(context.CONFIG.legacyRequestsSheet);
+  requests.getRange(1, 1, 1, context.CONFIG.requestHeaders.length).setValues([context.CONFIG.requestHeaders]);
+  requests.getRange(2, 1).setValue('existing-request');
+
+  assert.match(context.migrarNombresHojasAccesorios(), /Inventario accesorios y Solicitudes accesorios/);
+  assert.equal(spreadsheet.getSheetByName(context.CONFIG.legacyInventorySheet), null);
+  assert.equal(spreadsheet.getSheetByName(context.CONFIG.legacyRequestsSheet), null);
+  assert.equal(spreadsheet.getSheetByName(context.CONFIG.inventorySheet), inventory);
+  assert.equal(spreadsheet.getSheetByName(context.CONFIG.requestsSheet), requests);
+  assert.equal(requests.getRange(2, 1).getValue(), 'existing-request');
+});
+
+test('IMEI suffix lookup returns equipment matches and excludes SIM rows', () => {
+  const { context, spreadsheet, sessionEntries } = createRuntime();
+  const source = spreadsheet.insertSheet('Equipos');
+  source.getRange(1, 1, 4, 6).setValues([
+    ['id', 'Modelo', 'linea', 'IMEI_ICCID', 'ubicacion', 'Estado'],
+    [25387, 'MOTO G23', '3222634305', '354696572315130', 'BODEGA', 'Activo'],
+    [25388, 'SIM Card', 'sin linea', '000000000123456', 'BODEGA', 'Activo'],
+    [25389, 'MOTO G54', '1230000001', '123000000123456', 'BODEGA', 'Activo']
+  ]);
+  const token = 'imei-lookup-session';
+  sessionEntries.set(context.sessionKey_(token), JSON.stringify({ usuario: 'operador', rol: 'usuario' }));
+
+  const result = response(context.doPost({
+    postData: { contents: JSON.stringify({ action: 'buscar_equipo_maestro', imeiConsulta: '123456', token }) }
+  }));
+
+  assert.equal(result.status, 'success');
+  assert.equal(result.total, 1);
+  assert.deepEqual(result.data[0], { modelo: 'MOTO G54', imei: '123000000123456', ubicacionSam: 'BODEGA' });
+  const longerSearch = response(context.doPost({
+    postData: { contents: JSON.stringify({ action: 'buscar_equipo_maestro', imeiConsulta: '000123456', token }) }
+  }));
+  assert.equal(longerSearch.total, 1);
+  assert.deepEqual(longerSearch.data[0], { modelo: 'MOTO G54', imei: '123000000123456', ubicacionSam: 'BODEGA' });
+  assert.equal(response(context.doPost({
+    postData: { contents: JSON.stringify({ action: 'buscar_equipo_maestro', imeiConsulta: '123', token }) }
+  })).status, 'error');
+  assert.equal(spreadsheet.getSheetByName(context.CONFIG.equipmentSheet), null);
 });
