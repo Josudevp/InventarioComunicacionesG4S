@@ -1,5 +1,5 @@
 
-const CACHE_NAME = 'inventario-v29';
+const CACHE_NAME = 'inventario-v30';
 const BUILD_ASSETS = [];
 const urlsToCache = [
     './',
@@ -30,6 +30,7 @@ self.addEventListener('activate', event => {
 self.addEventListener('fetch', event => {
     if (event.request.method !== 'GET') return;
     const requestUrl = new URL(event.request.url);
+    if (requestUrl.pathname.startsWith('/src/') || requestUrl.pathname.startsWith('/node_modules/.vite/')) return;
     if (event.request.mode === 'navigate' || requestUrl.pathname.endsWith('/manifest.json')) {
         event.respondWith(
             fetch(event.request)

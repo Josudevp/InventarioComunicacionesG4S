@@ -1,49 +1,82 @@
 # Sistema de Inventario de Comunicaciones G4S
 
-Aplicación Web Progresiva (PWA) para la gestión de inventario, equipos y accesorios.
-Conectada a Google Sheets a través de Apps Script (API Universal).
+Aplicación Web Progresiva (PWA) para administrar inventario, movimientos, solicitudes y reportes de Comunicaciones G4S. La interfaz se sirve como aplicación estática y se conecta a Google Sheets mediante un web app de Google Apps Script.
 
-## Desarrollo y arquitectura
-* `index.html` contiene la estructura de la aplicación.
-* `src/main.js` inicia la interfaz y carga las dependencias frontend.
-* `src/tailwind.css` define las capas base y componentes de Tailwind; los ajustes específicos de Choices.js permanecen en esta hoja.
-* `src/services/api.js` centraliza las solicitudes autenticadas a Apps Script.
-* `apps-script/Code.gs` conserva el backend y sus reglas de negocio.
-* Vite genera el sitio en `dist/`; el paso posterior copia assets, manifiesto y service worker y añade los archivos compilados al precache.
-* `npm test` valida las transiciones de inventario y los permisos del backend con hojas de cálculo simuladas.
+## Contenido
 
-Requiere Node.js 20 o posterior. Para trabajar localmente:
+- [Requisitos y desarrollo local](#requisitos-y-desarrollo-local)
+- [Arquitectura](#arquitectura)
+- [Funciones de la aplicación](#funciones-de-la-aplicación)
+- [Indicadores y reportes](#indicadores-y-reportes)
+- [Accesibilidad y diseño adaptable](#accesibilidad-y-diseño-adaptable)
+- [Seguridad y operación](#seguridad-y-operación)
+- [Configuración de Apps Script](#apps-script)
+- [Despliegue](#despliegue)
+
+## Requisitos y desarrollo local
+
+Requiere Node.js 20 o posterior y npm. Instala las dependencias fijadas por `package-lock.json` e inicia Vite:
 
 ```bash
-npm install
+npm ci
 npm run dev
 ```
 
-Para generar y revisar el sitio de producción:
+Antes de publicar, ejecuta las pruebas y genera la versión de producción:
 
 ```bash
+npm test
 npm run build
 npm run preview
 ```
 
-GitHub Pages publica `dist/` automáticamente al hacer push a `main`, mediante [`.github/workflows/deploy-pages.yml`](./.github/workflows/deploy-pages.yml). Netlify también puede publicar `dist/` con [`.netlify.toml`](./.netlify.toml). El build usa rutas relativas para soportar el subdirectorio de Pages.
+`npm run build` genera `dist/`, copia los recursos públicos y prepara el precache del service worker. Vite muestra una advertencia si algún paquete supera el umbral configurado de tamaño; comprueba el resultado del build antes de publicar.
 
-Para habilitar Pages por primera vez, abre **Settings → Pages** en GitHub y selecciona **GitHub Actions** como fuente. El workflow ejecuta `npm ci`, `npm test`, `npm run build` y publica el resultado. La URL aparecerá en **Settings → Pages** y en el deployment del workflow.
+## Arquitectura
 
-El endpoint activo está en `src/services/api.js`. Si necesitas configurarlo distinto en GitHub, agrega una variable de Actions llamada `VITE_API_URL`; localmente puedes definirla en `.env.local` usando [.env.example](./.env.example). No pongas tokens de sesión ni contraseñas en variables públicas de Vite.
+* `index.html` define la estructura, navegación y pantallas de la aplicación.
+* `src/main.js` gestiona sesión, eventos, estados de interfaz, solicitudes, reportes y exportaciones.
+* `src/DashboardCharts.jsx` monta los gráficos del dashboard y de analítica con React y Recharts; la carga se mantiene separada del resto de la interfaz.
+* `src/tailwind.css` contiene los estilos de Tailwind, los temas claro/oscuro, los estados de controles y los ajustes de Choices.js.
+* `src/services/api.js` centraliza las solicitudes al web app de Apps Script.
+* `apps-script/Code.gs` implementa las acciones, validaciones, permisos y reglas transaccionales del backend.
+* `tests/apps-script-workflow.test.mjs` prueba los flujos del backend con hojas de cálculo simuladas.
+* `package-lock.json` fija las versiones de las dependencias frontend.
 
-## Características
-* Autenticación en bóveda separada.
-* Cambio de contraseña.
-* Escáner QR integrado.
-* Búsqueda inteligente del catálogo.
-* Creación de accesorios.
-* Dashboard con existencias, alertas de stock, solicitudes abiertas, promedio de entrega y compras al proveedor.
-* El dashboard incluye gráficas interactivas: flujo mensual de unidades ingresadas/retiradas (periodo de 6 o 12 meses y series activables), distribución de solicitudes por estado, salidas históricas por regional y compras de los últimos 12 meses por proveedor.
-* Solicitudes con varias líneas y clientes para una sola regional y persona destinataria; también se pueden crear solicitudes para Comunicaciones y redactar un correo predeterminado a `capmovil@gmail.com`.
-* El historial de movimientos permite filtrar por fecha, artículo, tipo, cantidad, cliente/proveedor, regional, estado y usuario desde el icono de cada encabezado, seleccionando varias opciones disponibles con casillas. Las opciones se actualizan según todos los filtros activos; al pulsar Fecha se alterna el orden ascendente/descendente.
-* La sección **Reportes** descarga archivos Excel del inventario actual, todos los movimientos y solicitudes. El libro completo agrega resumen, valorización con los costos registrados y alertas de stock. Las descargas consultan datos actualizados y recorren el historial completo mediante páginas.
-* PWA instalable en iOS y Android.
+## Funciones de la aplicación
+
+* Inicio de sesión en bóveda separada, cambio de contraseña y cierre de sesión por inactividad.
+* Búsqueda del catálogo con Choices.js, alta y edición de accesorios y lectura de códigos QR cuando el dispositivo permite el acceso a la cámara.
+* Registro de movimientos con controles de stock y distribución de salidas por cliente, artículo, regional, cantidad y persona destinataria.
+* Solicitudes con varias líneas y clientes para una regional y persona destinataria compartidas. También se admiten solicitudes de Comunicaciones y la preparación de correos dirigidos a `capmovil@gmail.com`.
+* Dashboard resumido con existencias, alertas, solicitudes abiertas, tiempos de entrega y cuatro gráficas operativas.
+* Gráficas interactivas del dashboard: flujo mensual de entradas y salidas (6 o 12 meses y series conmutables), solicitudes por estado, entregas por regional y accesorios más entregados por periodo.
+* Historial de movimientos con filtros multiselección por fecha, artículo, tipo, cantidad, cliente/proveedor, regional, estado y usuario. Los filtros se combinan y la fecha permite alternar el orden.
+* Preferencia de tema claro/oscuro persistida en el navegador. El encabezado principal conserva una superficie oscura en ambos temas.
+* PWA instalable en dispositivos compatibles con iOS y Android.
+
+## Indicadores y reportes
+
+La pestaña **Reportes** contiene el análisis de **Cobertura, reposición y eficiencia**, separado del dashboard para mantener el resumen operativo enfocado. Los parámetros configurables se guardan en el navegador. Al abrir la pestaña se actualiza el análisis; el botón de descarga solicita datos nuevos para que el archivo refleje los parámetros actuales.
+
+Desde Reportes se descargan libros Excel del inventario, movimientos, solicitudes, análisis de inventario o un libro completo. Las consultas de movimientos y solicitudes recorren la paginación del backend.
+
+El reporte **Análisis de inventario** incluye hojas de resumen, cobertura y reposición, solicitudes abiertas, inventario inmovilizado, clasificación ABC, proveedores, tiempos mensuales, recepciones recientes y solicitudes de proveedor pendientes. Los reportes de datos operativos reflejan el catálogo y el historial consultados al momento de descargar.
+
+### Cómo interpretar los indicadores
+
+* Ajusta el consumo reciente, plazo del proveedor, stock de seguridad, meta de entrega y periodo sin salidas; pulsa **Actualizar análisis** para consultar los indicadores.
+* La cobertura compara el stock disponible con las salidas confirmadas promedio del periodo. La reposición sugerida cubre `consumo diario × (plazo del proveedor + stock de seguridad)` y respeta el stock mínimo. Tómala como recomendación para revisión, no como una orden automática.
+* La antigüedad y las metas se miden en días calendario desde el registro de la solicitud. El vencimiento aplica a solicitudes de cliente que superan la meta configurada. El cumplimiento se calcula con solicitudes de cliente entregadas en los últimos 90 días; mediana y P90 muestran el tiempo típico y la cola de entregas más demoradas.
+* Un artículo inmovilizado conserva stock positivo y no tiene salidas en el periodo elegido. El ABC ordena el valor consumido con el costo actual del catálogo: A hasta aproximadamente 80% acumulado, B hasta 95% y C el resto. Artículos sin costo quedan fuera de la valorización y se contabilizan aparte.
+* La gráfica de proveedor mide días calendario entre **Fecha solicitud proveedor** y **Fecha recepción**, muestra la tendencia mensual de los últimos 12 meses, el comparativo por proveedor, las fechas de las recepciones recientes y las solicitudes pendientes. Registra el proveedor al cambiar la solicitud a **Solicitada** y la recepción al marcarla **Recibida** o **Cerrada**; solicitudes anuladas, sin proveedor identificado o con fechas incoherentes no se mezclan en la medición.
+* Los valores de consumo y reposición son estimados: los costos usan el valor actual del catálogo, no necesariamente el costo histórico de cada compra. Los parámetros configurados se guardan solo en ese navegador.
+
+## Accesibilidad y diseño adaptable
+
+La interfaz incluye navegación por pestañas compatible con teclado (flechas izquierda/derecha, Inicio y Fin), un enlace para saltar al contenido principal, nombres accesibles para controles de icono, estados anunciados con regiones `aria-live`, anillos de foco visibles y colores adaptados a los temas claro y oscuro. Las tablas y formularios conservan su estructura en pantallas pequeñas; las tablas anchas se consultan mediante desplazamiento horizontal y los controles se reorganizan con breakpoints.
+
+Para validar cambios de interfaz, comprueba los dos temas y tamaños de escritorio, tableta y móvil, además de navegar sin ratón. El build y las pruebas automáticas no sustituyen una auditoría manual con lector de pantalla ni una medición WCAG en cada vista.
 
 ## Seguridad y operación
 * La identidad guardada en el navegador solo mantiene la sesión de la pestaña; no reemplaza la autenticación del servidor.
@@ -86,7 +119,7 @@ El código actualizado está en [apps-script/Code.gs](./apps-script/Code.gs) y c
 * Los usuarios operativos pueden registrar `Entrada`, `Salida` y `Baja por daño`; `Devolucion` y los ajustes positivo/negativo quedan reservados a administradores. Solo administradores pueden anular movimientos o solicitudes, y la anulación requiere una justificación que queda en la hoja. Las anulaciones no crean movimientos inversos ni afectan el saldo.
 * En Catálogo, `Auditar saldos y movimientos` compara las fórmulas con el saldo reconstruido e identifica la transacción que primero dejó un artículo negativo. Administradores pueden regenerar fórmulas; esto no modifica el historial. Los negativos contables deben corregirse anulando el movimiento incorrecto con justificación o registrando el ajuste aprobado, nunca cambiando el stock directamente.
 * Después de desplegar el cambio de anulaciones, un administrador debe regenerar una vez las fórmulas desde Catálogo. Además de actualizar las fórmulas, esto marca como anulados los contramovimientos de anulaciones antiguas, evitando su efecto duplicado; las filas se conservan para auditoría.
-* El gráfico de flujo mensual agrega cantidades por mes desde movimientos contabilizados; el gráfico circular distribuye las solicitudes por estado actual; el gráfico regional suma las unidades de movimientos `Salida` confirmados de todo el historial; y el gráfico de compras agrupa cantidades mensuales de movimientos `Entrada` confirmados, identificados por proveedor, agrupando `CAP` y `CAPMOVIL` bajo `CAPMOVIL`. Las anulaciones nuevas se excluyen del saldo y no crean movimientos adicionales. Los movimientos históricos con estado `Reversado` se conservan para que sus asientos existentes sigan equilibrando el saldo.
+* El gráfico de flujo mensual agrega cantidades por mes desde movimientos contabilizados; el gráfico circular distribuye las solicitudes por estado actual; el gráfico regional suma unidades de movimientos `Salida` confirmados; y el gráfico de accesorios compara entregas para el periodo elegido. Las anulaciones nuevas se excluyen del saldo y no crean movimientos adicionales. Los movimientos históricos con estado `Reversado` se conservan para que sus asientos existentes sigan equilibrando el saldo.
 * `Tiempo promedio de entrega` mide desde el registro hasta la entrega de solicitudes completadas.
 * Las salidas siempre se registran por distribución: cada fila contiene cliente, artículo, regional, cantidad y usuario destinatario. El registrador se toma de la sesión autenticada.
 * Las entradas no usan distribución: requieren proveedor, el destino se registra automáticamente como `Comunicaciones` en `Bogota` y el registrador también se toma de la sesión.

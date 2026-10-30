@@ -385,6 +385,135 @@ test('dashboard includes the last twelve months of incoming and outgoing unit to
   assert.equal(currentMonthTotals.salidas, 2);
 });
 
+test('inventory insights calculate coverage, replenishment, request aging, SLA, stagnant stock, and ABC', () => {
+  const { context, spreadsheet } = createRuntime();
+  const now = new Date();
+  const daysAgo = days => new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
+  const inventory = spreadsheet.getSheetByName('Maestro de inventario');
+  inventory.getRange(2, 4).setValue(128);
+  inventory.getRange(3, 1, 1, 11).setValues([
+    ['CABLE-HDMI', 'Cable', 'Cable HDMI', 30, 0, 0, 0, 5, '', true, 10000]
+  ]);
+  inventory.getRange(4, 1, 1, 11).setValues([
+    ['ROUTER-WIFI', 'Red', 'Router Wi-Fi', 8, 0, 0, 0, 2, '', true, 20000]
+  ]);
+  const movements = spreadsheet.getSheetByName('Registro de Movimientos');
+  movements.getRange(2, 1, 5, 14).setValues([
+    ['recent-usb-sale', daysAgo(10), 'CARG-USB', 'Salida', 90, 'operador', 'Ana', 'Cliente A', 'Bogota', 'Confirmado', '', '', '', ''],
+    ['recent-cable-sale', daysAgo(20), 'CABLE-HDMI', 'Salida', 10, 'operador', 'Luis', 'Cliente B', 'Cali', 'Confirmado', '', '', '', ''],
+    ['annulled-sale', daysAgo(2), 'CARG-USB', 'Salida', 50, 'operador', 'Eva', 'Cliente C', 'Cali', 'Anulado', '', '', '', ''],
+    ['damage-writeoff', daysAgo(1), 'CARG-USB', 'Baja por daño', 8, 'operador', '', '', 'Cali', 'Confirmado', '', '', '', ''],
+    ['old-sale', daysAgo(120), 'CARG-USB', 'Salida', 20, 'operador', 'Eva', 'Cliente D', 'Bogota', 'Confirmado', '', '', '', '']
+  ]);
+
+  const requests = context.requestSheet_();
+  const addRequest = ({ id, age, status, type = 'Cliente', deliveryDays }) => {
+    const row = Array(26).fill('');
+    row[0] = id;
+    row[1] = daysAgo(age);
+    row[4] = 'Bogota';
+    row[9] = status;
+    row[13] = deliveryDays == null ? '' : daysAgo(deliveryDays);
+    row[25] = type;
+    requests.rows.push(row);
+  };
+  addRequest({ id: 'open-overdue', age: 10, status: 'Registrada' });
+  addRequest({ id: 'open-communications', age: 20, status: 'Solicitada', type: 'Comunicaciones' });
+  addRequest({ id: 'delivered-ontime', age: 5, status: 'Entregada', deliveryDays: 1 });
+  addRequest({ id: 'delivered-late', age: 10, status: 'Entregada', deliveryDays: 1 });
+
+  const insights = response(context.getInventoryInsights_({
+    consumoDias: 90,
+    sinMovimientoDias: 180,
+    plazoProveedorDias: 10,
+    stockSeguridadDias: 5,
+    metaEntregaDias: 7
+  }, { usuario: 'administrador', rol: 'admin' })).data;
+
+  assert.equal(insights.parametros.consumoDias, 90);
+  assert.equal(insights.cobertura.find(item => item.idArticulo === 'CARG-USB').consumoDiario, 1);
+  assert.equal(insights.cobertura.find(item => item.idArticulo === 'CARG-USB').coberturaDias, 10);
+  assert.equal(insights.reposicion.find(item => item.idArticulo === 'CARG-USB').cantidadSugerida, 5);
+  assert.equal(insights.articulosPorDebajoCobertura, 1);
+  assert.equal(insights.solicitudesAbiertas.total, 2);
+  assert.equal(insights.solicitudesAbiertas.masDe14Dias, 1);
+  assert.equal(insights.solicitudesAbiertas.vencidas, 1);
+  assert.equal(insights.cumplimientoEntrega.entregadas, 2);
+  assert.equal(insights.cumplimientoEntrega.porcentaje, 50);
+  assert.equal(insights.cumplimientoEntrega.medianaDias, 6.5);
+  assert.equal(insights.cumplimientoEntrega.percentil90Dias, 8.5);
+  assert.equal(insights.articulosSinMovimientoTotal, 1);
+  assert.equal(insights.articulosSinMovimiento[0].idArticulo, 'ROUTER-WIFI');
+  assert.equal(insights.abc[0].idArticulo, 'CARG-USB');
+  assert.equal(insights.abc[0].clasificacion, 'A');
+  assert.throws(() => context.getInventoryInsights_({ consumoDias: 5 }, { usuario: 'operador' }), /Parametro de analitica invalido/);
+
+  const operatorInsights = response(context.getInventoryInsights_({
+    consumoDias: 90,
+    plazoProveedorDias: 1,
+    stockSeguridadDias: 0,
+    metaEntregaDias: 7,
+    sinMovimientoDias: 180
+  }, { usuario: 'operador', rol: 'usuario' })).data;
+  assert.deepEqual(operatorInsights.cobertura, []);
+  assert.deepEqual(operatorInsights.reposicion, []);
+  assert.equal(operatorInsights.articulosPorDebajoCobertura, null);
+  assert.equal(operatorInsights.parametros.plazoProveedorDias, null);
+});
+
+test('supplier lead-time analysis measures request-to-receipt once per request and tracks waiting requests', () => {
+  const { context } = createRuntime();
+  const requests = context.requestSheet_();
+  const now = new Date();
+  const daysAgo = days => new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
+  const addRequestLine = ({ id, requestedDays, receivedDays, supplier, status = 'Recibida', type = 'Comunicaciones' }) => {
+    const row = Array(26).fill('');
+    row[0] = id;
+    row[1] = daysAgo(requestedDays + 2);
+    row[9] = status;
+    row[10] = supplier || '';
+    row[11] = daysAgo(requestedDays);
+    row[12] = receivedDays == null ? '' : daysAgo(receivedDays);
+    row[25] = type;
+    requests.rows.push(row);
+  };
+  addRequestLine({ id: 'cap-request-1', requestedDays: 30, receivedDays: 25, supplier: 'CAPMOVIL' });
+  addRequestLine({ id: 'cap-request-1', requestedDays: 30, receivedDays: 25, supplier: 'CAPMOVIL' });
+  addRequestLine({ id: 'other-request', requestedDays: 20, receivedDays: 10, supplier: 'Proveedor B' });
+  addRequestLine({ id: 'cap-pending', requestedDays: 6, receivedDays: null, supplier: 'CAPMOVIL', status: 'Solicitada' });
+  addRequestLine({ id: 'unknown-pending', requestedDays: 5, receivedDays: null, supplier: '', status: 'Solicitada' });
+  addRequestLine({ id: 'annulled-order', requestedDays: 3, receivedDays: 1, supplier: 'Proveedor anulado', status: 'Anulada' });
+  addRequestLine({ id: 'invalid-date-order', requestedDays: 9, receivedDays: 10, supplier: 'Proveedor fecha invalida' });
+  addRequestLine({ id: 'old-order', requestedDays: 500, receivedDays: 490, supplier: 'Proveedor antiguo' });
+
+  const insight = response(context.getInventoryInsights_({}, {
+    usuario: 'administrador',
+    rol: 'admin'
+  })).data.tiempoEntregaProveedor;
+
+  assert.equal(insight.recibidas, 2);
+  assert.equal(insight.promedioDias, 7.5);
+  assert.equal(insight.medianaDias, 7.5);
+  assert.equal(insight.percentil90Dias, 9.5);
+  assert.equal(insight.abiertas, 2);
+  assert.equal(insight.proveedoresSinNombre, 1);
+  assert.equal(insight.proveedores.find(item => item.proveedor === 'CAPMOVIL').recibidas, 1);
+  assert.equal(insight.proveedores.find(item => item.proveedor === 'CAPMOVIL').promedioDias, 5);
+  assert.equal(insight.proveedores.find(item => item.proveedor === 'CAPMOVIL').abiertas, 1);
+  assert.equal(insight.proveedores.find(item => item.proveedor === 'Proveedor B').promedioDias, 10);
+  assert.equal(insight.meses.reduce((total, item) => total + item.recibidas, 0), 2);
+  assert.equal(insight.solicitudesEnEspera[0].idSolicitud, 'cap-pending');
+  assert.equal(insight.solicitudesEnEspera[0].diasEspera, 6);
+
+  const operatorData = response(context.getInventoryInsights_({}, {
+    usuario: 'operador',
+    rol: 'usuario'
+  })).data;
+  assert.equal(operatorData.tiempoEntregaProveedor.recibidas, 2);
+  assert.equal(operatorData.tiempoEntregaProveedor.proveedores.length, 2);
+  assert.deepEqual(operatorData.reposicion, []);
+});
+
 test('dashboard ranks delivered accessories and excludes corrected movements', () => {
   const { context, spreadsheet } = createRuntime();
   const session = { usuario: 'operador', rol: 'usuario' };

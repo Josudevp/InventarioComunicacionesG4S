@@ -15,7 +15,8 @@
 <body>
     <div id="alert-box" class="alert-box" role="status" aria-live="polite" aria-atomic="true" hidden>
         <span id="alert-icon" class="alert-icon" aria-hidden="true"></span>
-        <div class="alert-copy"><strong id="alert-title"></strong><p id="alert-message"></p></div>
+        <div class="alert-copy"><strong id="alert-title"></strong><p id="alert-message"></p>        </div>
+
         <button type="button" id="alert-dismiss" class="alert-dismiss" aria-label="Cerrar aviso">&times;</button>
     </div>
     <div id="confirm-dialog" class="confirm-dialog" hidden>
@@ -48,9 +49,9 @@
             <h1>Inventario Comunicaciones</h1>
             <p>Acceso Seguro de Comunicaciones</p>
             <form id="login-form" autocomplete="on">
-            <label style="text-align:left;">Usuario / Correo</label>
+            <label for="login-user">Usuario / Correo</label>
             <input type="text" id="login-user" placeholder="Ej. jperez" autocomplete="username" autocapitalize="off" autocorrect="off" spellcheck="false" maxlength="100">
-            <label style="text-align:left;">Contraseña / PIN</label>
+            <label for="login-pass">Contraseña / PIN</label>
             <input type="password" id="login-pass" placeholder="Contraseña" autocomplete="current-password" autocapitalize="off" autocorrect="off" spellcheck="false" inputmode="text" enterkeyhint="go" maxlength="128">
             <button type="submit" class="btn-primary" id="btn-login"><i class="fa-solid fa-right-to-bracket"></i> INGRESAR</button>
             </form>
@@ -63,11 +64,11 @@
         <div class="login-card">
             <h2 style="text-align:center; color:var(--g4s-black); margin-top:0;">Cambiar Contraseña</h2>
             
-            <label style="text-align:left;">Usuario</label>
+            <label for="cp-user">Usuario</label>
             <input type="text" id="cp-user" placeholder="Tu usuario" autocomplete="username" maxlength="100">
-            <label style="text-align:left;">Contraseña Actual</label>
+            <label for="cp-old">Contraseña Actual</label>
             <input type="password" id="cp-old" placeholder="Contraseña actual" autocomplete="current-password" maxlength="128">
-            <label style="text-align:left;">Nueva Contraseña</label>
+            <label for="cp-new">Nueva Contraseña</label>
             <input type="password" id="cp-new" placeholder="Mínimo 8 caracteres" autocomplete="new-password" minlength="8" maxlength="128">
             
             <button class="btn-primary" id="btn-change-pass" onclick="window.cambiarClave()"><i class="fa-solid fa-key"></i> ACTUALIZAR CLAVE</button>
@@ -77,25 +78,31 @@
 
     <!-- APLICACIÓN PRINCIPAL -->
     <div id="app-screen" style="display: none;">
+        <a class="skip-link" href="#main-content">Saltar al contenido principal</a>
         <div class="navbar">
             <div>
                 <div class="brand"><img data-app-logo src="assets/LOGO_G4S.jpg" alt="G4S" class="brand-logo"><h2>Inventario Comunicaciones</h2></div>
                 <div class="user-info" id="user-email">cargando...</div>
             </div>
-            <button class="btn-secondary" style="border-color:rgba(255,255,255,0.3); color:white; padding: 8px 14px; font-size:13px; width:auto; margin:0;" onclick="window.cerrarSesion()"><i class="fa-solid fa-right-from-bracket"></i> Salir</button>
+            <div class="navbar-actions">
+                <button type="button" class="theme-toggle" data-theme-toggle aria-pressed="false">
+                    <i class="fa-solid fa-moon" aria-hidden="true"></i><span data-theme-label>Modo oscuro</span>
+                </button>
+                <button class="btn-secondary logout-button" onclick="window.cerrarSesion()"><i class="fa-solid fa-right-from-bracket"></i> Salir</button>
+            </div>
         </div>
 
         <div class="tab-bar" role="tablist" aria-label="Secciones del inventario">
-            <button type="button" class="tab active" role="tab" aria-selected="true" aria-controls="tab-dashboard" onclick="window.switchTab('dashboard', this)">Dashboard</button>
-            <button type="button" class="tab" role="tab" aria-selected="false" aria-controls="tab-registro" onclick="window.switchTab('registro', this)">Movimientos</button>
-            <button type="button" class="tab" role="tab" aria-selected="false" aria-controls="tab-solicitudes" onclick="window.switchTab('solicitudes', this)">Solicitudes</button>
-            <button type="button" class="tab" role="tab" aria-selected="false" aria-controls="tab-historial" onclick="window.switchTab('historial', this)">Historial</button>
-            <button type="button" class="tab" role="tab" aria-selected="false" aria-controls="tab-reportes" onclick="window.switchTab('reportes', this)">Reportes</button>
-            <button type="button" class="tab" role="tab" aria-selected="false" aria-controls="tab-catalogo" onclick="window.switchTab('catalogo', this)">Catálogo</button>
+            <button id="tab-dashboard-trigger" type="button" class="tab active" role="tab" aria-selected="true" aria-controls="tab-dashboard" tabindex="0" onclick="window.switchTab('dashboard', this)">Dashboard</button>
+            <button id="tab-registro-trigger" type="button" class="tab" role="tab" aria-selected="false" aria-controls="tab-registro" tabindex="-1" onclick="window.switchTab('registro', this)">Movimientos</button>
+            <button id="tab-solicitudes-trigger" type="button" class="tab" role="tab" aria-selected="false" aria-controls="tab-solicitudes" tabindex="-1" onclick="window.switchTab('solicitudes', this)">Solicitudes</button>
+            <button id="tab-catalogo-trigger" type="button" class="tab" role="tab" aria-selected="false" aria-controls="tab-catalogo" tabindex="-1" onclick="window.switchTab('catalogo', this)">Catálogo</button>
+            <button id="tab-historial-trigger" type="button" class="tab" role="tab" aria-selected="false" aria-controls="tab-historial" tabindex="-1" onclick="window.switchTab('historial', this)">Historial</button>
+            <button id="tab-reportes-trigger" type="button" class="tab" role="tab" aria-selected="false" aria-controls="tab-reportes" tabindex="-1" onclick="window.switchTab('reportes', this)">Reportes</button>
         </div>
 
-        <div class="container">
-            <section id="tab-dashboard" class="section active" aria-labelledby="dashboard-title">
+        <main class="container" id="main-content" tabindex="-1">
+            <section id="tab-dashboard" class="section active" role="tabpanel" aria-labelledby="tab-dashboard-trigger">
                 <div class="dashboard-heading">
                     <div>
                         <p class="dashboard-eyebrow">COMUNICACIONES · INVENTARIO</p>
@@ -124,7 +131,7 @@
                             <div class="chart-period" role="group" aria-label="Periodo del gráfico de unidades">
                                 <button type="button" class="chart-period-button is-active" data-dashboard-months="6" aria-pressed="true">6 meses</button>
                                 <button type="button" class="chart-period-button" data-dashboard-months="12" aria-pressed="false">12 meses</button>
-                            </div>
+                        </div>
                         </div>
                         <div id="dashboard-movement-chart" class="dashboard-chart" role="img" aria-label="Gráfico mensual de unidades ingresadas y retiradas"></div>
                         <div class="chart-legend" aria-label="Series del gráfico">
@@ -182,7 +189,7 @@
             </section>
 
             <!-- TAB REGISTRO -->
-            <div id="tab-registro" class="section">
+            <div id="tab-registro" class="section" role="tabpanel" aria-labelledby="tab-registro-trigger">
                 <div class="card">
                     <label for="tipoMov">Tipo de movimiento</label>
                     <select id="tipoMov" onchange="window.cambiarMovimientoUI(this.value)">
@@ -208,7 +215,7 @@
                 </div>
 
                 <div class="card">
-                    <label>Buscar o agregar accesorio</label>
+                    <label for="smart-search">Buscar o agregar accesorio</label>
                     <div class="search-row">
                         <div>
                             <select id="smart-search" aria-label="Buscar accesorio">
@@ -217,16 +224,16 @@
                         </div>
                         <button type="button" class="btn-icon" id="btn-add-search" aria-label="Agregar accesorio seleccionado"><i class="fa-solid fa-plus"></i></button>
                         <span class="helper-text" style="align-self:center; margin:0;">o escanea</span>
-                        <button class="btn-icon" id="btn-camera"><i class="fa-solid fa-qrcode"></i></button>
+                        <button type="button" class="btn-icon" id="btn-camera" aria-label="Escanear accesorio con cámara"><i class="fa-solid fa-qrcode" aria-hidden="true"></i></button>
                     </div>
                     <div id="reader"></div>
                 </div>
 
                 <div class="card" id="items-card">
                     <h3 style="margin-top:0; font-size: 16px; color: var(--g4s-black); border-bottom: 2px solid var(--border); padding-bottom: 8px;"> <i class="fa-solid fa-cart-shopping"></i> Lista de Accesorios</h3>
-                    <div id="items-list" style="min-height: 50px;">
-                        <p style="text-align:center; color:#9ca3af; font-size:13px; padding: 20px 0;">No hay ítems seleccionados</p>
-                    </div>
+                    <ul id="items-list" class="cart-list" aria-label="Accesorios seleccionados">
+                        <li class="empty-cart-state" aria-live="polite">No hay ítems seleccionados</li>
+                    </ul>
                 </div>
 
                 <div class="card" id="salida-fields">
@@ -246,7 +253,7 @@
                 </div>
             </div>
 
-            <section id="tab-solicitudes" class="section" aria-labelledby="requests-title">
+            <section id="tab-solicitudes" class="section" role="tabpanel" aria-labelledby="tab-solicitudes-trigger">
                 <div class="card">
                     <div class="section-heading">
                         <div><h2 id="requests-title">Nueva solicitud</h2><p class="helper-text" id="request-form-guidance">Todas las líneas comparten una regional y una persona destinataria.</p></div>
@@ -319,7 +326,7 @@
                 </div>
             </section>
 
-            <div id="tab-historial" class="section">
+            <div id="tab-historial" class="section" role="tabpanel" aria-labelledby="tab-historial-trigger">
                 <div class="card">
                     <h3 style="margin-top:0; color:var(--g4s-black);">Historial de movimientos</h3>
                     <div class="catalog-toolbar">
@@ -355,7 +362,102 @@
                 </section>
             </div>
 
-            <section id="tab-reportes" class="section" aria-labelledby="reports-title">
+            <section id="tab-reportes" class="section" role="tabpanel" aria-labelledby="tab-reportes-trigger">
+                <section id="dashboard-inventory-insights" class="dashboard-panel dashboard-insights-panel" aria-labelledby="inventory-insights-title">
+                    <div class="dashboard-panel-heading">
+                        <div>
+                            <h2 id="inventory-insights-title">Cobertura, reposición y eficiencia</h2>
+                            <p>Alertas calculadas con salidas confirmadas y solicitudes registradas.</p>
+                        </div>
+                        <button type="button" class="btn-secondary dashboard-insights-refresh" id="btn-inventory-insights-refresh"><i class="fa-solid fa-rotate"></i> Actualizar análisis</button>
+                    </div>
+                    <div class="insights-settings" aria-label="Parámetros del análisis">
+                        <label>Consumo reciente (días)<input id="insight-consumption-days" type="number" min="30" max="365" step="1" value="90"></label>
+                        <label data-admin-only>Plazo del proveedor (días)<input id="insight-lead-days" type="number" min="1" max="365" step="1" value="30"></label>
+                        <label data-admin-only>Stock de seguridad (días)<input id="insight-safety-days" type="number" min="0" max="180" step="1" value="14"></label>
+                        <label>Meta de entrega (días)<input id="insight-sla-days" type="number" min="1" max="365" step="1" value="7"></label>
+                        <label>Sin salidas (días)<input id="insight-stagnant-days" type="number" min="30" max="730" step="1" value="180"></label>
+                    </div>
+                    <p class="insights-method-note">Supuestos editables: reposición = consumo diario × (plazo + seguridad), respetando el stock mínimo. El cumplimiento usa solicitudes de cliente entregadas en los últimos 90 días. La valorización ABC y del stock inmovilizado usa el costo unitario actual del catálogo.</p>
+                    <p id="inventory-insights-feedback" class="insights-feedback" role="status" aria-live="polite">Cargando análisis...</p>
+                    <div class="insights-kpi-grid">
+                        <article class="kpi-card kpi-warning" data-admin-only><span>Referencias por debajo de cobertura objetivo</span><strong id="insight-low-coverage">—</strong><small>Plazo de proveedor + seguridad</small></article>
+                        <article class="kpi-card kpi-request"><span>Solicitudes abiertas vencidas</span><strong id="insight-overdue-requests">—</strong><small>Solicitudes de cliente sobre la meta configurada</small></article>
+                        <article class="kpi-card kpi-efficiency"><span>Entregas dentro de la meta</span><strong id="insight-on-time-rate">—</strong><small id="insight-on-time-detail">Últimos 90 días · meta de 7 días</small></article>
+                        <article class="kpi-card kpi-economy"><span>Valor conocido inmovilizado</span><strong id="insight-stagnant-value">—</strong><small id="insight-stagnant-detail">Stock positivo sin salidas recientes</small></article>
+                    </div>
+                    <section class="dashboard-panel supplier-lead-panel" aria-labelledby="supplier-lead-title">
+                        <div class="dashboard-panel-heading">
+                            <div>
+                                <h3 id="supplier-lead-title">Tiempo de entrega del proveedor</h3>
+                                <p>Tiempo calendario desde el envío de la solicitud hasta su recepción.</p>
+                            </div>
+                            <label class="supplier-lead-filter" for="supplier-lead-filter">Proveedor
+                                <select id="supplier-lead-filter"><option value="">Todos los proveedores</option></select>
+                            </label>
+                        </div>
+                        <p id="supplier-lead-feedback" class="insights-feedback" role="status" aria-live="polite">Calculando tiempos de recepción...</p>
+                        <div class="supplier-lead-kpis">
+                            <article><span>Tiempo promedio</span><strong id="supplier-lead-average">—</strong></article>
+                            <article><span>Mediana</span><strong id="supplier-lead-median">—</strong></article>
+                            <article><span>Percentil 90</span><strong id="supplier-lead-p90">—</strong></article>
+                            <article><span>Esperando recepción</span><strong id="supplier-lead-open">—</strong><small id="supplier-lead-wait">—</small></article>
+                        </div>
+                        <div class="supplier-lead-layout">
+                            <section class="supplier-lead-chart-panel" aria-label="Evolución mensual de tiempos de entrega">
+                                <div class="supplier-lead-chart-shell">
+                                    <div class="supplier-lead-chart-heading">
+                                        <div>
+                                            <span class="supplier-lead-chart-eyebrow">TENDENCIA DE ENTREGA</span>
+                                            <strong id="supplier-lead-chart-title">Promedio mensual</strong>
+                                        </div>
+                                        <span class="supplier-lead-chart-period"><i class="fa-regular fa-calendar" aria-hidden="true"></i> ÚLTIMOS 12 MESES</span>
+                                    </div>
+                                    <p id="supplier-lead-chart-status" class="supplier-lead-chart-status" role="status" aria-live="polite">Cargando gráfica...</p>
+                                    <div id="supplier-lead-chart" class="supplier-lead-chart" role="img" aria-label="Promedio mensual de días desde solicitud hasta recepción"></div>
+                                    <div class="supplier-lead-chart-legend"><span></span> Días promedio por solicitud recibida</div>
+                                </div>
+                                <p class="insight-panel-help">Cada punto representa el promedio de solicitudes recibidas en ese mes, agrupadas por fecha de solicitud al proveedor. El resumen considera los últimos 12 meses.</p>
+                            </section>
+                            <section class="supplier-lead-table-panel">
+                                <h4>Comparativo por proveedor</h4>
+                                <div class="catalog-table-wrap"><table class="catalog-table insight-table supplier-lead-table"><thead><tr><th>Proveedor</th><th>Recibidas</th><th>Promedio</th><th>P90</th><th>En espera</th></tr></thead><tbody id="supplier-lead-providers"><tr><td colspan="5">Cargando...</td></tr></tbody></table></div>
+                            </section>
+                        </div>
+                        <div class="supplier-lead-records-grid">
+                            <section class="supplier-waiting-panel">
+                                <h4>Últimas recepciones</h4>
+                                <div class="catalog-table-wrap"><table class="catalog-table insight-table"><thead><tr><th>Solicitud</th><th>Proveedor</th><th>Solicitada</th><th>Recibida</th><th>Demora</th></tr></thead><tbody id="supplier-lead-receipts-list"><tr><td colspan="5">Cargando...</td></tr></tbody></table></div>
+                            </section>
+                            <section class="supplier-waiting-panel">
+                                <h4>Solicitudes al proveedor pendientes de recepción</h4>
+                                <div class="catalog-table-wrap"><table class="catalog-table insight-table"><thead><tr><th>Solicitud</th><th>Proveedor</th><th>Fecha solicitada</th><th>Tiempo esperando</th></tr></thead><tbody id="supplier-lead-waiting-list"><tr><td colspan="4">Cargando...</td></tr></tbody></table></div>
+                            </section>
+                        </div>
+                    </section>
+                    <div class="dashboard-insight-grid">
+                        <section class="dashboard-panel" data-admin-only>
+                            <h3>Reposición sugerida y cobertura</h3>
+                            <p class="insight-panel-help">Prioriza artículos con consumo y stock insuficiente para el plazo configurado.</p>
+                            <div class="catalog-table-wrap"><table class="catalog-table insight-table"><thead><tr><th>SKU / artículo</th><th>Stock</th><th>Consumo diario</th><th>Cobertura</th><th>Sugerencia</th></tr></thead><tbody id="insight-replenishment-body"><tr><td colspan="5">Cargando...</td></tr></tbody></table></div>
+                        </section>
+                        <section class="dashboard-panel">
+                            <h3>Solicitudes abiertas más antiguas</h3>
+                            <p id="insight-request-aging-summary" class="insight-panel-help">Pendientes por antigüedad.</p>
+                            <div class="catalog-table-wrap"><table class="catalog-table insight-table"><thead><tr><th>Solicitud</th><th>Estado</th><th>Tipo / regional</th><th>Antigüedad</th></tr></thead><tbody id="insight-old-requests-body"><tr><td colspan="4">Cargando...</td></tr></tbody></table></div>
+                        </section>
+                        <section class="dashboard-panel">
+                            <h3>Artículos sin movimiento</h3>
+                            <p id="insight-stagnant-summary" class="insight-panel-help">Stock positivo sin salidas dentro del periodo.</p>
+                            <div class="catalog-table-wrap"><table class="catalog-table insight-table"><thead><tr><th>SKU / artículo</th><th>Stock</th><th>Última salida</th><th>Valor estimado</th></tr></thead><tbody id="insight-stagnant-body"><tr><td colspan="4">Cargando...</td></tr></tbody></table></div>
+                        </section>
+                        <section class="dashboard-panel">
+                            <h3>Clasificación ABC de consumo</h3>
+                            <p id="insight-abc-summary" class="insight-panel-help">Participación del valor consumido dentro del periodo.</p>
+                            <div class="catalog-table-wrap"><table class="catalog-table insight-table"><thead><tr><th>Clase</th><th>SKU / artículo</th><th>Consumo (COP)</th><th>Acumulado</th></tr></thead><tbody id="insight-abc-body"><tr><td colspan="4">Cargando...</td></tr></tbody></table></div>
+                        </section>
+                    </div>
+                </section>
                 <div class="card reports-card">
                     <div class="reports-heading">
                         <div>
@@ -366,6 +468,7 @@
                     </div>
                     <div class="reports-actions">
                         <button type="button" class="btn-primary" data-report-download="completo"><i class="fa-solid fa-download"></i> Libro completo</button>
+                        <button type="button" class="btn-secondary" data-report-download="analitica"><i class="fa-solid fa-chart-line"></i> Análisis de inventario</button>
                         <button type="button" class="btn-secondary" data-report-download="inventario"><i class="fa-solid fa-boxes-stacked"></i> Inventario actual</button>
                         <button type="button" class="btn-secondary" data-report-download="movimientos"><i class="fa-solid fa-arrow-right-arrow-left"></i> Movimientos</button>
                         <button type="button" class="btn-secondary" data-report-download="solicitudes"><i class="fa-solid fa-clipboard-list"></i> Solicitudes</button>
@@ -376,7 +479,7 @@
             </section>
 
             <!-- TAB CATÁLOGO (CRUD) -->
-            <div id="tab-catalogo" class="section">
+            <div id="tab-catalogo" class="section" role="tabpanel" aria-labelledby="tab-catalogo-trigger">
                 <div class="card">
                     <h3 style="margin-top:0; color:var(--g4s-black);">Catálogo actual</h3>
                     <p class="helper-text">Consulta existencias e identifica artículos con sus imágenes locales.</p>
@@ -400,7 +503,7 @@
                     <h3 style="margin-top:0; color: var(--g4s-black); border-bottom: 2px solid var(--border); padding-bottom: 8px;"><i class="fa-solid fa-folder-plus"></i> Nuevo Accesorio</h3>
                     <p style="font-size: 12px; color: #6b7280; margin-bottom: 15px;">Agrega un nuevo producto a la base de datos de Excel automáticamente.</p>
                     
-                    <label>Categoría</label>
+                    <label for="new-cat">Categoría</label>
                     <select id="new-cat">
                         <option value="Forro" data-prefix="FOR-">Forro</option>
                         <option value="Vidrio Templado" data-prefix="VID-">Vidrio Templado</option>
@@ -414,9 +517,9 @@
                     <input type="text" id="new-model" placeholder="Ej. G40, G22, TIPO-C" maxlength="60" autocomplete="off">
                     <label for="new-sku">SKU / ID Artículo generado</label>
                     <input type="text" id="new-sku" readonly aria-readonly="true" placeholder="Selecciona una categoría y escribe el modelo">
-                    <label>Descripción completa</label>
+                    <label for="new-desc">Descripción completa</label>
                     <input type="text" id="new-desc" placeholder="Ej. Forro antigolpes G40">
-                    <label>Alerta de Stock Mínimo</label>
+                    <label for="new-min">Alerta de Stock Mínimo</label>
                     <input type="number" id="new-min" value="5" min="1" step="1">
                     <label for="new-cost">Costo unitario (COP)</label>
                     <input type="number" id="new-cost" min="0" step="1" value="0" required>
@@ -449,7 +552,7 @@
                         <div id="inventory-audit-result" class="inventory-audit-result" aria-live="polite" hidden></div>
                 </div>
             </div>
-        </div>
+        </main>
     </div>
 
     <script type="module" src="./src/main.js"></script>

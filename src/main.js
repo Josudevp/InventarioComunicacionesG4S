@@ -5,7 +5,33 @@ import "choices.js/public/assets/styles/choices.min.css";
 import "./tailwind.css";
 import { apiRequest } from "./services/api.js";
 
-        const LOGO_URL = "assets/LOGO_G4S.jpg";
+        const LOGO_URL = "assets/LOGO.png";
+        const THEME_STORAGE_KEY = 'g4sTheme';
+        const themeToggleButtons = document.querySelectorAll('[data-theme-toggle]');
+
+        function setColorTheme(theme) {
+            const isDark = theme === 'dark';
+            document.documentElement.dataset.theme = isDark ? 'dark' : 'light';
+            document.documentElement.style.colorScheme = isDark ? 'dark' : 'light';
+            localStorage.setItem(THEME_STORAGE_KEY, isDark ? 'dark' : 'light');
+            themeToggleButtons.forEach(button => {
+                const icon = button.querySelector('i');
+                const label = button.querySelector('[data-theme-label]');
+                button.setAttribute('aria-pressed', String(isDark));
+                button.setAttribute('aria-label', isDark ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro');
+                button.title = isDark ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro';
+                icon.classList.toggle('fa-moon', !isDark);
+                icon.classList.toggle('fa-sun', isDark);
+                label.textContent = isDark ? 'Modo claro' : 'Modo oscuro';
+            });
+        }
+
+        setColorTheme(localStorage.getItem(THEME_STORAGE_KEY) === 'dark' ? 'dark' : 'light');
+        themeToggleButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                setColorTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
+            });
+        });
 
         if ('serviceWorker' in navigator) { navigator.serviceWorker.register('sw.js').then(() => console.log("PWA SW Registrado v11")); }
 
@@ -77,10 +103,30 @@ import { apiRequest } from "./services/api.js";
         let dashboardSelectedRequestState = '';
         let dashboardSelectedRegional = '';
         let dashboardSelectedAccessory = '';
+        let dashboardChartsModulePromise = null;
         let inactivityTimer = null;
         const storedUserActivity = sessionStorage.getItem("g4sLastActivity");
         let lastUserActivity = storedUserActivity ? Number(storedUserActivity) : Date.now();
         const INACTIVITY_TIMEOUT_MS = 60 * 60 * 1000;
+
+        function renderDashboardChart(renderer, element, props) {
+            dashboardChartsModulePromise ||= import('./DashboardCharts.jsx');
+            void dashboardChartsModulePromise
+                .then(charts => {
+                    const render = charts[renderer];
+                    if (!render) throw new Error(`Renderizador de gráfica no reconocido: ${renderer}`);
+                    render(element, props);
+                })
+                .catch(error => {
+                    console.error('No se pudo cargar una gráfica del dashboard:', error);
+                    const feedback = document.getElementById(
+                        renderer === 'renderSupplierLeadChart' ? 'supplier-lead-feedback' : 'dashboard-feedback'
+                    );
+                    feedback.textContent = `No se pudieron cargar las gráficas: ${error.message}`;
+                    feedback.hidden = false;
+                    feedback.classList.add('is-error');
+                });
+        }
 
         function resetInactivityTimer() {
             if (!sessionStorage.getItem("g4sSessionToken")) return;
@@ -337,7 +383,7 @@ import { apiRequest } from "./services/api.js";
                 html5QrcodeScanner.clear().catch(error => console.warn('No se pudo detener el escáner:', error));
                 html5QrcodeScanner = null;
             }
-            document.getElementById('items-list').innerHTML = '<p style="text-align:center; color:#9ca3af; font-size:13px; padding: 20px 0;">No hay ítems seleccionados</p>';
+            document.getElementById('items-list').innerHTML = '<li class="empty-cart-state" aria-live="polite">No hay ítems seleccionados</li>';
             document.querySelectorAll('#app-screen input[type="text"], #app-screen input[type="number"]').forEach(input => { input.value = ''; });
             document.getElementById('app-screen').style.display = 'none';
             document.getElementById('login-pass').value = '';
@@ -866,9 +912,10 @@ import { apiRequest } from "./services/api.js";
         window.eliminarItem = function(index) { carrito.splice(index, 1); distributionRows = distributionRows.filter(row => carrito.some(item => item.idArticulo === row.idArticulo)); distributionConfirmed = false; window.renderizarCarrito(); }
 
         window.renderizarCarrito = function() {
-            let list = document.getElementById('items-list'); let btnSubmit = document.getElementById('btn-submit');
+            const list = document.getElementById('items-list');
+            const btnSubmit = document.getElementById('btn-submit');
             if(carrito.length === 0) {
-                list.innerHTML = '<p style="text-align:center; color:#9ca3af; font-size:13px; padding: 20px 0;">No hay ítems seleccionados</p>';
+                list.innerHTML = '<li class="empty-cart-state" aria-live="polite">No hay ítems seleccionados</li>';
                 btnSubmit.disabled = true; btnSubmit.innerHTML = '<i class="fa-solid fa-cloud-arrow-up"></i> REGISTRAR MOVIMIENTO';
             } else {
                 document.getElementById('items-card').style.display = 'block';
@@ -878,13 +925,13 @@ import { apiRequest } from "./services/api.js";
                     const status = catalogItem ? window.stockStatus(catalogItem) : null;
                     const warningText = status && status.key === 'empty' ? 'Agotado: no hay unidades disponibles.' : 'Stock bajo: las existencias están en el mínimo configurado.';
                     const stockWarning = status && status.key !== 'ok' ? `<span class="stock-warning ${status.key === 'empty' ? 'empty' : ''}" title="${window.escapeHtml(warningText)}" aria-label="${window.escapeHtml(warningText)}">&#9888;</span>` : '';
-                        const maxQuantity = window.tipoMovimientoActual() === 'Salida' && catalogItem ? Number(catalogItem.stockActual) || 0 : 9999;
-                    html += `<div class="item-row">
+                    const maxQuantity = window.tipoMovimientoActual() === 'Salida' && catalogItem ? Number(catalogItem.stockActual) || 0 : 9999;
+                    html += `<li class="item-row">
                             <div class="item-info">🏷️ ${window.escapeHtml(window.nombreArticulo(item.idArticulo))}</div>
                         ${stockWarning}
                             <input type="number" min="1" max="${maxQuantity}" class="qty-input" value="${Math.min(item.cantidad, maxQuantity)}" onchange="window.actualizarCant(${idx}, this.value)" aria-label="Cantidad de ${window.escapeHtml(item.idArticulo)}">
                             <button type="button" class="btn-del" onclick="window.eliminarItem(${idx})" aria-label="Eliminar ${window.escapeHtml(item.idArticulo)}"><i class="fa-solid fa-trash-can"></i></button>
-                    </div>`;
+                    </li>`;
                 });
                 list.innerHTML = html; btnSubmit.disabled = window.tipoMovimientoActual() === 'Salida' && !distributionConfirmed; btnSubmit.innerHTML = `<i class="fa-solid fa-paper-plane"></i> REGISTRAR MOVIMIENTO`;
             }
@@ -1385,47 +1432,11 @@ import { apiRequest } from "./services/api.js";
         window.renderizarGraficoUnidades = function() {
             const container = document.getElementById('dashboard-movement-chart');
             if (!container || !dashboardChartData) return;
-            const rows = dashboardChartData.slice(-dashboardChartMonths);
-            const width = 640;
-            const height = 260;
-            const margin = { top: 16, right: 16, bottom: 38, left: 42 };
-            const chartWidth = width - margin.left - margin.right;
-            const chartHeight = height - margin.top - margin.bottom;
-            const visibleValues = rows.flatMap(row => [
-                dashboardVisibleSeries.entradas ? Number(row.entradas) || 0 : 0,
-                dashboardVisibleSeries.salidas ? Number(row.salidas) || 0 : 0
-            ]);
-            const maxValue = Math.max(...visibleValues, 1);
-            const step = Math.max(1, Math.ceil(maxValue / 4));
-            const axisMax = step * 4;
-            const groupWidth = chartWidth / rows.length;
-            const barWidth = Math.min(24, groupWidth * 0.28);
-            const y = value => margin.top + chartHeight - (value / axisMax) * chartHeight;
-            const grid = Array.from({ length: 5 }, (_, index) => {
-                const value = axisMax - step * index;
-                const lineY = y(value);
-                return `<g class="chart-grid-line"><line x1="${margin.left}" y1="${lineY}" x2="${width - margin.right}" y2="${lineY}"></line><text x="${margin.left - 8}" y="${lineY + 4}" text-anchor="end">${value.toLocaleString('es-CO')}</text></g>`;
-            }).join('');
-            const bars = rows.map((row, index) => {
-                const center = margin.left + groupWidth * (index + 0.5);
-                const monthLabel = new Intl.DateTimeFormat('es-CO', { month: 'short' })
-                    .format(new Date(`${row.mes}-01T12:00:00`))
-                    .replace('.', '');
-                const entryValue = Number(row.entradas) || 0;
-                const exitValue = Number(row.salidas) || 0;
-                const entryHeight = dashboardVisibleSeries.entradas ? (entryValue / axisMax) * chartHeight : 0;
-                const exitHeight = dashboardVisibleSeries.salidas ? (exitValue / axisMax) * chartHeight : 0;
-                return `<g class="chart-month">
-                    ${dashboardVisibleSeries.entradas ? `<rect class="chart-bar chart-entry-bar" x="${center - barWidth - 2}" y="${y(entryValue)}" width="${barWidth}" height="${Math.max(entryHeight, entryValue ? 1 : 0)}" rx="3"><title>${monthLabel}: ${entryValue.toLocaleString('es-CO')} unidades ingresadas</title></rect>` : ''}
-                    ${dashboardVisibleSeries.salidas ? `<rect class="chart-bar chart-exit-bar" x="${center + 2}" y="${y(exitValue)}" width="${barWidth}" height="${Math.max(exitHeight, exitValue ? 1 : 0)}" rx="3"><title>${monthLabel}: ${exitValue.toLocaleString('es-CO')} unidades retiradas</title></rect>` : ''}
-                    <text class="chart-month-label" x="${center}" y="${height - 12}" text-anchor="middle">${monthLabel}</text>
-                </g>`;
-            }).join('');
-            const hasActivity = visibleValues.some(value => value > 0);
-            container.innerHTML = `<svg viewBox="0 0 ${width} ${height}" class="movement-chart-svg" role="img" aria-label="Unidades ingresadas y retiradas en los últimos ${dashboardChartMonths} meses">
-                ${grid}${bars}
-                ${hasActivity ? '' : `<text class="chart-empty-label" x="${width / 2}" y="${margin.top + chartHeight / 2}" text-anchor="middle">Sin movimientos en este periodo</text>`}
-            </svg>`;
+            renderDashboardChart('renderMovementChart', container, {
+                rows: dashboardChartData,
+                months: dashboardChartMonths,
+                visibleSeries: dashboardVisibleSeries
+            });
         };
 
         window.seleccionarEstadoDashboard = function(state) {
@@ -1450,46 +1461,23 @@ import { apiRequest } from "./services/api.js";
             document.querySelectorAll('[data-request-state-segment]').forEach(segment => {
                 segment.classList.toggle('is-selected', segment.dataset.requestStateSegment === state);
             });
+            window.renderizarGraficoSolicitudes(states);
         };
 
         window.renderizarGraficoSolicitudes = function(states) {
             const chart = document.getElementById('dashboard-request-chart');
             const legend = document.getElementById('dashboard-request-states');
             if (!chart || !legend) return;
-            const categories = [
-                ['Registrada', 'Registradas', '#2563eb'],
-                ['Revisión de disponibilidad', 'Revisión de disponibilidad', '#06b6d4'],
-                ['Solicitada', 'Solicitadas', '#f59e0b'],
-                ['Recibida', 'Recibidas', '#8b5cf6'],
-                ['Entregada', 'Entregadas', '#10b981'],
-                ['Cerrada', 'Cerradas', '#0f766e'],
-                ['Anulada', 'Anuladas', '#94a3b8']
-            ];
-            const total = categories.reduce((sum, [key]) => sum + (Number(states[key]) || 0), 0);
-            const radius = 43;
-            const circumference = 2 * Math.PI * radius;
-            let consumed = 0;
-            const segments = categories.map(([key, label, color]) => {
-                const count = Number(states[key]) || 0;
-                const length = total ? count / total * circumference : 0;
-                const offset = -consumed;
-                consumed += length;
-                return count
-                    ? `<circle class="request-donut-segment${dashboardSelectedRequestState === key ? ' is-selected' : ''}" data-request-state-segment="${key}" cx="60" cy="60" r="${radius}" fill="none" stroke="${color}" stroke-width="17" stroke-dasharray="${length} ${circumference - length}" stroke-dashoffset="${offset}" transform="rotate(-90 60 60)"><title>${label}: ${count} solicitudes</title></circle>`
-                    : '';
-            }).join('');
-            chart.innerHTML = `<svg viewBox="0 0 120 120" class="request-donut-svg" aria-hidden="true">
-                <circle cx="60" cy="60" r="${radius}" fill="none" stroke="#e2e8f0" stroke-width="17"></circle>${segments}
-                <text class="request-donut-total" x="60" y="57" text-anchor="middle">${total.toLocaleString('es-CO')}</text>
-                <text class="request-donut-caption" x="60" y="71" text-anchor="middle">solicitudes</text>
-            </svg>`;
-            legend.innerHTML = categories.map(([key, label, color]) => {
-                const count = Number(states[key]) || 0;
-                return `<button type="button" class="request-state-legend${dashboardSelectedRequestState === key ? ' is-selected' : ''}" data-request-state="${key}" aria-pressed="${dashboardSelectedRequestState === key}" onclick="window.seleccionarEstadoDashboard('${key}')">
-                    <span class="chart-legend-dot" style="--legend-color:${color}"></span><span>${label}</span><strong>${count.toLocaleString('es-CO')}</strong>
-                </button>`;
-            }).join('');
-            if (dashboardSelectedRequestState) window.seleccionarEstadoDashboard(dashboardSelectedRequestState);
+            renderDashboardChart('renderRequestDonut', chart, {
+                states,
+                selectedState: dashboardSelectedRequestState,
+                onSelect: window.seleccionarEstadoDashboard
+            });
+            renderDashboardChart('renderRequestLegend', legend, {
+                states,
+                selectedState: dashboardSelectedRequestState,
+                onSelect: window.seleccionarEstadoDashboard
+            });
         };
 
         window.seleccionarRegionalDashboard = function(index) {
@@ -1498,11 +1486,7 @@ import { apiRequest } from "./services/api.js";
             dashboardSelectedRegional = item.regional;
             document.getElementById('dashboard-regional-detail').textContent =
                 `${item.regional}: ${Number(item.unidades || 0).toLocaleString('es-CO')} unidades entregadas`;
-            document.querySelectorAll('[data-regional-index]').forEach(bar => {
-                const selected = Number(bar.dataset.regionalIndex) === index;
-                bar.setAttribute('aria-pressed', String(selected));
-                bar.classList.toggle('is-selected', selected);
-            });
+            window.renderizarGraficoRegional(dashboardRegionalData);
         };
 
         window.renderizarGraficoRegional = function(regionalData) {
@@ -1512,48 +1496,29 @@ import { apiRequest } from "./services/api.js";
                 ? regionalData.filter(item => item && item.regional)
                 : [];
             if (!dashboardRegionalData.length) {
-                container.innerHTML = '<p class="chart-empty-label">Sin entregas registradas</p>';
+                renderDashboardChart('renderRegionalChart', container, {
+                    rows: dashboardRegionalData,
+                    selectedRegional: dashboardSelectedRegional,
+                    onSelect: window.seleccionarRegionalDashboard
+                });
                 document.getElementById('dashboard-regional-detail').textContent =
                     'No hay unidades entregadas por regional para mostrar.';
                 return;
             }
-            const width = 640;
-            const rowHeight = 34;
-            const height = Math.max(150, dashboardRegionalData.length * rowHeight + 12);
-            const labelWidth = 170;
-            const chartWidth = width - labelWidth - 30;
-            const maxValue = Math.max(...dashboardRegionalData.map(item => Number(item.unidades) || 0), 1);
-            const bars = dashboardRegionalData.map((item, index) => {
-                const value = Number(item.unidades) || 0;
-                const y = index * rowHeight + 6;
-                const barWidth = value / maxValue * chartWidth;
-                const selected = dashboardSelectedRegional === item.regional;
-                const label = String(item.regional);
-                const displayLabel = label.length > 24 ? `${label.slice(0, 22)}…` : label;
-                return `<g class="regional-bar-group${selected ? ' is-selected' : ''}" data-regional-index="${index}" role="button" tabindex="0" aria-pressed="${selected}" aria-label="${window.escapeHtml(label)}: ${value.toLocaleString('es-CO')} unidades de salida">
-                    <title>${window.escapeHtml(label)}: ${value.toLocaleString('es-CO')} unidades de salida</title>
-                    <text class="regional-bar-label" x="${labelWidth - 10}" y="${y + 16}" text-anchor="end">${window.escapeHtml(displayLabel)}</text>
-                    <rect class="regional-bar-track" x="${labelWidth}" y="${y}" width="${chartWidth}" height="22" rx="4"></rect>
-                    <rect class="regional-bar" x="${labelWidth}" y="${y}" width="${Math.max(barWidth, value ? 2 : 0)}" height="22" rx="4"></rect>
-                    <text class="regional-bar-value" x="${Math.min(labelWidth + barWidth + 8, width - 8)}" y="${y + 16}" text-anchor="${labelWidth + barWidth + 8 > width - 8 ? 'end' : 'start'}">${value.toLocaleString('es-CO')}</text>
-                </g>`;
-            }).join('');
-            container.innerHTML = `<svg class="regional-chart-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="Unidades entregadas por regional">${bars}</svg>`;
-            container.querySelectorAll('[data-regional-index]').forEach(bar => {
-                const select = () => window.seleccionarRegionalDashboard(Number(bar.dataset.regionalIndex));
-                bar.addEventListener('click', select);
-                bar.addEventListener('keydown', event => {
-                    if (event.key !== 'Enter' && event.key !== ' ') return;
-                    event.preventDefault();
-                    select();
-                });
-            });
             if (dashboardSelectedRegional && !dashboardRegionalData.some(item => item.regional === dashboardSelectedRegional)) {
                 dashboardSelectedRegional = '';
             }
+            renderDashboardChart('renderRegionalChart', container, {
+                rows: dashboardRegionalData,
+                selectedRegional: dashboardSelectedRegional,
+                onSelect: window.seleccionarRegionalDashboard
+            });
             const selectedIndex = dashboardRegionalData.findIndex(item => item.regional === dashboardSelectedRegional);
-            if (selectedIndex >= 0) window.seleccionarRegionalDashboard(selectedIndex);
-            else document.getElementById('dashboard-regional-detail').textContent =
+            if (selectedIndex >= 0) {
+                const item = dashboardRegionalData[selectedIndex];
+                document.getElementById('dashboard-regional-detail').textContent =
+                    `${item.regional}: ${Number(item.unidades || 0).toLocaleString('es-CO')} unidades entregadas`;
+            } else document.getElementById('dashboard-regional-detail').textContent =
                 'Selecciona una regional para ver el detalle.';
         };
 
@@ -1561,19 +1526,15 @@ import { apiRequest } from "./services/api.js";
             const item = dashboardAccessoryData[index];
             if (!item) return;
             dashboardSelectedAccessory = item.idArticulo;
-                    const periodLabels = {
-                        dias7: 'Últimos 7 días',
-                        dias30: 'Últimos 30 días',
-                        dias90: 'Últimos 90 días',
-                        historico: 'Histórico'
-                    };
+            const periodLabels = {
+                dias7: 'Últimos 7 días',
+                dias30: 'Últimos 30 días',
+                dias90: 'Últimos 90 días',
+                historico: 'Histórico'
+            };
             document.getElementById('dashboard-accessories-detail').textContent =
-                        `${item.accesorio} · ${periodLabels[dashboardAccessoryPeriod]}: ${Number(item.unidades || 0).toLocaleString('es-CO')} unidades entregadas`;
-            document.querySelectorAll('[data-accessory-index]').forEach(bar => {
-                const selected = Number(bar.dataset.accessoryIndex) === index;
-                bar.setAttribute('aria-pressed', String(selected));
-                bar.classList.toggle('is-selected', selected);
-            });
+                `${item.accesorio} · ${periodLabels[dashboardAccessoryPeriod]}: ${Number(item.unidades || 0).toLocaleString('es-CO')} unidades entregadas`;
+            window.renderizarGraficoAccesorios();
         };
 
                 window.seleccionarPeriodoAccesorios = function(period) {
@@ -1602,7 +1563,11 @@ import { apiRequest } from "./services/api.js";
                     .slice(0, 8)
                 : [];
             if (!dashboardAccessoryData.length) {
-                        container.innerHTML = '<p class="chart-empty-label">Sin entregas registradas en este periodo</p>';
+                renderDashboardChart('renderAccessoriesChart', container, {
+                    rows: dashboardAccessoryData,
+                    selectedAccessory: dashboardSelectedAccessory,
+                    onSelect: window.seleccionarAccesorioDashboard
+                });
                 document.getElementById('dashboard-accessories-detail').textContent =
                             'No hay accesorios entregados para mostrar en este periodo.';
                 return;
@@ -1610,49 +1575,23 @@ import { apiRequest } from "./services/api.js";
             if (!dashboardAccessoryData.some(item => item.idArticulo === dashboardSelectedAccessory)) {
                 dashboardSelectedAccessory = '';
             }
-            const width = 640;
-                    const height = 270;
-                    const margin = { top: 28, right: 18, bottom: 58, left: 46 };
-                    const chartWidth = width - margin.left - margin.right;
-                    const chartHeight = height - margin.top - margin.bottom;
-            const maxValue = Math.max(...dashboardAccessoryData.map(item => Number(item.unidades) || 0), 1);
-                    const step = Math.max(1, Math.ceil(maxValue / 4));
-                    const axisMax = step * 4;
-                    const y = value => margin.top + chartHeight - value / axisMax * chartHeight;
-                    const grid = Array.from({ length: 5 }, (_, index) => {
-                        const value = axisMax - step * index;
-                        const lineY = y(value);
-                        return `<g class="chart-grid-line"><line x1="${margin.left}" y1="${lineY}" x2="${width - margin.right}" y2="${lineY}"></line><text x="${margin.left - 8}" y="${lineY + 4}" text-anchor="end">${value.toLocaleString('es-CO')}</text></g>`;
-                    }).join('');
-                    const groupWidth = chartWidth / dashboardAccessoryData.length;
-                    const barWidth = Math.min(38, groupWidth * 0.56);
-            const bars = dashboardAccessoryData.map((item, index) => {
-                const value = Number(item.unidades) || 0;
-                        const center = margin.left + groupWidth * (index + 0.5);
-                        const barHeight = value / axisMax * chartHeight;
-                const selected = dashboardSelectedAccessory === item.idArticulo;
-                const label = String(item.accesorio);
-                        const displayLabel = label.length > 11 ? `${label.slice(0, 10)}…` : label;
-                        return `<g class="accessory-column-group${selected ? ' is-selected' : ''}" data-accessory-index="${index}" role="button" tabindex="0" aria-pressed="${selected}" aria-label="${window.escapeHtml(label)}: ${value.toLocaleString('es-CO')} unidades entregadas">
-                            <title>${window.escapeHtml(label)}: ${value.toLocaleString('es-CO')} unidades entregadas</title>
-                            <rect class="chart-bar accessory-column-bar" x="${center - barWidth / 2}" y="${y(value)}" width="${barWidth}" height="${Math.max(barHeight, value ? 1 : 0)}" rx="3"></rect>
-                            <text class="accessory-column-value" x="${center}" y="${Math.max(y(value) - 7, margin.top - 8)}" text-anchor="middle">${value.toLocaleString('es-CO')}</text>
-                            <text class="chart-month-label accessory-column-label" x="${center}" y="${height - 24}" text-anchor="middle">${window.escapeHtml(displayLabel)}</text>
-                </g>`;
-            }).join('');
-                    container.innerHTML = `<svg class="accessory-chart-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="Accesorios ordenados por unidades entregadas">${grid}${bars}</svg>`;
-            container.querySelectorAll('[data-accessory-index]').forEach(bar => {
-                const select = () => window.seleccionarAccesorioDashboard(Number(bar.dataset.accessoryIndex));
-                bar.addEventListener('click', select);
-                bar.addEventListener('keydown', event => {
-                    if (event.key !== 'Enter' && event.key !== ' ') return;
-                    event.preventDefault();
-                    select();
-                });
+            renderDashboardChart('renderAccessoriesChart', container, {
+                rows: dashboardAccessoryData,
+                selectedAccessory: dashboardSelectedAccessory,
+                onSelect: window.seleccionarAccesorioDashboard
             });
             const selectedIndex = dashboardAccessoryData.findIndex(item => item.idArticulo === dashboardSelectedAccessory);
-            if (selectedIndex >= 0) window.seleccionarAccesorioDashboard(selectedIndex);
-            else document.getElementById('dashboard-accessories-detail').textContent =
+            if (selectedIndex >= 0) {
+                const item = dashboardAccessoryData[selectedIndex];
+                const periodLabels = {
+                    dias7: 'Últimos 7 días',
+                    dias30: 'Últimos 30 días',
+                    dias90: 'Últimos 90 días',
+                    historico: 'Histórico'
+                };
+                document.getElementById('dashboard-accessories-detail').textContent =
+                    `${item.accesorio} · ${periodLabels[dashboardAccessoryPeriod]}: ${Number(item.unidades || 0).toLocaleString('es-CO')} unidades entregadas`;
+            } else document.getElementById('dashboard-accessories-detail').textContent =
                 'Selecciona un accesorio para ver las unidades entregadas.';
         };
 
@@ -1928,6 +1867,127 @@ import { apiRequest } from "./services/api.js";
             if (worksheet['!ref']) worksheet['!autofilter'] = { ref: worksheet['!ref'] };
             XLSX.utils.book_append_sheet(workbook, worksheet, name);
         };
+        const appendInsightReportSheets = (workbook, data) => {
+            const columnsFor = headers => headers.map(header => ({ header, value: row => row[header] ?? '' }));
+            const appendRows = (name, headers, rows) =>
+                appendReportSheet(workbook, { name, columns: columnsFor(headers) }, rows);
+            const parameters = data.parametros || {};
+            const requests = data.solicitudesAbiertas || {};
+            const delivery = data.cumplimientoEntrega || {};
+            const supplier = data.tiempoEntregaProveedor || {};
+
+            appendRows('Resumen analítico', ['Indicador', 'Valor'], [
+                { Indicador: 'Generado', Valor: new Date().toLocaleString('es-CO') },
+                { Indicador: 'Consumo reciente (días)', Valor: parameters.consumoDias ?? '' },
+                { Indicador: 'Plazo proveedor (días)', Valor: parameters.plazoProveedorDias ?? '' },
+                { Indicador: 'Stock de seguridad (días)', Valor: parameters.stockSeguridadDias ?? '' },
+                { Indicador: 'Meta de entrega (días)', Valor: parameters.metaEntregaDias ?? '' },
+                { Indicador: 'Sin salidas (días)', Valor: parameters.sinMovimientoDias ?? '' },
+                { Indicador: 'Artículos bajo cobertura objetivo', Valor: data.articulosPorDebajoCobertura ?? 0 },
+                { Indicador: 'Unidades sugeridas para reposición', Valor: data.cantidadTotalSugerida ?? 0 },
+                { Indicador: 'Solicitudes abiertas', Valor: requests.total ?? 0 },
+                { Indicador: 'Solicitudes vencidas', Valor: requests.vencidas ?? 0 },
+                { Indicador: 'Entregas dentro de meta (%)', Valor: delivery.porcentaje ?? '' },
+                { Indicador: 'Valor inmovilizado conocido (COP)', Valor: data.valorInventarioInmovilizadoConCosto ?? '' },
+                { Indicador: 'Solicitudes proveedor recibidas (12 meses)', Valor: supplier.recibidas ?? 0 },
+                { Indicador: 'Proveedores sin identificar', Valor: supplier.proveedoresSinNombre ?? 0 }
+            ]);
+
+            const coverage = new Map((data.cobertura || []).map(item => [item.idArticulo, item]));
+            (data.reposicion || []).forEach(item => {
+                coverage.set(item.idArticulo, { ...coverage.get(item.idArticulo), ...item });
+            });
+            appendRows('Cobertura y reposición',
+                ['SKU', 'Descripción', 'Stock actual', 'Consumo diario', 'Cobertura (días)', 'Cantidad sugerida', 'Reposición estimada (COP)'],
+                [...coverage.values()].map(item => ({
+                    SKU: item.idArticulo || '',
+                    Descripción: item.descripcion || '',
+                    'Stock actual': Number(item.stockActual) || 0,
+                    'Consumo diario': Number(item.consumoDiario) || 0,
+                    'Cobertura (días)': item.coberturaDias ?? '',
+                    'Cantidad sugerida': Number(item.cantidadSugerida) || 0,
+                    'Reposición estimada (COP)': item.valorReposicionEstimado ?? ''
+                }))
+            );
+            appendRows('Solicitudes abiertas',
+                ['ID solicitud', 'Estado', 'Tipo', 'Regional', 'Antigüedad (días)'],
+                (requests.masAntiguas || []).map(item => ({
+                    'ID solicitud': item.idSolicitud || '',
+                    Estado: item.estado || '',
+                    Tipo: item.tipoSolicitud || '',
+                    Regional: item.regional || '',
+                    'Antigüedad (días)': Number(item.edadDias) || 0
+                }))
+            );
+            appendRows('Inventario inmovilizado',
+                ['SKU', 'Descripción', 'Stock actual', 'Última salida', 'Días sin salida', 'Valor estimado (COP)'],
+                (data.articulosSinMovimiento || []).map(item => ({
+                    SKU: item.idArticulo || '',
+                    Descripción: item.descripcion || '',
+                    'Stock actual': Number(item.stockActual) || 0,
+                    'Última salida': reportDate(item.ultimaSalida),
+                    'Días sin salida': item.diasSinSalida ?? '',
+                    'Valor estimado (COP)': item.valorEstimado ?? ''
+                }))
+            );
+            appendRows('Clasificación ABC',
+                ['Clase', 'SKU', 'Descripción', 'Consumo valorizado (COP)', 'Acumulado (%)'],
+                (data.abc || []).map(item => ({
+                    Clase: item.clasificacion || '',
+                    SKU: item.idArticulo || '',
+                    Descripción: item.descripcion || '',
+                    'Consumo valorizado (COP)': item.valorConsumo ?? '',
+                    'Acumulado (%)': item.acumulado ?? ''
+                }))
+            );
+            appendRows('Proveedores',
+                ['Proveedor', 'Recibidas', 'Promedio (días)', 'Mediana (días)', 'P90 (días)', 'Abiertas'],
+                (supplier.proveedores || []).map(item => ({
+                    Proveedor: item.proveedor || '',
+                    Recibidas: Number(item.recibidas) || 0,
+                    'Promedio (días)': item.promedioDias ?? '',
+                    'Mediana (días)': item.medianaDias ?? '',
+                    'P90 (días)': item.percentil90Dias ?? '',
+                    Abiertas: Number(item.abiertas) || 0
+                }))
+            );
+            appendRows('Tiempos mensuales',
+                ['Mes', 'Proveedor', 'Recibidas', 'Promedio (días)'],
+                (supplier.meses || []).flatMap(month => month.proveedores?.length
+                    ? month.proveedores.map(item => ({
+                        Mes: month.mes || '',
+                        Proveedor: item.proveedor || '',
+                        Recibidas: Number(item.recibidas) || 0,
+                        'Promedio (días)': item.promedioDias ?? ''
+                    }))
+                    : [{
+                        Mes: month.mes || '',
+                        Proveedor: 'Todos',
+                        Recibidas: Number(month.recibidas) || 0,
+                        'Promedio (días)': month.promedioDias ?? ''
+                    }]
+                )
+            );
+            appendRows('Recepciones recientes',
+                ['ID solicitud', 'Proveedor', 'Fecha solicitud', 'Fecha recepción', 'Demora (días)'],
+                (supplier.recepcionesRecientes || []).map(item => ({
+                    'ID solicitud': item.idSolicitud || '',
+                    Proveedor: item.proveedor || '',
+                    'Fecha solicitud': reportDate(item.fechaSolicitud),
+                    'Fecha recepción': reportDate(item.fechaRecepcion),
+                    'Demora (días)': item.diasEntrega ?? ''
+                }))
+            );
+            appendRows('En espera proveedor',
+                ['ID solicitud', 'Proveedor', 'Fecha solicitud', 'Espera (días)'],
+                (supplier.solicitudesEnEspera || []).map(item => ({
+                    'ID solicitud': item.idSolicitud || '',
+                    Proveedor: item.proveedor || '',
+                    'Fecha solicitud': reportDate(item.fechaSolicitud),
+                    'Espera (días)': item.diasEspera ?? ''
+                }))
+            );
+        };
         const reportFileDate = () => {
             const date = new Date();
             return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
@@ -1972,6 +2032,8 @@ import { apiRequest } from "./services/api.js";
                 appendReportSheet(workbook, reportSheets.solicitudes, (data.solicitudes || []).flatMap(solicitud =>
                     (solicitud.items || []).map(item => ({ solicitud, item }))
                 ));
+            } else if (kind === 'analitica') {
+                appendInsightReportSheets(workbook, data.analitica || {});
             } else {
                 appendReportSheet(workbook, reportSheets[kind], data[kind] || []);
             }
@@ -1987,8 +2049,14 @@ import { apiRequest } from "./services/api.js";
                 feedback.textContent = 'Consultando datos y preparando el archivo Excel...';
                 try {
                     XLSX ||= (await import('xlsx/dist/xlsx.core.min.js')).default;
-                    const kinds = kind === 'completo' ? ['inventario', 'movimientos', 'solicitudes'] : [kind];
+                    const kinds = kind === 'completo'
+                        ? ['inventario', 'movimientos', 'solicitudes']
+                        : kind === 'analitica' ? [] : [kind];
                     const data = await fetchReportData(kinds);
+                    if (kind === 'analitica') {
+                        data.analitica = await window.cargarAnaliticaInventario();
+                        if (!data.analitica) throw new Error('No se pudo consultar la analítica para generar el reporte.');
+                    }
                     const workbook = createReportWorkbook(kind, data);
                     const reportName = kind === 'completo' ? 'Reporte_completo' : `Reporte_${kind}`;
                     XLSX.writeFile(workbook, `${reportName}_${reportFileDate()}.xlsx`, { compression: true });
@@ -2003,16 +2071,308 @@ import { apiRequest } from "./services/api.js";
             });
         });
 
+        const insightSettingFields = {
+            consumoDias: { id: 'insight-consumption-days', minimum: 30, maximum: 365 },
+            plazoProveedorDias: { id: 'insight-lead-days', minimum: 1, maximum: 365 },
+            stockSeguridadDias: { id: 'insight-safety-days', minimum: 0, maximum: 180 },
+            metaEntregaDias: { id: 'insight-sla-days', minimum: 1, maximum: 365 },
+            sinMovimientoDias: { id: 'insight-stagnant-days', minimum: 30, maximum: 730 }
+        };
+        let supplierLeadTimeData = null;
+        try {
+            const savedSettings = JSON.parse(localStorage.getItem('g4sInventoryInsightSettings') || '{}');
+            Object.entries(insightSettingFields).forEach(([key, field]) => {
+                const value = Number(savedSettings[key]);
+                if (Number.isInteger(value) && value >= field.minimum && value <= field.maximum) {
+                    document.getElementById(field.id).value = String(value);
+                }
+            });
+        } catch (error) {
+            console.warn('No se pudieron leer los parámetros guardados del análisis:', error);
+        }
+
+        const insightNumber = value => Number(value || 0).toLocaleString('es-CO', { maximumFractionDigits: 1 });
+        const insightCurrency = value => value == null
+            ? 'Sin costo'
+            : new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(Number(value) || 0);
+        const insightDate = value => {
+            if (!value) return 'Sin salidas registradas';
+            const date = value instanceof Date ? value : new Date(value);
+            return Number.isNaN(date.getTime()) ? 'Fecha no disponible' : date.toLocaleDateString('es-CO');
+        };
+        const insightArticle = item =>
+            `<strong>${window.escapeHtml(item.idArticulo || '')}</strong><small>${window.escapeHtml(item.descripcion || '')}</small>`;
+        const insightEmptyRow = (columns, message) =>
+            `<tr><td colspan="${columns}" class="insight-empty">${window.escapeHtml(message)}</td></tr>`;
+
+        function renderSupplierLeadChart(series, provider) {
+            const chartElement = document.getElementById('supplier-lead-chart');
+            const chartStatus = document.getElementById('supplier-lead-chart-status');
+            const validValues = series.filter(item => item.average != null);
+            const chartTitle = provider
+                ? `Promedio mensual de días de entrega para ${provider}`
+                : 'Promedio mensual de días de entrega para todos los proveedores';
+            chartElement.setAttribute('aria-label', chartTitle);
+            chartStatus.classList.remove('is-error');
+            if (!validValues.length) {
+                chartElement.classList.add('is-empty');
+                chartStatus.textContent = '';
+            } else {
+                chartElement.classList.remove('is-empty');
+                chartStatus.textContent = 'Pasa el cursor sobre el área para ver el promedio y las recepciones del mes.';
+            }
+            renderDashboardChart('renderSupplierLeadChart', chartElement, {
+                series,
+                onFormatNumber: insightNumber
+            });
+        }
+
+        window.renderizarTiempoEntregaProveedor = function(data) {
+            supplierLeadTimeData = data || null;
+            const select = document.getElementById('supplier-lead-filter');
+            const selectedProvider = select.value;
+            const providers = Array.isArray(data?.proveedores) ? data.proveedores : [];
+            select.replaceChildren(
+                new Option('Todos los proveedores', ''),
+                ...providers.map(item => new Option(item.proveedor, item.proveedor))
+            );
+            if (providers.some(item => item.proveedor === selectedProvider)) select.value = selectedProvider;
+            const provider = select.value;
+            const selectedStats = providers.find(item => item.proveedor === provider);
+            const summary = provider ? selectedStats : data;
+            const formatDays = value => value == null ? 'Sin datos' : `${insightNumber(value)} días`;
+            document.getElementById('supplier-lead-chart-title').textContent =
+                provider ? `Tiempo promedio · ${provider}` : 'Promedio mensual · todos los proveedores';
+            document.getElementById('supplier-lead-average').textContent = formatDays(summary?.promedioDias);
+            document.getElementById('supplier-lead-median').textContent = formatDays(summary?.medianaDias);
+            document.getElementById('supplier-lead-p90').textContent = formatDays(summary?.percentil90Dias);
+            const waiting = Array.isArray(data?.solicitudesEnEspera) ? data.solicitudesEnEspera : [];
+            const filteredWaiting = provider ? waiting.filter(item => item.proveedor === provider) : waiting;
+            const receipts = Array.isArray(data?.recepcionesRecientes) ? data.recepcionesRecientes : [];
+            const filteredReceipts = provider ? receipts.filter(item => item.proveedor === provider) : receipts;
+            document.getElementById('supplier-lead-open').textContent =
+                insightNumber(provider ? selectedStats?.abiertas : data?.abiertas);
+            document.getElementById('supplier-lead-wait').textContent = provider
+                ? `Espera promedio ${formatDays(selectedStats?.esperaPromedioDias)} · máxima ${formatDays(selectedStats?.esperaMaximaDias)}`
+                : `Espera promedio ${formatDays(data?.esperaPromedioDias)} · máxima ${formatDays(data?.esperaMaximaDias)}`;
+
+            const monthlyRows = Array.isArray(data?.meses) ? data.meses : [];
+            const series = monthlyRows.map(month => {
+                const supplierMonth = provider
+                    ? month.proveedores?.find(item => item.proveedor === provider)
+                    : null;
+                return {
+                    month: month.mes,
+                    average: provider ? supplierMonth?.promedioDias ?? null : month.promedioDias,
+                    count: provider ? supplierMonth?.recibidas ?? 0 : month.recibidas
+                };
+            });
+            renderSupplierLeadChart(series, provider);
+
+            const providerBody = document.getElementById('supplier-lead-providers');
+            providerBody.innerHTML = providers.length
+                ? providers.slice(0, 20).map(item => `<tr>
+                    <td>${window.escapeHtml(item.proveedor)}</td>
+                    <td>${insightNumber(item.recibidas)}</td>
+                    <td>${formatDays(item.promedioDias)}</td>
+                    <td>${formatDays(item.percentil90Dias)}</td>
+                    <td>${insightNumber(item.abiertas)}</td>
+                </tr>`).join('')
+                : insightEmptyRow(5, 'No hay recepciones de proveedor registradas en los últimos 12 meses.');
+
+            const waitingBody = document.getElementById('supplier-lead-waiting-list');
+            waitingBody.innerHTML = filteredWaiting.length
+                ? filteredWaiting.slice(0, 10).map(item => `<tr>
+                    <td>${window.escapeHtml(String(item.idSolicitud || '').slice(0, 8).toUpperCase())}</td>
+                    <td>${window.escapeHtml(item.proveedor || 'Sin proveedor')}</td>
+                    <td>${insightDate(item.fechaSolicitud)}</td>
+                    <td><strong>${insightNumber(item.diasEspera)} días</strong></td>
+                </tr>`).join('')
+                : insightEmptyRow(4, provider
+                    ? 'Este proveedor no tiene solicitudes pendientes de recepción.'
+                    : 'No hay solicitudes pendientes de recepción.');
+            const receiptsBody = document.getElementById('supplier-lead-receipts-list');
+            receiptsBody.innerHTML = filteredReceipts.length
+                ? filteredReceipts.slice(0, 10).map(item => `<tr>
+                    <td>${window.escapeHtml(String(item.idSolicitud || '').slice(0, 8).toUpperCase())}</td>
+                    <td>${window.escapeHtml(item.proveedor || 'Sin proveedor')}</td>
+                    <td>${insightDate(item.fechaSolicitud)}</td>
+                    <td>${insightDate(item.fechaRecepcion)}</td>
+                    <td><strong>${insightNumber(item.diasEntrega)} días</strong></td>
+                </tr>`).join('')
+                : insightEmptyRow(5, provider
+                    ? 'No hay recepciones recientes de este proveedor.'
+                    : 'No hay recepciones registradas en los últimos 12 meses.');
+            const feedback = document.getElementById('supplier-lead-feedback');
+            feedback.classList.remove('is-error');
+            feedback.textContent =
+                `${insightNumber(data?.recibidas)} solicitudes recibidas medidas en los últimos 12 meses · ${insightNumber(data?.proveedoresSinNombre)} solicitudes sin proveedor identificado.`;
+        };
+        document.getElementById('supplier-lead-filter').addEventListener('change', () => {
+            if (supplierLeadTimeData) window.renderizarTiempoEntregaProveedor(supplierLeadTimeData);
+        });
+
+        window.renderizarAnaliticaInventario = function(data) {
+            const parameters = data.parametros || {};
+            const targetCoverageDays = Number(parameters.plazoProveedorDias) + Number(parameters.stockSeguridadDias);
+            document.getElementById('insight-low-coverage').textContent =
+                insightNumber(data.articulosPorDebajoCobertura);
+            document.getElementById('insight-overdue-requests').textContent =
+                insightNumber(data.solicitudesAbiertas?.vencidas);
+            const delivery = data.cumplimientoEntrega || {};
+            document.getElementById('insight-on-time-rate').textContent =
+                delivery.porcentaje == null ? 'Sin datos' : `${insightNumber(delivery.porcentaje)}%`;
+            const deliveryDetail = delivery.entregadas
+                ? `${insightNumber(delivery.aTiempo)}/${insightNumber(delivery.entregadas)} a tiempo · mediana ${insightNumber(delivery.medianaDias)} días · P90 ${insightNumber(delivery.percentil90Dias)} días`
+                : 'Sin solicitudes de cliente entregadas en los últimos 90 días';
+            document.getElementById('insight-on-time-detail').textContent =
+                `${deliveryDetail} · meta ${parameters.metaEntregaDias} días`;
+            document.getElementById('insight-stagnant-value').textContent =
+                insightCurrency(data.valorInventarioInmovilizadoConCosto);
+            document.getElementById('insight-stagnant-detail').textContent =
+                `${insightNumber(data.articulosSinMovimientoTotal)} referencias sin salidas en ${parameters.sinMovimientoDias} días · ${insightNumber(data.articulosSinMovimientoSinCosto)} de ellas sin costo`;
+
+            const replenishmentRows = Array.isArray(data.reposicion) ? data.reposicion : [];
+            const coverageRows = Array.isArray(data.cobertura) ? data.cobertura : [];
+            const allCoverageRows = new Map(coverageRows.map(item => [item.idArticulo, item]));
+            replenishmentRows.forEach(item => allCoverageRows.set(item.idArticulo, item));
+            const coverageSorted = [...allCoverageRows.values()].sort((first, second) => {
+                if (first.cantidadSugerida > 0 && second.cantidadSugerida <= 0) return -1;
+                if (second.cantidadSugerida > 0 && first.cantidadSugerida <= 0) return 1;
+                return (first.coberturaDias ?? Infinity) - (second.coberturaDias ?? Infinity);
+            }).slice(0, 25);
+            document.getElementById('insight-replenishment-body').innerHTML = coverageSorted.length
+                ? coverageSorted.map(item => `<tr>
+                    <td>${insightArticle(item)}</td>
+                    <td>${insightNumber(item.stockActual)}</td>
+                    <td>${insightNumber(item.consumoDiario)} u.</td>
+                    <td>${item.coberturaDias == null ? 'Sin consumo' : `${insightNumber(item.coberturaDias)} días`}</td>
+                    <td>${Number(item.cantidadSugerida) > 0
+                        ? `<strong>${insightNumber(item.cantidadSugerida)} u.</strong>${item.valorReposicionEstimado == null ? '' : `<small>${insightCurrency(item.valorReposicionEstimado)}</small>`}`
+                        : '—'}</td>
+                </tr>`).join('')
+                : insightEmptyRow(5, 'No hay artículos con consumo o reposición pendiente.');
+            const coveragePanelHelp = document.querySelector('#insight-replenishment-body')
+                ?.closest('.dashboard-panel')?.querySelector('.insight-panel-help');
+            if (coveragePanelHelp) {
+                coveragePanelHelp.textContent =
+                    `${insightNumber(data.articulosQueRequierenReposicion)} artículos requieren reposición · ${insightNumber(data.cantidadTotalSugerida)} unidades sugeridas · objetivo ${insightNumber(targetCoverageDays)} días.`;
+            }
+
+            const openRequests = data.solicitudesAbiertas || {};
+            document.getElementById('insight-request-aging-summary').textContent =
+                `${insightNumber(openRequests.total)} abiertas · 0–7 días: ${insightNumber(openRequests.hasta7Dias)} · 8–14: ${insightNumber(openRequests.de8a14Dias)} · 15+: ${insightNumber(openRequests.masDe14Dias)} · vencidas: ${insightNumber(openRequests.vencidas)}.`;
+            const oldestRequests = Array.isArray(openRequests.masAntiguas) ? openRequests.masAntiguas : [];
+            document.getElementById('insight-old-requests-body').innerHTML = oldestRequests.length
+                ? oldestRequests.map(request => `<tr>
+                    <td>${window.escapeHtml(String(request.idSolicitud || '').slice(0, 8).toUpperCase())}</td>
+                    <td>${window.escapeHtml(request.estado || '')}</td>
+                    <td><strong>${window.escapeHtml(request.tipoSolicitud || '')}</strong><small>${window.escapeHtml(request.regional || 'Sin regional')}</small></td>
+                    <td>${insightNumber(request.edadDias)} días</td>
+                </tr>`).join('')
+                : insightEmptyRow(4, 'No hay solicitudes abiertas.');
+
+            const stagnantItems = Array.isArray(data.articulosSinMovimiento) ? data.articulosSinMovimiento : [];
+            document.getElementById('insight-stagnant-summary').textContent =
+                `${insightNumber(data.articulosSinMovimientoTotal)} referencias con stock sin salidas por ${parameters.sinMovimientoDias} días o más. Mostrando hasta 25; el valor suma solo referencias con costo registrado.`;
+            document.getElementById('insight-stagnant-body').innerHTML = stagnantItems.length
+                ? stagnantItems.slice(0, 25).map(item => `<tr>
+                    <td>${insightArticle(item)}</td>
+                    <td>${insightNumber(item.stockActual)}</td>
+                    <td>${item.diasSinSalida == null ? 'Nunca' : `${insightDate(item.ultimaSalida)} · ${insightNumber(item.diasSinSalida)} días`}</td>
+                    <td>${insightCurrency(item.valorEstimado)}</td>
+                </tr>`).join('')
+                : insightEmptyRow(4, 'No hay artículos inmovilizados con stock positivo.');
+
+            const abcRows = Array.isArray(data.abc) ? data.abc : [];
+            document.getElementById('insight-abc-summary').textContent =
+                `Valor consumido: ${insightCurrency(data.valorConsumoPeriodo)} · A: ${insightCurrency(data.valorConsumoPorClase?.A)} · B: ${insightCurrency(data.valorConsumoPorClase?.B)} · C: ${insightCurrency(data.valorConsumoPorClase?.C)} · ${insightNumber(data.valorConsumoSinCosto)} artículos con consumo sin costo. Mostrando hasta 25.`;
+            document.getElementById('insight-abc-body').innerHTML = abcRows.length
+                ? abcRows.slice(0, 25).map(item => `<tr>
+                    <td><span class="insight-class insight-class-${String(item.clasificacion || 'c').toLowerCase()}">${window.escapeHtml(item.clasificacion || '')}</span></td>
+                    <td>${insightArticle(item)}</td>
+                    <td>${insightCurrency(item.valorConsumo)}</td>
+                    <td>${insightNumber(item.acumulado)}%</td>
+                </tr>`).join('')
+                : insightEmptyRow(4, 'No hay consumo valorizado en el periodo.');
+            window.renderizarTiempoEntregaProveedor(data.tiempoEntregaProveedor || {});
+        };
+
+        window.cargarAnaliticaInventario = async function() {
+            const button = document.getElementById('btn-inventory-insights-refresh');
+            const feedback = document.getElementById('inventory-insights-feedback');
+            const settings = {};
+            Object.entries(insightSettingFields).forEach(([key, field]) => {
+                settings[key] = Number(document.getElementById(field.id).value);
+            });
+            const invalidSetting = Object.entries(insightSettingFields).find(([key, field]) =>
+                !Number.isInteger(settings[key]) || settings[key] < field.minimum || settings[key] > field.maximum
+            );
+            if (invalidSetting) {
+                const field = insightSettingFields[invalidSetting[0]];
+                feedback.textContent = `Revisa el parámetro: debe ser un número entero entre ${field.minimum} y ${field.maximum}.`;
+                feedback.classList.add('is-error');
+                return;
+            }
+            button.disabled = true;
+            feedback.classList.remove('is-error');
+            feedback.textContent = 'Calculando cobertura, solicitudes y consumo...';
+            try {
+                try {
+                    localStorage.setItem('g4sInventoryInsightSettings', JSON.stringify(settings));
+                } catch (storageError) {
+                    console.warn('No se pudieron guardar los parámetros del análisis:', storageError);
+                }
+                const response = await apiRequest({ action: 'obtener_analitica_inventario', ...settings });
+                const result = await response.json();
+                if (result.status !== 'success') throw new Error(result.message || 'No se pudo calcular la analítica');
+                const data = result.data || {};
+                window.renderizarAnaliticaInventario(data);
+                feedback.textContent =
+                    `Análisis actualizado · consumo ${settings.consumoDias} días · solicitudes entregadas evaluadas en los últimos 90 días.`;
+                return data;
+            } catch (error) {
+                console.error('No se pudo cargar el análisis de inventario:', error);
+                feedback.textContent = `No se pudo actualizar el análisis: ${error.message}. Si el servicio indica que la acción no está permitida, actualiza y despliega apps-script/Code.gs.`;
+                feedback.classList.add('is-error');
+                return null;
+            } finally {
+                button.disabled = false;
+            }
+        };
+        document.getElementById('btn-inventory-insights-refresh').addEventListener('click', window.cargarAnaliticaInventario);
+
         window.switchTab = function(tabName, tabElement) {
             document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
             document.getElementById('tab-' + tabName).classList.add('active');
-            document.querySelectorAll('.tab').forEach(t => t.setAttribute('aria-selected', String(t === tabElement)));
+            document.querySelectorAll('.tab').forEach(tab => {
+                const isActive = tab === tabElement;
+                tab.setAttribute('aria-selected', String(isActive));
+                tab.tabIndex = isActive ? 0 : -1;
+            });
             tabElement.classList.add('active');
             if (tabName === 'dashboard') window.cargarDashboard();
+            if (tabName === 'reportes') window.cargarAnaliticaInventario();
             if (tabName === 'solicitudes') window.cargarSolicitudes();
             if (tabName === 'historial') window.cargarHistorial();
         }
+
+        document.querySelector('[role="tablist"]').addEventListener('keydown', event => {
+            const tabKeys = ['ArrowLeft', 'ArrowRight', 'Home', 'End'];
+            if (!tabKeys.includes(event.key)) return;
+            const tabs = [...event.currentTarget.querySelectorAll('[role="tab"]')];
+            const currentIndex = tabs.indexOf(event.target);
+            if (currentIndex < 0) return;
+            event.preventDefault();
+            const nextIndex = event.key === 'Home'
+                ? 0
+                : event.key === 'End'
+                    ? tabs.length - 1
+                    : (currentIndex + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+            tabs[nextIndex].focus();
+            tabs[nextIndex].click();
+        });
 
         const historyMatchesColumn = (row, column) => {
             const selected = historyFilters[column.key];

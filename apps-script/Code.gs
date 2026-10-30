@@ -175,6 +175,7 @@ function doPost(e) {
     if (action === "auditar_inventario") return auditInventory_(session);
     if (action === "reparar_formulas_inventario") return rebuildInventoryFormulas_(session);
     if (action === "obtener_dashboard") return getDashboard_(session);
+    if (action === "obtener_analitica_inventario") return getInventoryInsights_(data, session);
     if (action === "obtener_solicitudes") return getRequests_(data, session);
     if (action === "crear_solicitud") return createRequest_(data, session);
     if (action === "revisar_disponibilidad_solicitud") return checkRequestAvailability_(data, session);
@@ -651,6 +652,419 @@ function getDashboard_(session) {
       valorComprasMes: costedLinesThisMonth ? purchaseValueThisMonth : null,
       lineasCompraMes: purchaseLinesThisMonth,
       lineasCompraConCostoMes: costedLinesThisMonth
+    }
+  });
+}
+
+function getInventoryInsights_(data, session) {
+  function setting_(key, fallback, minimum, maximum) {
+    var value = data[key] == null || data[key] === "" ? fallback : Number(data[key]);
+    if (!Number.isInteger(value) || value < minimum || value > maximum) {
+      throw new Error("Parametro de analitica invalido: " + key);
+    }
+    return value;
+  }
+  function dateValue_(value) {
+    if (!value) return null;
+    var date = value instanceof Date ? value : new Date(value);
+    return isNaN(date.getTime()) ? null : date;
+  }
+  function rounded_(value, decimals) {
+    var scale = Math.pow(10, decimals || 0);
+    return Math.round(value * scale) / scale;
+  }
+  function percentile_(values, percentile) {
+    if (!values.length) return null;
+    var position = (values.length - 1) * percentile;
+    var lowerIndex = Math.floor(position);
+    var upperIndex = Math.ceil(position);
+    var fraction = position - lowerIndex;
+    return rounded_(values[lowerIndex] + (values[upperIndex] - values[lowerIndex]) * fraction, 1);
+  }
+
+  var canViewReplenishment = isAdmin_(session);
+  var consumptionDays = setting_("consumoDias", 90, 30, 365);
+  var stagnantDays = setting_("sinMovimientoDias", 180, 30, 730);
+  var supplierLeadDays = canViewReplenishment ? setting_("plazoProveedorDias", 30, 1, 365) : 30;
+  var safetyStockDays = canViewReplenishment ? setting_("stockSeguridadDias", 14, 0, 180) : 14;
+  var deliveryTargetDays = setting_("metaEntregaDias", 7, 1, 365);
+  var now = new Date();
+  var consumptionCutoff = now.getTime() - consumptionDays * 86400000;
+  var stagnantCutoff = now.getTime() - stagnantDays * 86400000;
+  var deliveryCutoff = now.getTime() - 90 * 86400000;
+  var inventoryRows = inventorySheet_().getDataRange().getValues();
+  var movementRows = movementSheet_().getDataRange().getValues();
+  var ledger = calculateStockLedger_(inventoryRows, movementRows);
+  var inventory = Object.create(null);
+  var items = [];
+  for (var i = 1; i < inventoryRows.length; i++) {
+    var id = clean_(inventoryRows[i][0], 100);
+    if (!id) continue;
+    var item = {
+      idArticulo: id,
+      categoria: clean_(inventoryRows[i][1], 100),
+      descripcion: clean_(inventoryRows[i][2], 200) || id,
+      stockActual: number_(ledger.balances[id]),
+      stockMinimo: number_(inventoryRows[i][7]),
+      costoUnitario: number_(inventoryRows[i][CONFIG.inventoryCostColumn - 1]),
+      activo: String(inventoryRows[i][9]).toLowerCase() !== "false",
+      consumoPeriodo: 0,
+      ultimaSalida: null
+    };
+    inventory[id] = item;
+    items.push(item);
+  }
+
+  for (var j = 1; j < movementRows.length; j++) {
+    var movement = movementRows[j];
+    var movementStatus = clean_(movement[9], 50);
+    if (!movement[0] || (movementStatus && movementStatus !== "Confirmado")) continue;
+    if (clean_(movement[3], 100) !== "Salida") continue;
+    var articleId = clean_(movement[2], 100);
+    var itemForMovement = inventory[articleId];
+    if (!itemForMovement) continue;
+    var movementDate = dateValue_(movement[1]);
+    if (!movementDate || movementDate.getTime() > now.getTime()) continue;
+    var quantity = number_(movement[4]);
+    if (quantity <= 0) continue;
+    if (!itemForMovement.ultimaSalida || movementDate.getTime() > itemForMovement.ultimaSalida.getTime()) {
+      itemForMovement.ultimaSalida = movementDate;
+    }
+    if (movementDate.getTime() >= consumptionCutoff) itemForMovement.consumoPeriodo += quantity;
+  }
+
+  var activeItems = items.filter(function(item) { return item.activo; });
+  var coverage = [];
+  var replenishment = [];
+  var stagnant = [];
+  var abcCandidates = [];
+  var itemsWithoutCost = 0;
+  activeItems.forEach(function(item) {
+    var dailyDemand = item.consumoPeriodo / consumptionDays;
+    var coverageDays = dailyDemand > 0 ? Math.max(item.stockActual, 0) / dailyDemand : null;
+    var targetStock = Math.max(item.stockMinimo, Math.ceil(dailyDemand * (supplierLeadDays + safetyStockDays)));
+    var suggestedQuantity = Math.max(0, targetStock - item.stockActual);
+    var row = {
+      idArticulo: item.idArticulo,
+      categoria: item.categoria,
+      descripcion: item.descripcion,
+      stockActual: item.stockActual,
+      stockMinimo: item.stockMinimo,
+      consumoPeriodo: item.consumoPeriodo,
+      consumoDiario: rounded_(dailyDemand, 2),
+      coberturaDias: coverageDays == null ? null : rounded_(coverageDays, 1),
+      ultimaSalida: item.ultimaSalida,
+      cantidadSugerida: suggestedQuantity,
+      valorReposicionEstimado: item.costoUnitario > 0 ? rounded_(suggestedQuantity * item.costoUnitario) : null,
+      costoUnitario: item.costoUnitario
+    };
+    if (item.consumoPeriodo > 0) coverage.push(row);
+    if (suggestedQuantity > 0) replenishment.push(row);
+    if (item.stockActual > 0 && (!item.ultimaSalida || item.ultimaSalida.getTime() < stagnantCutoff)) {
+      stagnant.push({
+        idArticulo: item.idArticulo,
+        categoria: item.categoria,
+        descripcion: item.descripcion,
+        stockActual: item.stockActual,
+        ultimaSalida: item.ultimaSalida,
+        diasSinSalida: item.ultimaSalida ? Math.floor((now.getTime() - item.ultimaSalida.getTime()) / 86400000) : null,
+        valorEstimado: item.costoUnitario > 0 ? rounded_(item.stockActual * item.costoUnitario) : null
+      });
+    }
+    if (item.consumoPeriodo > 0) {
+      if (item.costoUnitario > 0) {
+        abcCandidates.push({
+          idArticulo: item.idArticulo,
+          descripcion: item.descripcion,
+          unidades: item.consumoPeriodo,
+          valorConsumo: item.consumoPeriodo * item.costoUnitario
+        });
+      } else {
+        itemsWithoutCost++;
+      }
+    }
+  });
+
+  coverage.sort(function(first, second) {
+    return first.coberturaDias - second.coberturaDias || second.consumoPeriodo - first.consumoPeriodo;
+  });
+  replenishment.sort(function(first, second) {
+    return second.cantidadSugerida - first.cantidadSugerida ||
+      (first.coberturaDias == null ? Infinity : first.coberturaDias) -
+      (second.coberturaDias == null ? Infinity : second.coberturaDias);
+  });
+  stagnant.sort(function(first, second) {
+    return (second.valorEstimado || 0) - (first.valorEstimado || 0) || second.stockActual - first.stockActual;
+  });
+  abcCandidates.sort(function(first, second) {
+    return second.valorConsumo - first.valorConsumo || first.descripcion.localeCompare(second.descripcion);
+  });
+  var totalConsumptionValue = abcCandidates.reduce(function(total, item) { return total + item.valorConsumo; }, 0);
+  var cumulativeValue = 0;
+  var abc = abcCandidates.map(function(item) {
+    var previousShare = totalConsumptionValue ? cumulativeValue / totalConsumptionValue : 0;
+    cumulativeValue += item.valorConsumo;
+    var cumulativeShare = totalConsumptionValue ? cumulativeValue / totalConsumptionValue : 0;
+    var classification = previousShare < 0.8 ? "A" : previousShare < 0.95 ? "B" : "C";
+    return {
+      idArticulo: item.idArticulo,
+      descripcion: item.descripcion,
+      unidades: item.unidades,
+      valorConsumo: rounded_(item.valorConsumo),
+      participacion: rounded_(item.valorConsumo / totalConsumptionValue * 100, 1),
+      acumulado: rounded_(cumulativeShare * 100, 1),
+      clasificacion: classification
+    };
+  });
+
+  var requestRows = requestSheet_().getDataRange().getValues();
+  var requests = Object.create(null);
+  var openStatuses = ["Registrada", "Revisión de disponibilidad", "Solicitada", "Recibida"];
+  for (var k = 1; k < requestRows.length; k++) {
+    var requestRow = requestRows[k];
+    var requestId = clean_(requestRow[0], 100);
+    if (!requestId || requests[requestId]) continue;
+    var registrationDate = dateValue_(requestRow[1]);
+    var status = clean_(requestRow[9], 50) || "Registrada";
+    var requestAgeDays = registrationDate ? Math.max(0, Math.floor((now.getTime() - registrationDate.getTime()) / 86400000)) : null;
+    var requestType = clean_(requestRow[25], 30) || "Cliente";
+    requests[requestId] = {
+      idSolicitud: requestId,
+      estado: status,
+      tipoSolicitud: requestType,
+      regional: clean_(requestRow[4], 100),
+      fechaRegistro: registrationDate,
+      edadDias: requestAgeDays,
+      fechaEntrega: dateValue_(requestRow[13]),
+      proveedor: clean_(requestRow[10], 150) || "Sin proveedor",
+      fechaSolicitudProveedor: dateValue_(requestRow[11]),
+      fechaRecepcion: dateValue_(requestRow[12])
+    };
+  }
+  var openRequests = [];
+  var deliveredDurations = [];
+  var aging = { hasta7Dias: 0, de8a14Dias: 0, masDe14Dias: 0, vencidas: 0 };
+  var supplierLeadTimeCutoff = new Date(now.getFullYear(), now.getMonth() - 11, 1).getTime();
+  var supplierMonthTotals = Object.create(null);
+  var supplierStats = Object.create(null);
+  var supplierOpenRequests = [];
+  var supplierReceipts = [];
+  var supplierMissingNameCount = 0;
+  for (var monthOffset = 11; monthOffset >= 0; monthOffset--) {
+    var monthDate = new Date(now.getFullYear(), now.getMonth() - monthOffset, 1);
+    var supplierMonthKey = Utilities.formatDate(monthDate, Session.getScriptTimeZone(), "yyyy-MM");
+    supplierMonthTotals[supplierMonthKey] = { sum: 0, count: 0, suppliers: Object.create(null) };
+  }
+  function getSupplierStats_(name) {
+    if (!supplierStats[name]) {
+      supplierStats[name] = { proveedor: name, diasEntrega: [], diasEspera: [] };
+    }
+    return supplierStats[name];
+  }
+  Object.keys(requests).forEach(function(id) {
+    var request = requests[id];
+    if (openStatuses.indexOf(request.estado) >= 0 && request.edadDias != null) {
+      openRequests.push(request);
+      if (request.edadDias <= 7) aging.hasta7Dias++;
+      else if (request.edadDias <= 14) aging.de8a14Dias++;
+      else aging.masDe14Dias++;
+      if (request.tipoSolicitud === "Cliente" && request.edadDias > deliveryTargetDays) aging.vencidas++;
+    }
+    var requestDate = request.fechaSolicitudProveedor;
+    var receivedDate = request.fechaRecepcion;
+    if (request.estado !== "Anulada" && requestDate && requestDate.getTime() <= now.getTime()) {
+      var hasSupplierName = request.proveedor !== "Sin proveedor";
+      var isWithinSupplierPeriod = requestDate.getTime() >= supplierLeadTimeCutoff;
+      if (isWithinSupplierPeriod && !hasSupplierName) supplierMissingNameCount++;
+      if (isWithinSupplierPeriod && receivedDate && receivedDate.getTime() >= requestDate.getTime() &&
+          receivedDate.getTime() <= now.getTime()) {
+        var leadDays = (receivedDate.getTime() - requestDate.getTime()) / 86400000;
+        var leadMonthKey = Utilities.formatDate(requestDate, Session.getScriptTimeZone(), "yyyy-MM");
+        var monthMetrics = supplierMonthTotals[leadMonthKey];
+        if (monthMetrics && hasSupplierName) {
+          monthMetrics.sum += leadDays;
+          monthMetrics.count++;
+          if (!monthMetrics.suppliers[request.proveedor]) {
+            monthMetrics.suppliers[request.proveedor] = { sumaDias: 0, recibidas: 0 };
+          }
+          monthMetrics.suppliers[request.proveedor].sumaDias += leadDays;
+          monthMetrics.suppliers[request.proveedor].recibidas++;
+        }
+        if (hasSupplierName) {
+          getSupplierStats_(request.proveedor).diasEntrega.push(leadDays);
+          supplierReceipts.push({
+            idSolicitud: request.idSolicitud,
+            proveedor: request.proveedor,
+            fechaSolicitud: requestDate,
+            fechaRecepcion: receivedDate,
+            diasEntrega: rounded_(leadDays, 1)
+          });
+        }
+      }
+      if (request.estado === "Solicitada" && !receivedDate) {
+        var waitDays = Math.max(0, (now.getTime() - requestDate.getTime()) / 86400000);
+        supplierOpenRequests.push({
+          idSolicitud: request.idSolicitud,
+          proveedor: request.proveedor,
+          fechaSolicitud: requestDate,
+          diasEspera: rounded_(waitDays, 1)
+        });
+        if (hasSupplierName) getSupplierStats_(request.proveedor).diasEspera.push(waitDays);
+        else if (!isWithinSupplierPeriod) supplierMissingNameCount++;
+      }
+    }
+    if (request.estado !== "Entregada" || request.tipoSolicitud !== "Cliente" ||
+        !request.fechaEntrega || !request.fechaRegistro ||
+        request.fechaEntrega.getTime() < deliveryCutoff ||
+        request.fechaEntrega.getTime() > now.getTime() ||
+        request.fechaEntrega.getTime() < request.fechaRegistro.getTime()) return;
+    deliveredDurations.push((request.fechaEntrega.getTime() - request.fechaRegistro.getTime()) / 86400000);
+  });
+  openRequests.sort(function(first, second) { return second.edadDias - first.edadDias; });
+  supplierOpenRequests.sort(function(first, second) { return second.diasEspera - first.diasEspera; });
+  supplierReceipts.sort(function(first, second) {
+    return second.fechaRecepcion.getTime() - first.fechaRecepcion.getTime();
+  });
+  deliveredDurations.sort(function(first, second) { return first - second; });
+  var onTimeDeliveries = deliveredDurations.filter(function(days) { return days <= deliveryTargetDays; }).length;
+  var supplierLeadMonths = Object.keys(supplierMonthTotals).map(function(month) {
+    var monthMetrics = supplierMonthTotals[month];
+    return {
+      mes: month,
+      recibidas: monthMetrics.count,
+      promedioDias: monthMetrics.count ? rounded_(monthMetrics.sum / monthMetrics.count, 1) : null,
+      proveedores: Object.keys(monthMetrics.suppliers).map(function(name) {
+        var supplier = monthMetrics.suppliers[name];
+        return {
+          proveedor: name,
+          recibidas: supplier.recibidas,
+          promedioDias: rounded_(supplier.sumaDias / supplier.recibidas, 1)
+        };
+      }).sort(function(first, second) {
+        return first.proveedor.localeCompare(second.proveedor);
+      })
+    };
+  });
+  var supplierLeadTimeByProvider = Object.keys(supplierStats).map(function(name) {
+    var supplier = supplierStats[name];
+    supplier.diasEntrega.sort(function(first, second) { return first - second; });
+    supplier.diasEspera.sort(function(first, second) { return first - second; });
+    var totalLeadDays = supplier.diasEntrega.reduce(function(total, days) { return total + days; }, 0);
+    return {
+      proveedor: supplier.proveedor,
+      recibidas: supplier.diasEntrega.length,
+      promedioDias: supplier.diasEntrega.length ? rounded_(totalLeadDays / supplier.diasEntrega.length, 1) : null,
+      medianaDias: percentile_(supplier.diasEntrega, 0.5),
+      percentil90Dias: percentile_(supplier.diasEntrega, 0.9),
+      abiertas: supplier.diasEspera.length,
+      esperaPromedioDias: supplier.diasEspera.length
+        ? rounded_(supplier.diasEspera.reduce(function(total, days) { return total + days; }, 0) / supplier.diasEspera.length, 1)
+        : null,
+      esperaMaximaDias: supplier.diasEspera.length
+        ? rounded_(supplier.diasEspera[supplier.diasEspera.length - 1], 1)
+        : null
+    };
+  }).sort(function(first, second) {
+    if (first.promedioDias == null) return 1;
+    if (second.promedioDias == null) return -1;
+    return second.promedioDias - first.promedioDias || first.proveedor.localeCompare(second.proveedor);
+  });
+  var allSupplierLeadDays = [];
+  supplierLeadTimeByProvider.forEach(function(supplier) {
+    supplierStats[supplier.proveedor].diasEntrega.forEach(function(days) { allSupplierLeadDays.push(days); });
+  });
+  allSupplierLeadDays.sort(function(first, second) { return first - second; });
+  var allSupplierLeadAverage = allSupplierLeadDays.length
+    ? rounded_(allSupplierLeadDays.reduce(function(total, days) { return total + days; }, 0) / allSupplierLeadDays.length, 1)
+    : null;
+  var allSupplierWaitDays = supplierOpenRequests.map(function(request) { return request.diasEspera; })
+    .sort(function(first, second) { return first - second; });
+  var coverageBelowTarget = coverage.filter(function(item) {
+    return item.coberturaDias < supplierLeadDays + safetyStockDays;
+  }).length;
+  var stagnantWithoutCost = stagnant.filter(function(item) { return item.valorEstimado == null; }).length;
+  var stagnantValue = stagnant.reduce(function(total, item) { return total + (item.valorEstimado || 0); }, 0);
+  var suggestedReplenishmentValue = replenishment.reduce(function(total, item) {
+    return total + (item.valorReposicionEstimado || 0);
+  }, 0);
+  var abcValueByClass = { A: 0, B: 0, C: 0 };
+  abc.forEach(function(item) { abcValueByClass[item.clasificacion] += item.valorConsumo; });
+
+  return json_({
+    status: "success",
+    data: {
+      generado: now,
+      parametros: {
+        consumoDias: consumptionDays,
+        sinMovimientoDias: stagnantDays,
+        plazoProveedorDias: canViewReplenishment ? supplierLeadDays : null,
+        stockSeguridadDias: canViewReplenishment ? safetyStockDays : null,
+        metaEntregaDias: deliveryTargetDays,
+        periodoCumplimientoDias: 90
+      },
+      cobertura: canViewReplenishment ? coverage.slice(0, 100) : [],
+      reposicion: canViewReplenishment ? replenishment.slice(0, 100) : [],
+      articulosPorDebajoCobertura: canViewReplenishment ? coverageBelowTarget : null,
+      articulosQueRequierenReposicion: canViewReplenishment ? replenishment.length : null,
+      cantidadTotalSugerida: canViewReplenishment
+        ? replenishment.reduce(function(total, item) { return total + item.cantidadSugerida; }, 0)
+        : null,
+      valorReposicionEstimadoConCosto: canViewReplenishment ? rounded_(suggestedReplenishmentValue) : null,
+      articulosSinMovimiento: stagnant.slice(0, 100),
+      articulosSinMovimientoTotal: stagnant.length,
+      articulosSinMovimientoSinCosto: stagnantWithoutCost,
+      valorInventarioInmovilizadoConCosto: rounded_(stagnantValue),
+      abc: abc.slice(0, 100),
+      valorConsumoPeriodo: rounded_(totalConsumptionValue),
+      valorConsumoPorClase: {
+        A: rounded_(abcValueByClass.A),
+        B: rounded_(abcValueByClass.B),
+        C: rounded_(abcValueByClass.C)
+      },
+      valorConsumoSinCosto: itemsWithoutCost,
+      solicitudesAbiertas: {
+        total: openRequests.length,
+        hasta7Dias: aging.hasta7Dias,
+        de8a14Dias: aging.de8a14Dias,
+        masDe14Dias: aging.masDe14Dias,
+        vencidas: aging.vencidas,
+        masAntiguas: openRequests.slice(0, 20).map(function(request) {
+          return {
+            idSolicitud: request.idSolicitud,
+            estado: request.estado,
+            tipoSolicitud: request.tipoSolicitud,
+            regional: request.regional,
+            fechaRegistro: request.fechaRegistro,
+            edadDias: request.edadDias
+          };
+        })
+      },
+      cumplimientoEntrega: {
+        entregadas: deliveredDurations.length,
+        aTiempo: onTimeDeliveries,
+        porcentaje: deliveredDurations.length ? rounded_(onTimeDeliveries / deliveredDurations.length * 100, 1) : null,
+        medianaDias: percentile_(deliveredDurations, 0.5),
+        percentil90Dias: percentile_(deliveredDurations, 0.9)
+      },
+      tiempoEntregaProveedor: {
+        periodoMeses: 12,
+        recibidas: allSupplierLeadDays.length,
+        promedioDias: allSupplierLeadAverage,
+        medianaDias: percentile_(allSupplierLeadDays, 0.5),
+        percentil90Dias: percentile_(allSupplierLeadDays, 0.9),
+        abiertas: supplierOpenRequests.length,
+        esperaPromedioDias: allSupplierWaitDays.length
+          ? rounded_(allSupplierWaitDays.reduce(function(total, days) { return total + days; }, 0) / allSupplierWaitDays.length, 1)
+          : null,
+        esperaMaximaDias: allSupplierWaitDays.length ? rounded_(allSupplierWaitDays[allSupplierWaitDays.length - 1], 1) : null,
+        proveedoresSinNombre: supplierMissingNameCount,
+        meses: supplierLeadMonths,
+        proveedores: supplierLeadTimeByProvider,
+        recepcionesRecientes: supplierReceipts.slice(0, 100),
+        solicitudesEnEspera: supplierOpenRequests.slice(0, 20)
+      },
+      articulosActivos: activeItems.length,
+      articulosConCostoFaltante: activeItems.filter(function(item) { return item.costoUnitario <= 0; }).length
     }
   });
 }
