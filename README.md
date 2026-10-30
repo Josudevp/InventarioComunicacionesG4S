@@ -42,6 +42,7 @@ El endpoint activo está en `src/services/api.js`. Si necesitas configurarlo dis
 * El dashboard incluye gráficas interactivas: flujo mensual de unidades ingresadas/retiradas (periodo de 6 o 12 meses y series activables), distribución de solicitudes por estado, salidas históricas por regional y compras de los últimos 12 meses por proveedor.
 * Solicitudes con varias líneas y clientes para una sola regional y persona destinataria; también se pueden crear solicitudes para Comunicaciones y redactar un correo predeterminado a `capmovil@gmail.com`.
 * El historial de movimientos permite filtrar por fecha, artículo, tipo, cantidad, cliente/proveedor, regional, estado y usuario desde el icono de cada encabezado, seleccionando varias opciones disponibles con casillas. Las opciones se actualizan según todos los filtros activos; al pulsar Fecha se alterna el orden ascendente/descendente.
+* La sección **Reportes** descarga archivos Excel del inventario actual, todos los movimientos y solicitudes. El libro completo agrega resumen, valorización con los costos registrados y alertas de stock. Las descargas consultan datos actualizados y recorren el historial completo mediante páginas.
 * PWA instalable en iOS y Android.
 
 ## Seguridad y operación

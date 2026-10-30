@@ -90,6 +90,7 @@
             <button type="button" class="tab" role="tab" aria-selected="false" aria-controls="tab-registro" onclick="window.switchTab('registro', this)">Movimientos</button>
             <button type="button" class="tab" role="tab" aria-selected="false" aria-controls="tab-solicitudes" onclick="window.switchTab('solicitudes', this)">Solicitudes</button>
             <button type="button" class="tab" role="tab" aria-selected="false" aria-controls="tab-historial" onclick="window.switchTab('historial', this)">Historial</button>
+            <button type="button" class="tab" role="tab" aria-selected="false" aria-controls="tab-reportes" onclick="window.switchTab('reportes', this)">Reportes</button>
             <button type="button" class="tab" role="tab" aria-selected="false" aria-controls="tab-catalogo" onclick="window.switchTab('catalogo', this)">Catálogo</button>
         </div>
 
@@ -353,6 +354,26 @@
                     <footer><button type="button" id="history-filter-clear">Limpiar columna</button><button type="button" id="history-filter-done">Listo</button></footer>
                 </section>
             </div>
+
+            <section id="tab-reportes" class="section" aria-labelledby="reports-title">
+                <div class="card reports-card">
+                    <div class="reports-heading">
+                        <div>
+                            <h2 id="reports-title">Descargar reportes</h2>
+                            <p>Genera archivos Excel con datos actualizados del inventario, movimientos y solicitudes.</p>
+                        </div>
+                        <i class="fa-solid fa-file-excel" aria-hidden="true"></i>
+                    </div>
+                    <div class="reports-actions">
+                        <button type="button" class="btn-primary" data-report-download="completo"><i class="fa-solid fa-download"></i> Libro completo</button>
+                        <button type="button" class="btn-secondary" data-report-download="inventario"><i class="fa-solid fa-boxes-stacked"></i> Inventario actual</button>
+                        <button type="button" class="btn-secondary" data-report-download="movimientos"><i class="fa-solid fa-arrow-right-arrow-left"></i> Movimientos</button>
+                        <button type="button" class="btn-secondary" data-report-download="solicitudes"><i class="fa-solid fa-clipboard-list"></i> Solicitudes</button>
+                    </div>
+                    <p id="reports-feedback" class="reports-feedback" role="status" aria-live="polite"></p>
+                    <p class="helper-text">El libro completo incluye resumen, inventario valorizado, alertas de stock, movimientos y solicitudes. Los datos se consultan al momento de descargar.</p>
+                </div>
+            </section>
 
             <!-- TAB CATÁLOGO (CRUD) -->
             <div id="tab-catalogo" class="section">

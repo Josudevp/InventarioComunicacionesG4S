@@ -480,6 +480,57 @@ test('anular marks the original movement, creates no inverse, and is idempotent'
     assert.equal(stockFor(spreadsheet, 'CARG-USB'), 0);
 });
 
+test('movement and request reports can page through every record while keeping existing defaults', () => {
+  const { context, spreadsheet } = createRuntime();
+  const session = { usuario: 'operador', rol: 'usuario' };
+  const movementSheet = spreadsheet.getSheetByName('Registro de Movimientos');
+  for (let index = 1; index <= 620; index++) {
+    movementSheet.rows.push([
+      `movement-${index}`, new Date(Date.UTC(2026, 0, index)), 'CARG-USB', 'Entrada', 1,
+      'operador', '', 'Proveedor', 'Bogota', 'Confirmado', '', '', '', '', '', '', ''
+    ]);
+  }
+
+  const movementFirstPage = response(context.getMovements_({}, session));
+  const movementLastPage = response(context.getMovements_({ offset: 500, limite: 500 }, session));
+  const defaultMovements = movementFirstPage.data;
+  const olderMovements = movementLastPage.data;
+  assert.equal(defaultMovements.length, 500);
+  assert.equal(defaultMovements[0].idTransaccion, 'movement-620');
+  assert.deepEqual(movementFirstPage.pagination, { offset: 0, limit: 500, total: 620, hasMore: true });
+  assert.equal(olderMovements.length, 120);
+  assert.equal(olderMovements[0].idTransaccion, 'movement-120');
+  assert.equal(olderMovements.at(-1).idTransaccion, 'movement-1');
+  assert.equal(movementLastPage.pagination.hasMore, false);
+  assert.throws(() => context.getMovements_({ limite: 1001 }, session), /Paginacion invalida/);
+
+  const requestSheet = context.requestSheet_();
+  for (let index = 1; index <= 305; index++) {
+    const row = Array(26).fill('');
+    row[0] = `request-${index}`;
+    row[1] = new Date(Date.UTC(2026, 0, index));
+    row[2] = 'operador';
+    row[3] = 'Cliente';
+    row[4] = 'Bogota';
+    row[5] = 'Ana';
+    row[6] = 'CARG-USB';
+    row[7] = 'Cargador USB';
+    row[8] = 1;
+    row[9] = 'Registrada';
+    requestSheet.rows.push(row);
+  }
+  const requestFirstPage = response(context.getRequests_({}, session));
+  const requestLastPage = response(context.getRequests_({ offset: 300, limite: 300 }, session));
+  const defaultRequests = requestFirstPage.data;
+  const olderRequests = requestLastPage.data;
+  assert.equal(defaultRequests.length, 300);
+  assert.equal(defaultRequests[0].idSolicitud, 'request-305');
+  assert.deepEqual(requestFirstPage.pagination, { offset: 0, limit: 300, total: 305, hasMore: true });
+  assert.equal(olderRequests.length, 5);
+  assert.equal(olderRequests[0].idSolicitud, 'request-5');
+  assert.equal(requestLastPage.pagination.hasMore, false);
+});
+
 test('request receipt adds stock and delivery removes it exactly once', () => {
   const { context, spreadsheet } = createRuntime();
   const session = { usuario: 'solicitante', rol: 'usuario' };

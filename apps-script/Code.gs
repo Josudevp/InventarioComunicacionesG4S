@@ -426,7 +426,23 @@ function getMovements_(data, session) {
       justificacionAnulacion: clean_(rows[i][16], 500)
     });
   }
-  return json_({ status: "success", usuario: session.usuario, data: result.slice(-500).reverse() });
+  result.reverse();
+  var page = pagination_(data, 500);
+  return json_({
+    status: "success",
+    usuario: session.usuario,
+    data: result.slice(page.offset, page.offset + page.limit),
+    pagination: { offset: page.offset, limit: page.limit, total: result.length, hasMore: page.offset + page.limit < result.length }
+  });
+}
+
+function pagination_(data, defaultLimit) {
+  var limit = data.limite == null ? defaultLimit : Number(data.limite);
+  var offset = data.offset == null ? 0 : Number(data.offset);
+  if (!Number.isInteger(limit) || limit < 1 || limit > 1000 || !Number.isInteger(offset) || offset < 0) {
+    throw new Error("Paginacion invalida");
+  }
+  return { limit: limit, offset: offset };
 }
 
 function getDashboard_(session) {
@@ -694,7 +710,13 @@ function getRequests_(data, session) {
   });
   var result = Object.keys(grouped).map(function(id) { return grouped[id]; });
   result.sort(function(first, second) { return new Date(second.fechaRegistro).getTime() - new Date(first.fechaRegistro).getTime(); });
-  return json_({ status: "success", usuario: session.usuario, data: result.slice(0, 300) });
+  var page = pagination_(data, 300);
+  return json_({
+    status: "success",
+    usuario: session.usuario,
+    data: result.slice(page.offset, page.offset + page.limit),
+    pagination: { offset: page.offset, limit: page.limit, total: result.length, hasMore: page.offset + page.limit < result.length }
+  });
 }
 
 function createRequest_(data, session) {

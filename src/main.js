@@ -1810,6 +1810,199 @@ import { apiRequest } from "./services/api.js";
     document.getElementById('btn-audit-inventory').addEventListener('click', window.auditarInventario);
     document.getElementById('btn-repair-inventory-formulas').addEventListener('click', window.repararFormulasInventario);
 
+        let XLSX;
+        const reportColumns = {
+            inventario: [
+                { header: 'SKU', value: item => item.idArticulo },
+                { header: 'Categoría', value: item => item.categoria },
+                { header: 'Descripción', value: item => item.descripcion },
+                { header: 'Stock actual', value: item => Number(item.stockActual) || 0 },
+                { header: 'Stock mínimo', value: item => Number(item.stockMinimo) || 0 },
+                { header: 'Estado', value: item => reportStockStatus(item) },
+                { header: 'Costo unitario (COP)', value: item => Number(item.costoUnitario) > 0 ? Number(item.costoUnitario) : '' },
+                { header: 'Valor del stock (COP)', value: item => Number(item.costoUnitario) > 0 ? (Number(item.stockActual) || 0) * Number(item.costoUnitario) : '' },
+                { header: 'Activo', value: item => item.activo === false ? 'No' : 'Sí' }
+            ],
+            movimientos: [
+                { header: 'ID transacción', value: item => item.idTransaccion },
+                { header: 'Fecha y hora', value: item => reportDate(item.fechaHora) },
+                { header: 'SKU', value: item => item.idArticulo },
+                { header: 'Descripción', value: item => reportCatalog.get(item.idArticulo)?.descripcion || '' },
+                { header: 'Tipo', value: item => item.tipoMovimiento },
+                { header: 'Cantidad', value: item => Number(item.cantidad) || 0 },
+                { header: 'Registrado por', value: item => item.registradoPor },
+                { header: 'Entregado a', value: item => item.entregadoA },
+                { header: 'Cliente / proveedor', value: item => item.clienteProveedor },
+                { header: 'Regional', value: item => item.regional },
+                { header: 'Estado', value: item => item.estado },
+                { header: 'ID relacionado', value: item => item.relacionada },
+                { header: 'Motivo', value: item => item.motivo },
+                { header: 'Regional origen', value: item => item.regionalOrigen },
+                { header: 'Regional destino', value: item => item.regionalDestino },
+                { header: 'Justificación de anulación', value: item => item.justificacionAnulacion }
+            ],
+            solicitudes: [
+                { header: 'ID solicitud', value: ({ solicitud }) => solicitud.idSolicitud },
+                { header: 'Fecha de registro', value: ({ solicitud }) => reportDate(solicitud.fechaRegistro) },
+                { header: 'Tipo', value: ({ solicitud }) => solicitud.tipoSolicitud },
+                { header: 'Estado', value: ({ solicitud }) => solicitud.estado },
+                { header: 'Registrado por', value: ({ solicitud }) => solicitud.registradoPor },
+                { header: 'Proveedor', value: ({ solicitud }) => solicitud.proveedor },
+                { header: 'SKU', value: ({ item }) => item.idArticulo },
+                { header: 'Descripción', value: ({ item }) => item.descripcion },
+                { header: 'Cantidad', value: ({ item }) => Number(item.cantidad) || 0 },
+                { header: 'Costo unitario (COP)', value: ({ item }) => Number(item.costoUnitario) > 0 ? Number(item.costoUnitario) : '' },
+                { header: 'Total línea (COP)', value: ({ item }) => Number(item.costoUnitario) > 0 ? (Number(item.cantidad) || 0) * Number(item.costoUnitario) : '' },
+                { header: 'Cliente', value: ({ item }) => item.cliente },
+                { header: 'Regional', value: ({ item }) => item.regional },
+                { header: 'Entregado a', value: ({ item }) => item.entregadoA },
+                { header: 'Fecha solicitud proveedor', value: ({ solicitud }) => reportDate(solicitud.fechaSolicitudProveedor) },
+                { header: 'Fecha recepción', value: ({ solicitud }) => reportDate(solicitud.fechaRecepcion) },
+                { header: 'Fecha entrega', value: ({ solicitud }) => reportDate(solicitud.fechaEntrega) },
+                { header: 'Observaciones', value: ({ solicitud }) => solicitud.observaciones },
+                { header: 'Justificación de anulación', value: ({ solicitud }) => solicitud.justificacionAnulacion }
+            ]
+        };
+        let reportCatalog = new Map();
+        const reportStockStatus = item => {
+            const stock = Number(item.stockActual) || 0;
+            if (stock < 0) return 'Saldo negativo';
+            if (stock === 0) return 'Agotado';
+            if (stock <= (Number(item.stockMinimo) || 0)) return 'Stock bajo';
+            return 'Disponible';
+        };
+        const reportDate = value => {
+            if (!value) return '';
+            const date = value instanceof Date ? value : new Date(value);
+            return Number.isNaN(date.getTime()) ? String(value) : `${date.toISOString().replace('T', ' ').replace(/\.\d{3}Z$/, '')} UTC`;
+        };
+        const fetchReportPage = async (action, offset, limit) => {
+            const response = await apiRequest({ action, offset, limite: limit });
+            const result = await response.json();
+            if (result.status !== 'success') throw new Error(result.message || 'No se pudieron consultar los datos del reporte');
+            return {
+                rows: Array.isArray(result.data) ? result.data : [],
+                pagination: result.pagination
+            };
+        };
+        const fetchAllReportPages = async action => {
+            const pageSize = action === 'obtener_solicitudes' ? 300 : 500;
+            const rows = [];
+            const seenIds = new Set();
+            for (let offset = 0; ; offset += pageSize) {
+                const result = await fetchReportPage(action, offset, pageSize);
+                const page = result.rows;
+                for (const row of page) {
+                    const id = row.idTransaccion || row.idSolicitud;
+                    if (offset > 0 && id && seenIds.has(id)) {
+                        throw new Error('El backend de reportes no admite paginación. Actualiza y despliega apps-script/Code.gs.');
+                    }
+                    if (id) seenIds.add(id);
+                }
+                rows.push(...page);
+                if (page.length < pageSize || result.pagination?.hasMore === false) return rows;
+            }
+        };
+        const fetchReportData = async kinds => {
+            const tasks = [];
+            if (kinds.includes('inventario') || kinds.includes('movimientos')) tasks.push(
+                apiRequest({ action: 'obtener_catalogo' }).then(async response => {
+                    const result = await response.json();
+                    if (result.status !== 'success') throw new Error(result.message || 'No se pudo consultar el inventario');
+                    return ['inventario', Array.isArray(result.data) ? result.data : []];
+                })
+            );
+            if (kinds.includes('movimientos')) tasks.push(fetchAllReportPages('obtener_movimientos').then(data => ['movimientos', data]));
+            if (kinds.includes('solicitudes')) tasks.push(fetchAllReportPages('obtener_solicitudes').then(data => ['solicitudes', data]));
+            return Object.fromEntries(await Promise.all(tasks));
+        };
+        const reportSheets = {
+            inventario: { name: 'Inventario', columns: reportColumns.inventario },
+            movimientos: { name: 'Movimientos', columns: reportColumns.movimientos },
+            solicitudes: { name: 'Solicitudes', columns: reportColumns.solicitudes }
+        };
+        const appendReportSheet = (workbook, { name, columns }, rows) => {
+            const sheetRows = rows.map(row => columns.map(column => column.value(row)));
+            const worksheet = XLSX.utils.aoa_to_sheet([columns.map(column => column.header), ...sheetRows]);
+            worksheet['!cols'] = columns.map(column => ({ wch: Math.min(34, Math.max(14, column.header.length + 2)) }));
+            if (worksheet['!ref']) worksheet['!autofilter'] = { ref: worksheet['!ref'] };
+            XLSX.utils.book_append_sheet(workbook, worksheet, name);
+        };
+        const reportFileDate = () => {
+            const date = new Date();
+            return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+        };
+        const createReportWorkbook = (kind, data) => {
+            const workbook = XLSX.utils.book_new();
+            reportCatalog = new Map((data.inventario || []).map(item => [item.idArticulo, item]));
+            if (kind === 'completo') {
+                const inventory = data.inventario || [];
+                const movements = data.movimientos || [];
+                const requests = data.solicitudes || [];
+                const alertInventory = inventory.filter(item => reportStockStatus(item) !== 'Disponible');
+                const knownValue = inventory.reduce((total, item) => {
+                    const stock = Number(item.stockActual) || 0;
+                    const cost = Number(item.costoUnitario) || 0;
+                    return total + (stock >= 0 && cost > 0 ? stock * cost : 0);
+                }, 0);
+                const summary = [
+                    ['Generado', new Date().toLocaleString('es-CO')],
+                    ['Referencias en catálogo', inventory.length],
+                    ['Referencias activas', inventory.filter(item => item.activo !== false).length],
+                    ['Unidades disponibles', inventory.reduce((total, item) => total + (Number(item.stockActual) || 0), 0)],
+                    ['Valor estimado (costos registrados, COP)', knownValue],
+                    ['Referencias con alerta de stock', alertInventory.length],
+                    ['Movimientos incluidos', movements.length],
+                    ['Solicitudes incluidas', requests.length],
+                    ['Líneas de solicitud', requests.reduce((total, request) => total + (Array.isArray(request.items) ? request.items.length : 0), 0)]
+                ];
+                const worksheet = XLSX.utils.aoa_to_sheet([['Indicador', 'Valor'], ...summary]);
+                worksheet['!cols'] = [{ wch: 44 }, { wch: 30 }];
+                XLSX.utils.book_append_sheet(workbook, worksheet, 'Resumen');
+                appendReportSheet(workbook, reportSheets.inventario, inventory);
+                appendReportSheet(workbook, {
+                    name: 'Alertas de stock',
+                    columns: reportColumns.inventario.filter(column => column.header !== 'Activo')
+                }, alertInventory);
+                appendReportSheet(workbook, reportSheets.movimientos, movements);
+                appendReportSheet(workbook, reportSheets.solicitudes, requests.flatMap(solicitud =>
+                    (solicitud.items || []).map(item => ({ solicitud, item }))
+                ));
+            } else if (kind === 'solicitudes') {
+                appendReportSheet(workbook, reportSheets.solicitudes, (data.solicitudes || []).flatMap(solicitud =>
+                    (solicitud.items || []).map(item => ({ solicitud, item }))
+                ));
+            } else {
+                appendReportSheet(workbook, reportSheets[kind], data[kind] || []);
+            }
+            return workbook;
+        };
+        document.querySelectorAll('[data-report-download]').forEach(button => {
+            button.addEventListener('click', async () => {
+                if (button.disabled) return;
+                const kind = button.dataset.reportDownload;
+                const feedback = document.getElementById('reports-feedback');
+                const buttons = [...document.querySelectorAll('[data-report-download]')];
+                buttons.forEach(item => { item.disabled = true; });
+                feedback.textContent = 'Consultando datos y preparando el archivo Excel...';
+                try {
+                    XLSX ||= (await import('xlsx/dist/xlsx.core.min.js')).default;
+                    const kinds = kind === 'completo' ? ['inventario', 'movimientos', 'solicitudes'] : [kind];
+                    const data = await fetchReportData(kinds);
+                    const workbook = createReportWorkbook(kind, data);
+                    const reportName = kind === 'completo' ? 'Reporte_completo' : `Reporte_${kind}`;
+                    XLSX.writeFile(workbook, `${reportName}_${reportFileDate()}.xlsx`, { compression: true });
+                    feedback.textContent = 'El archivo Excel se descargó correctamente.';
+                } catch (error) {
+                    console.error('Error al generar el reporte:', error);
+                    feedback.textContent = `No se pudo generar el reporte: ${error.message}`;
+                    window.mostrarAlerta(error.message, 'error');
+                } finally {
+                    buttons.forEach(item => { item.disabled = false; });
+                }
+            });
+        });
+
         window.switchTab = function(tabName, tabElement) {
             document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
