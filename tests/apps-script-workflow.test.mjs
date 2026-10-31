@@ -73,6 +73,7 @@ class Sheet {
 
   getMaxRows() { return this.maxRows; }
   getMaxColumns() { return this.maxColumns; }
+  getName() { return this.name; }
 
   insertRowsAfter(_row, count) { this.maxRows += count; return this; }
   insertColumnsAfter(_column, count) { this.maxColumns += count; return this; }
@@ -1507,6 +1508,15 @@ test('bulk cellphone status change records a separate KPI trace for each selecte
   assert.equal(history.getRange(4, 7).getValue(), 'Enviados CAP');
   assert.equal(history.getRange(5, 6).getValue(), 'Disponible');
   assert.equal(history.getRange(5, 7).getValue(), 'Enviados CAP');
+
+  const disposed = post({ action: 'actualizar_estados_equipos', ids: created.ids, estado: 'Disposición final' });
+  assert.equal(disposed.status, 'success');
+  assert.equal(disposed.updated, 2);
+  assert.equal(spreadsheet.getSheetByName(context.CONFIG.equipmentSheet).getLastRow(), 1);
+  assert.deepEqual(
+    spreadsheet.getSheetByName(context.CONFIG.equipmentArchiveSheet).getRange(2, 1, 2, 1).getValues().flat().sort(),
+    created.ids.slice().sort()
+  );
 });
 
 test('equipment sheet initializer creates sheets, preserves rows, and installs one daily archive trigger', () => {
@@ -1587,7 +1597,7 @@ test('existing cellphone archive migrates the Serial header and preserves its da
   assert.equal(archive.hiddenColumns.has(4), true);
 });
 
-test('disposal rows are archived after 30 days but remain active before the cutoff', () => {
+test('all disposal rows are archived immediately regardless of their age', () => {
   const { context, spreadsheet } = createRuntime();
   const equipment = context.equipmentSheet_();
   const now = new Date();
@@ -1596,15 +1606,18 @@ test('disposal rows are archived after 30 days but remain active before the cuto
     new Date(now.getTime() - ageDays * 86400000), 'operador', `1234567890123${id.endsWith('old') ? '01' : '02'}`, 'BODEGA'
   ];
   equipment.getRange(2, 1, 2, context.CONFIG.equipmentHeaders.length).setValues([
-    row('phone-old', 31), row('phone-recent', 29)
+    row('phone-old', 31), row('phone-recent', 0)
   ]);
 
-  assert.equal(context.archivarEquiposDisposicionFinal(), 1);
-  assert.equal(equipment.getLastRow(), 2);
-  assert.equal(equipment.getRange(2, 1).getValue(), 'phone-recent');
+  assert.equal(context.archivarEquiposDisposicionFinal(), 2);
+  assert.equal(equipment.getLastRow(), 1);
   const archive = spreadsheet.getSheetByName(context.CONFIG.equipmentArchiveSheet);
-  assert.equal(archive.getRange(2, 1).getValue(), 'phone-old');
-  assert.equal(archive.getRange(2, 13).getValue(), 'Disposición final por más de 30 días');
+  assert.deepEqual(
+    archive.getRange(2, 1, 2, 1).getValues().flat().sort(),
+    ['phone-old', 'phone-recent']
+  );
+  assert.equal(archive.getRange(2, 13).getValue(), 'Disposición final; no volverá a la empresa');
+  assert.equal(archive.getRange(3, 13).getValue(), 'Disposición final; no volverá a la empresa');
 });
 
 test('cellphone dashboard measures CAPMOVIL and warranty return durations separately from stock', () => {
@@ -1629,12 +1642,46 @@ test('cellphone dashboard measures CAPMOVIL and warranty return durations separa
   assert.equal(metrics.retornosMedidos, 1);
   assert.equal(metrics.promedioRetornoDias, 4);
   assert.equal(metrics.pendientes[0].diasEspera, 5);
+  assert.equal(metrics.pendientesFueraDePlazo, 0);
   assert.equal(stockFor(spreadsheet, 'CARG-USB'), 0);
 
   const dashboard = response(context.getDashboard_({ usuario: 'operador', rol: 'usuario' }));
   assert.equal(dashboard.data.celulares.total, 2);
   assert.equal(dashboard.data.celulares.promedioRetornoDias, 4);
   assert.equal(dashboard.data.unidades, 0);
+});
+
+test('CAP equipment beyond 20 days is flagged while final disposition is archived outside provider KPIs', () => {
+  const { context, spreadsheet } = createRuntime();
+  const equipment = context.equipmentSheet_();
+  const history = context.equipmentHistorySheet_();
+  const now = new Date('2026-10-30T12:00:00Z');
+  equipment.getRange(2, 1, 3, context.CONFIG.equipmentHeaders.length).setValues([
+    ['phone-overdue', '2026-09-01', 'MOTO G22', '', 'Revisión', 'Enviados CAP', 'op', new Date('2026-10-01T12:00:00Z'), 'op', '123456789012345', 'CAPMOVIL'],
+    ['phone-limit', '2026-09-01', 'MOTO G24', '', 'Revisión', 'Enviados CAP', 'op', new Date('2026-10-10T12:00:00Z'), 'op', '223456789012345', 'CAPMOVIL'],
+    ['phone-disposed', '2026-09-01', 'MOTO G23', '', 'Disposicion final, no volvera a la empresa', 'Dañado', 'op', now, 'op', '543210987654321', 'CAPMOVIL']
+  ]);
+  history.getRange(2, 1, 6, context.CONFIG.equipmentHistoryHeaders.length).setValues([
+    ['event-1', new Date('2026-10-01T12:00:00Z'), 'phone-overdue', '', 'MOTO G22', 'Disponible', 'Enviados CAP', 'op'],
+    ['event-limit', new Date('2026-10-10T12:00:00Z'), 'phone-limit', '', 'MOTO G24', 'Disponible', 'Enviados CAP', 'op'],
+    ['event-2', new Date('2026-10-01T12:00:00Z'), 'phone-disposed', '', 'MOTO G23', 'Disponible', 'Enviados CAP', 'op'],
+    ['event-3', new Date('2026-10-05T12:00:00Z'), 'phone-disposed', '', 'MOTO G23', 'Enviados CAP', 'Disponible', 'op'],
+    ['event-4', new Date('2026-10-10T12:00:00Z'), 'phone-disposed', '', 'MOTO G23', 'Disponible', 'Enviados CAP', 'op'],
+    ['event-5', new Date('2026-10-20T12:00:00Z'), 'phone-disposed', '', 'MOTO G23', 'Enviados CAP', 'Dañado', 'op']
+  ]);
+
+  const metrics = context.getEquipmentDashboardMetrics_(now);
+
+  assert.equal(metrics.total, 2);
+  assert.equal(metrics.disposicionFinal, 0);
+  assert.equal(metrics.pendientesRetorno, 2);
+  assert.equal(metrics.pendientesFueraDePlazo, 1);
+  assert.equal(metrics.pendientes.find(item => item.id === 'phone-overdue').superaPlazoRetorno, true);
+  assert.equal(metrics.pendientes.find(item => item.id === 'phone-limit').diasEspera, 20);
+  assert.equal(metrics.pendientes.find(item => item.id === 'phone-limit').superaPlazoRetorno, false);
+  assert.equal(metrics.retornosMedidos, 1);
+  assert.equal(metrics.promedioRetornoDias, 4);
+  assert.equal(spreadsheet.getSheetByName(context.CONFIG.equipmentArchiveSheet).getRange(2, 1).getValue(), 'phone-disposed');
 });
 
 test('equipment list refreshes SAM location from the current master row', () => {
@@ -1644,7 +1691,7 @@ test('equipment list refreshes SAM location from the current master row', () => 
     'phone-location-1', '2026-10-23', 'MOTO G23', '', 'BUEN ESTADO', 'Bodega Comunicaciones',
     'operador', new Date(), 'operador', '354696572315130', 'UBICACIÓN ANTERIOR'
   ]]);
-  const master = spreadsheet.insertSheet('Equipos');
+  const master = spreadsheet.insertSheet('Equipos respaldo 20261030_140357');
   master.getRange(1, 1, 2, 4).setValues([
     ['Modelo', 'IMEI_ICCID', 'ubicacion', 'Estado'],
     ['MOTO G23', '354696572315130', 'NUEVA UBICACION', 'Activo']
@@ -1730,4 +1777,65 @@ test('IMEI suffix lookup returns equipment matches and excludes SIM rows', () =>
     postData: { contents: JSON.stringify({ action: 'buscar_equipo_maestro', imeiConsulta: '123', token }) }
   })).status, 'error');
   assert.equal(spreadsheet.getSheetByName(context.CONFIG.equipmentSheet), null);
+});
+
+test('IMEI suffix lookup searches backup master tabs and returns a duplicate IMEI once', () => {
+  const { context, spreadsheet, sessionEntries } = createRuntime();
+  const master = spreadsheet.insertSheet('Equipos');
+  master.getRange(1, 1, 2, 4).setValues([
+    ['Modelo', 'IMEI_ICCID', 'ubicacion', 'Estado'],
+    ['MOTO G54', '123000000123456', 'UBICACION ACTUAL', 'Activo']
+  ]);
+  const backup = spreadsheet.insertSheet('Equipos respaldo 20261030_140357');
+  backup.getRange(1, 1, 3, 4).setValues([
+    ['Modelo', 'IMEI_ICCID', 'ubicacion', 'Estado'],
+    ['MOTO G23', '359099107544479', 'BODEGA DISPOSICION FINAL', 'Activo'],
+    ['MOTO G54', '123000000123456', 'UBICACION ANTERIOR', 'Activo']
+  ]);
+  const token = 'imei-backup-lookup-session';
+  sessionEntries.set(context.sessionKey_(token), JSON.stringify({ usuario: 'operador', rol: 'usuario' }));
+
+  const result = response(context.doPost({
+    postData: { contents: JSON.stringify({ action: 'buscar_equipo_maestro', imeiConsulta: '7544479', token }) }
+  }));
+  const duplicate = response(context.doPost({
+    postData: { contents: JSON.stringify({ action: 'buscar_equipo_maestro', imeiConsulta: '123456', token }) }
+  }));
+
+  assert.equal(result.status, 'success');
+  assert.equal(result.total, 1);
+  assert.deepEqual(result.data[0], {
+    modelo: 'MOTO G23',
+    imei: '359099107544479',
+    ubicacionSam: 'BODEGA DISPOSICION FINAL'
+  });
+  assert.equal(duplicate.total, 1);
+  assert.equal(duplicate.data[0].ubicacionSam, 'UBICACION ACTUAL');
+});
+
+test('IMEI lookup searches every tab in the configured source workbook', () => {
+  const { context, spreadsheet, sessionEntries } = createRuntime();
+  const source = new Spreadsheet(context.CONFIG.equipmentSourceSpreadsheetId);
+  source.sheets.clear();
+  const sourceTab = source.insertSheet('Otra hoja del maestro');
+  sourceTab.getRange(1, 1, 2, 4).setValues([
+    ['Modelo', 'IMEI_ICCID', 'ubicacion', 'Estado'],
+    ['MOTO G23', '359099107544479', 'PUESTO NORTE', 'Activo']
+  ]);
+  const openById = context.SpreadsheetApp.openById;
+  context.SpreadsheetApp.openById = id => id === context.CONFIG.equipmentSourceSpreadsheetId ? source : openById(id);
+  const token = 'imei-source-tab-session';
+  sessionEntries.set(context.sessionKey_(token), JSON.stringify({ usuario: 'operador', rol: 'usuario' }));
+
+  const result = response(context.doPost({
+    postData: { contents: JSON.stringify({ action: 'buscar_equipo_maestro', imeiConsulta: '7544479', token }) }
+  }));
+
+  assert.equal(result.status, 'success');
+  assert.equal(result.total, 1);
+  assert.deepEqual(result.data[0], {
+    modelo: 'MOTO G23',
+    imei: '359099107544479',
+    ubicacionSam: 'PUESTO NORTE'
+  });
 });

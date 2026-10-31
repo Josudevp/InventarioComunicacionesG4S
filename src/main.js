@@ -76,6 +76,17 @@ import { apiRequest } from "./services/api.js";
         };
         let activeHistoryFilter = '';
         let activeHistoryFilterTrigger = null;
+        const equipmentFilterColumns = [
+            { key: 'fecha', label: 'fecha', value: row => String(row.fechaRecepcion || '—') },
+            { key: 'modelo', label: 'modelo', value: row => String(row.modelo || '—') },
+            { key: 'imei', label: 'IMEI', value: row => String(row.imei || '—') },
+            { key: 'ubicacion', label: 'ubicación SAM', value: row => String(row.ubicacionSam || '—') },
+            { key: 'dano', label: 'daño / reparación', value: row => String(row.danoReparacion || '—') },
+            { key: 'estado', label: 'estado actual', value: row => String(row.estado || '—') }
+        ];
+        let equipmentFilters = Object.fromEntries(equipmentFilterColumns.map(column => [column.key, []]));
+        let activeEquipmentFilter = '';
+        let activeEquipmentFilterTrigger = null;
         const historyFilterColumns = [
             { key: 'fecha', label: 'Fecha', emptyLabel: 'Sin fechas disponibles', value: row => {
                 const date = new Date(row.fechaHora);
@@ -1632,18 +1643,25 @@ import { apiRequest } from "./services/api.js";
                         : `${Number(phones.promedioRetornoDias).toLocaleString('es-CO', { maximumFractionDigits: 1 })} días`;
                     document.getElementById('dashboard-phone-return-count').textContent =
                         `${Number(phones.retornosMedidos || 0).toLocaleString('es-CO')} retornos medidos`;
+                    const overdueCount = Number(phones.pendientesFueraDePlazo || 0);
+                    const returnAlert = document.getElementById('dashboard-phone-return-alert');
+                    returnAlert.hidden = overdueCount === 0;
+                    returnAlert.textContent = overdueCount
+                        ? `Alerta: ${overdueCount.toLocaleString('es-CO')} equipo(s) llevan más de 20 días enviados a CAPMOVIL.`
+                        : '';
                     const pendingBody = document.getElementById('dashboard-phone-pending');
                     const pendingPhones = Array.isArray(phones.pendientes) ? phones.pendientes : [];
                     pendingBody.innerHTML = pendingPhones.length
                         ? pendingPhones.map(phone => {
                             const date = phone.fechaEnvio ? new Date(phone.fechaEnvio).toLocaleDateString('es-CO') : '—';
-                            return `<tr>
+                            const overdue = phone.superaPlazoRetorno || Number(phone.diasEspera) > 20;
+                            return `<tr${overdue ? ' class="is-overdue"' : ''}>
                                 <td data-label="Modelo"><strong>${window.escapeHtml(phone.modelo || '')}</strong></td>
                                 <td data-label="IMEI">${window.escapeHtml(phone.imei || '')}</td>
                                 <td data-label="Ubicación SAM">${window.escapeHtml(phone.ubicacionSam || '')}</td>
                                 <td data-label="Estado">${window.escapeHtml(phone.estado || '')}</td>
                                 <td data-label="Enviado">${window.escapeHtml(date)}</td>
-                                <td data-label="Días esperando">${phone.diasEspera == null ? '—' : Number(phone.diasEspera).toLocaleString('es-CO')}</td>
+                                <td data-label="Días esperando">${phone.diasEspera == null ? '—' : `${Number(phone.diasEspera).toLocaleString('es-CO')} días${overdue ? ' · ALERTA' : ''}`}</td>
                             </tr>`;
                         }).join('')
                         : '<tr><td colspan="6">No hay equipos pendientes de retorno.</td></tr>';
@@ -2136,7 +2154,7 @@ import { apiRequest } from "./services/api.js";
                 buttons.forEach(item => { item.disabled = true; });
                 feedback.textContent = 'Consultando datos y preparando el archivo Excel...';
                 try {
-                    XLSX ||= (await import('xlsx/dist/xlsx.core.min.js')).default;
+                    XLSX ||= (await import('xlsx')).default;
                     const kinds = kind === 'completo'
                         ? ['inventario', 'movimientos', 'solicitudes', 'celulares']
                         : kind === 'analitica' ? [] : [kind];
@@ -2479,8 +2497,6 @@ import { apiRequest } from "./services/api.js";
 
         window.renderizarEquipos = function() {
             const body = document.getElementById('equipment-table-body');
-            const search = document.getElementById('equipment-search').value.trim().toLocaleLowerCase('es');
-            const status = document.getElementById('equipment-status-filter').value;
             const availableIds = new Set(equipmentRows.map(item => item.id));
             selectedEquipmentIds.forEach(id => { if (!availableIds.has(id)) selectedEquipmentIds.delete(id); });
             const serviceStatuses = new Set([
@@ -2491,10 +2507,14 @@ import { apiRequest } from "./services/api.js";
                 .filter(item => item.estado === 'Disponible').length.toLocaleString('es-CO');
             document.getElementById('equipment-count-service').textContent = equipmentRows
                 .filter(item => serviceStatuses.has(item.estado)).length.toLocaleString('es-CO');
-            const rows = equipmentRows.filter(item => {
-                const matchesSearch = `${item.modelo} ${item.imei} ${item.ubicacionSam}`.toLocaleLowerCase('es').includes(search);
-                return matchesSearch && (status === 'all' || item.estado === status);
-            });
+            const rows = getEquipmentBaseFilterRows().filter(item =>
+                equipmentFilterColumns.every(column => equipmentMatchesColumn(item, column))
+            );
+            updateEquipmentFilterIndicators();
+            if (activeEquipmentFilter) {
+                renderEquipmentFilterPopover();
+                positionEquipmentFilterPopover();
+            }
             document.getElementById('equipment-result-count').textContent =
                 `${rows.length.toLocaleString('es-CO')} de ${equipmentRows.length.toLocaleString('es-CO')} equipos`;
             if (!rows.length) {
@@ -2541,6 +2561,7 @@ import { apiRequest } from "./services/api.js";
                 if (result.status !== 'success') throw new Error(result.message || 'No se pudo consultar el inventario de celulares');
                 equipmentRows = Array.isArray(result.data) ? result.data : [];
                 if (Array.isArray(result.estados)) equipmentStatusOptions.splice(0, equipmentStatusOptions.length, ...result.estados);
+                pruneEquipmentFilters(0);
                 window.renderizarEquipos();
                 const feedback = document.getElementById('equipment-feedback');
                 feedback.textContent = '';
@@ -2851,6 +2872,92 @@ import { apiRequest } from "./services/api.js";
             return Boolean(option && selected.includes(option.value));
         };
 
+        const getEquipmentBaseFilterRows = () => {
+            const search = document.getElementById('equipment-search').value.trim().toLocaleLowerCase('es');
+            const status = document.getElementById('equipment-status-filter').value;
+            return equipmentRows.filter(item => {
+                const matchesSearch = `${item.modelo} ${item.imei} ${item.ubicacionSam}`.toLocaleLowerCase('es').includes(search);
+                return matchesSearch && (status === 'all' || item.estado === status);
+            });
+        };
+
+        const equipmentMatchesColumn = (row, column) => {
+            const selected = equipmentFilters[column.key];
+            return !selected.length || selected.includes(column.value(row));
+        };
+
+        const getEquipmentFilterOptions = columnKey => {
+            const column = equipmentFilterColumns.find(item => item.key === columnKey);
+            const otherColumns = equipmentFilterColumns.filter(item => item.key !== columnKey);
+            const options = new Set();
+            getEquipmentBaseFilterRows().forEach(row => {
+                if (otherColumns.every(item => equipmentMatchesColumn(row, item))) options.add(column.value(row));
+            });
+            return [...options].sort((first, second) =>
+                first.localeCompare(second, 'es', { numeric: true, sensitivity: 'base' })
+            );
+        };
+
+        const pruneEquipmentFilters = startAtIndex => {
+            equipmentFilterColumns.slice(startAtIndex).forEach(column => {
+                const allowedValues = new Set(getEquipmentFilterOptions(column.key));
+                equipmentFilters[column.key] = equipmentFilters[column.key].filter(value => allowedValues.has(value));
+            });
+        };
+
+        const renderEquipmentFilterPopover = () => {
+            if (!activeEquipmentFilter) return;
+            const column = equipmentFilterColumns.find(item => item.key === activeEquipmentFilter);
+            const options = getEquipmentFilterOptions(column.key);
+            const selectedValues = equipmentFilters[column.key];
+            const container = document.getElementById('equipment-filter-options');
+            document.getElementById('equipment-filter-title').textContent = `Filtrar por ${column.label}`;
+            document.getElementById('equipment-filter-count').textContent =
+                selectedValues.length ? `${selectedValues.length} seleccionada${selectedValues.length === 1 ? '' : 's'}` : `${options.length} opciones`;
+            container.innerHTML = options.length
+                ? options.map((value, index) => {
+                    const id = `equipment-filter-${column.key}-${index}`;
+                    const checked = selectedValues.includes(value);
+                    return `<label class="history-filter-option" for="${id}">
+                        <input id="${id}" type="checkbox" value="${window.escapeHtml(value)}" ${checked ? 'checked' : ''}>
+                        <span>${window.escapeHtml(value)}</span>
+                    </label>`;
+                }).join('')
+                : '<p class="history-filter-empty">No hay opciones disponibles para esta columna.</p>';
+        };
+
+        const positionEquipmentFilterPopover = () => {
+            const popover = document.getElementById('equipment-filter-popover');
+            if (!activeEquipmentFilterTrigger || popover.hidden) return;
+            const anchor = activeEquipmentFilterTrigger.getBoundingClientRect();
+            const margin = 12;
+            const width = Math.min(340, window.innerWidth - margin * 2);
+            popover.style.width = `${width}px`;
+            popover.style.left = `${Math.max(margin, Math.min(anchor.left, window.innerWidth - width - margin))}px`;
+            popover.style.top = `${Math.min(anchor.bottom + 8, window.innerHeight - popover.offsetHeight - margin)}px`;
+            if (popover.getBoundingClientRect().top < margin) popover.style.top = `${margin}px`;
+        };
+
+        const updateEquipmentFilterIndicators = () => {
+            let activeColumns = 0;
+            let activeSelections = 0;
+            equipmentFilterColumns.forEach(column => {
+                const count = equipmentFilters[column.key].length;
+                if (count) activeColumns++;
+                activeSelections += count;
+                const trigger = document.querySelector(`[data-equipment-filter-trigger="${column.key}"]`);
+                trigger.classList.toggle('is-active', count > 0);
+                trigger.setAttribute('aria-label', count
+                    ? `Filtrar por ${column.label}; ${count} seleccionada${count === 1 ? '' : 's'}`
+                    : `Filtrar por ${column.label}`);
+                trigger.dataset.selectedCount = count ? String(count) : '';
+            });
+            document.getElementById('equipment-clear-column-filters').hidden = activeSelections === 0;
+            document.getElementById('equipment-filter-summary').textContent = activeSelections
+                ? `${activeColumns} columna${activeColumns === 1 ? '' : 's'} · ${activeSelections} opción${activeSelections === 1 ? '' : 'es'} seleccionada${activeSelections === 1 ? '' : 's'}`
+                : 'Filtra seleccionando una o varias opciones por columna';
+        };
+
         const getHistoryFilterOptions = columnKey => {
             const otherColumns = historyFilterColumns.filter(column => column.key !== columnKey);
             const options = new Map();
@@ -3016,6 +3123,56 @@ import { apiRequest } from "./services/api.js";
         };
 
         document.getElementById('btn-history-search').addEventListener('click', window.cargarHistorial);
+        const equipmentPopover = document.getElementById('equipment-filter-popover');
+        const closeEquipmentFilterPopover = () => {
+            equipmentPopover.hidden = true;
+            activeEquipmentFilter = '';
+            activeEquipmentFilterTrigger?.setAttribute('aria-expanded', 'false');
+            activeEquipmentFilterTrigger = null;
+        };
+        const openEquipmentFilterPopover = trigger => {
+            const column = trigger.dataset.equipmentFilterTrigger;
+            if (activeEquipmentFilter === column && !equipmentPopover.hidden) {
+                closeEquipmentFilterPopover();
+                return;
+            }
+            activeEquipmentFilterTrigger?.setAttribute('aria-expanded', 'false');
+            activeEquipmentFilter = column;
+            activeEquipmentFilterTrigger = trigger;
+            trigger.setAttribute('aria-expanded', 'true');
+            renderEquipmentFilterPopover();
+            equipmentPopover.hidden = false;
+            positionEquipmentFilterPopover();
+        };
+        document.querySelectorAll('[data-equipment-filter-trigger]').forEach(trigger => {
+            trigger.setAttribute('aria-expanded', 'false');
+            trigger.addEventListener('click', () => openEquipmentFilterPopover(trigger));
+        });
+        equipmentPopover.addEventListener('change', event => {
+            if (!event.target.matches('input[type="checkbox"]') || !activeEquipmentFilter) return;
+            const selectedValues = equipmentFilters[activeEquipmentFilter];
+            if (event.target.checked) {
+                if (!selectedValues.includes(event.target.value)) selectedValues.push(event.target.value);
+            } else {
+                equipmentFilters[activeEquipmentFilter] = selectedValues.filter(value => value !== event.target.value);
+            }
+            pruneEquipmentFilters(0);
+            window.renderizarEquipos();
+        });
+        document.getElementById('equipment-clear-column-filters').addEventListener('click', () => {
+            equipmentFilterColumns.forEach(column => { equipmentFilters[column.key] = []; });
+            closeEquipmentFilterPopover();
+            window.renderizarEquipos();
+        });
+        document.getElementById('equipment-filter-clear').addEventListener('click', () => {
+            if (!activeEquipmentFilter) return;
+            const columnIndex = equipmentFilterColumns.findIndex(column => column.key === activeEquipmentFilter);
+            equipmentFilters[activeEquipmentFilter] = [];
+            pruneEquipmentFilters(columnIndex + 1);
+            window.renderizarEquipos();
+        });
+        document.getElementById('equipment-filter-done').addEventListener('click', closeEquipmentFilterPopover);
+        document.getElementById('equipment-filter-close').addEventListener('click', closeEquipmentFilterPopover);
         document.getElementById('history-date-sort').addEventListener('click', () => {
             historyDateSortDirection *= -1;
             window.renderizarHistorial();
@@ -3074,11 +3231,22 @@ import { apiRequest } from "./services/api.js";
             if (historyPopover.hidden || historyPopover.contains(event.target) || event.target.closest('[data-history-filter-trigger]')) return;
             closeHistoryFilterPopover();
         });
+        document.addEventListener('click', event => {
+            if (equipmentPopover.hidden || equipmentPopover.contains(event.target) || event.target.closest('[data-equipment-filter-trigger]')) return;
+            closeEquipmentFilterPopover();
+        });
         document.addEventListener('keydown', event => {
             if (event.key === 'Escape' && !historyPopover.hidden) closeHistoryFilterPopover();
+            if (event.key === 'Escape' && !equipmentPopover.hidden) closeEquipmentFilterPopover();
         });
-        window.addEventListener('resize', positionHistoryFilterPopover);
-        window.addEventListener('scroll', positionHistoryFilterPopover, true);
+        window.addEventListener('resize', () => {
+            positionHistoryFilterPopover();
+            positionEquipmentFilterPopover();
+        });
+        window.addEventListener('scroll', () => {
+            positionHistoryFilterPopover();
+            positionEquipmentFilterPopover();
+        }, true);
 
         document.querySelectorAll('[role="tab"]').forEach(tab => {
             tab.addEventListener('keydown', event => {

@@ -260,6 +260,14 @@
     @apply mb-2 text-sm font-extrabold text-slate-800;
   }
 
+  .equipment-return-alert {
+    @apply mb-3 border-l-4 border-amber-500 bg-amber-50 px-3 py-2 text-sm font-bold text-amber-900;
+  }
+
+  .equipment-dashboard-table tr.is-overdue {
+    @apply bg-amber-50;
+  }
+
   .equipment-dashboard-table {
     min-width: 760px;
   }
@@ -466,6 +474,14 @@
 
   :root[data-theme="dark"] #app-screen .equipment-dashboard-kpis article {
     @apply bg-slate-800;
+  }
+
+  :root[data-theme="dark"] #app-screen .equipment-return-alert {
+    @apply border-amber-400 bg-amber-950 text-amber-100;
+  }
+
+  :root[data-theme="dark"] #app-screen .equipment-dashboard-table tr.is-overdue {
+    @apply bg-amber-950;
   }
 
   :root[data-theme="dark"] #app-screen .equipment-dashboard-heading > p,

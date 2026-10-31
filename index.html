@@ -200,6 +200,7 @@
                     </div>
                     <div class="equipment-dashboard-waiting">
                         <h3>Equipos pendientes de retorno</h3>
+                        <p id="dashboard-phone-return-alert" class="equipment-return-alert" role="status" hidden></p>
                         <div class="catalog-table-wrap">
                             <table class="catalog-table equipment-dashboard-table">
                                 <thead><tr><th>Modelo</th><th>IMEI</th><th>Ubicación SAM</th><th>Estado</th><th>Enviado</th><th>Días esperando</th></tr></thead>
@@ -685,12 +686,29 @@
                         <button type="button" class="btn-secondary" id="btn-apply-equipment-status" disabled><i class="fa-solid fa-check-double" aria-hidden="true"></i> Aplicar estado</button>
                     </div>
                     <p id="equipment-bulk-feedback" class="helper-text" role="status" aria-live="polite"></p>
+                    <div class="history-filter-toolbar">
+                        <span id="equipment-filter-summary">Filtra seleccionando una o varias opciones por columna</span>
+                        <button type="button" class="btn-secondary history-clear-column-filters" id="equipment-clear-column-filters" hidden><i class="fa-solid fa-filter-circle-xmark"></i> Limpiar filtros</button>
+                    </div>
                     <div class="catalog-table-wrap">
                         <table class="catalog-table equipment-table">
-                            <thead><tr><th><input id="equipment-select-all-visible" type="checkbox" aria-label="Seleccionar equipos visibles"></th><th>Fecha</th><th>Modelo</th><th>IMEI</th><th>Ubicación SAM</th><th>Daño / reparación</th><th>Estado actual</th></tr></thead>
+                            <thead><tr>
+                                <th><input id="equipment-select-all-visible" type="checkbox" aria-label="Seleccionar equipos visibles"></th>
+                                <th><div class="history-heading">Fecha<button type="button" class="history-filter-trigger" data-equipment-filter-trigger="fecha" aria-label="Filtrar por fecha" aria-haspopup="dialog"><i class="fa-solid fa-filter" aria-hidden="true"></i></button></div></th>
+                                <th><div class="history-heading">Modelo<button type="button" class="history-filter-trigger" data-equipment-filter-trigger="modelo" aria-label="Filtrar por modelo" aria-haspopup="dialog"><i class="fa-solid fa-filter" aria-hidden="true"></i></button></div></th>
+                                <th><div class="history-heading">IMEI<button type="button" class="history-filter-trigger" data-equipment-filter-trigger="imei" aria-label="Filtrar por IMEI" aria-haspopup="dialog"><i class="fa-solid fa-filter" aria-hidden="true"></i></button></div></th>
+                                <th><div class="history-heading">Ubicación SAM<button type="button" class="history-filter-trigger" data-equipment-filter-trigger="ubicacion" aria-label="Filtrar por ubicación SAM" aria-haspopup="dialog"><i class="fa-solid fa-filter" aria-hidden="true"></i></button></div></th>
+                                <th><div class="history-heading">Daño / reparación<button type="button" class="history-filter-trigger" data-equipment-filter-trigger="dano" aria-label="Filtrar por daño o reparación" aria-haspopup="dialog"><i class="fa-solid fa-filter" aria-hidden="true"></i></button></div></th>
+                                <th><div class="history-heading">Estado actual<button type="button" class="history-filter-trigger" data-equipment-filter-trigger="estado" aria-label="Filtrar por estado actual" aria-haspopup="dialog"><i class="fa-solid fa-filter" aria-hidden="true"></i></button></div></th>
+                            </tr></thead>
                             <tbody id="equipment-table-body"><tr><td colspan="7">Cargando equipos...</td></tr></tbody>
                         </table>
                     </div>
+                    <section id="equipment-filter-popover" class="history-filter-popover" role="dialog" aria-modal="false" aria-labelledby="equipment-filter-title" hidden>
+                        <header><div><strong id="equipment-filter-title">Filtrar</strong><small id="equipment-filter-count"></small></div><button type="button" id="equipment-filter-close" aria-label="Cerrar filtros"><i class="fa-solid fa-xmark"></i></button></header>
+                        <div id="equipment-filter-options" class="history-filter-options"></div>
+                        <footer><button type="button" id="equipment-filter-clear">Limpiar columna</button><button type="button" id="equipment-filter-done">Listo</button></footer>
+                    </section>
                 </div>
             </section>
         </main>

@@ -682,11 +682,20 @@ function getEquipmentDashboardMetrics_(now) {
   var sheet = equipmentSheet_();
   sincronizarUbicacionesEquipos_(sheet);
   var equipmentRows = sheet.getDataRange().getValues();
+  var archivedRows = equipmentArchiveSheet_().getDataRange().getValues();
   var historyRows = equipmentHistorySheet_().getDataRange().getValues();
   var serviceStates = ["Enviados CAP", "Garantía"];
   var returnStates = ["Disponible", "Dañado", "Despachado a puesto"];
   var openCycles = Object.create(null);
+  var conditionDispositionIds = Object.create(null);
   var completedDurations = [];
+
+  for (var archivedIndex = 1; archivedIndex < archivedRows.length; archivedIndex++) {
+    if (isFinalDispositionText_(archivedRows[archivedIndex][4]) &&
+        !isFinalDispositionText_(archivedRows[archivedIndex][5])) {
+      conditionDispositionIds[clean_(archivedRows[archivedIndex][0], 100)] = true;
+    }
+  }
 
   for (var i = 1; i < historyRows.length; i++) {
     var history = historyRows[i];
@@ -701,12 +710,23 @@ function getEquipmentDashboardMetrics_(now) {
     }
     if (!openCycles[equipmentId]) continue;
     if (returnStates.indexOf(nextStatus) >= 0 && eventDate >= openCycles[equipmentId].fechaEnvio) {
-      completedDurations.push((eventDate.getTime() - openCycles[equipmentId].fechaEnvio.getTime()) / 86400000);
+      completedDurations.push({
+        id: equipmentId,
+        dias: (eventDate.getTime() - openCycles[equipmentId].fechaEnvio.getTime()) / 86400000
+      });
       delete openCycles[equipmentId];
-    } else if (nextStatus === "Disposición final") {
+    } else if (isFinalDispositionText_(nextStatus)) {
       delete openCycles[equipmentId];
     }
   }
+
+  var ignoredDispositionReturn = Object.create(null);
+  completedDurations.forEach(function(cycle, index) {
+    if (conditionDispositionIds[cycle.id]) ignoredDispositionReturn[cycle.id] = index;
+  });
+  var measuredDurations = completedDurations.filter(function(cycle, index) {
+    return ignoredDispositionReturn[cycle.id] !== index;
+  }).map(function(cycle) { return cycle.dias; });
 
   var metrics = {
     total: 0,
@@ -715,9 +735,10 @@ function getEquipmentDashboardMetrics_(now) {
     enGarantia: 0,
     disposicionFinal: 0,
     pendientesRetorno: 0,
-    retornosMedidos: completedDurations.length,
-    promedioRetornoDias: completedDurations.length
-      ? Math.round(completedDurations.reduce(function(total, value) { return total + value; }, 0) / completedDurations.length * 10) / 10
+    pendientesFueraDePlazo: 0,
+    retornosMedidos: measuredDurations.length,
+    promedioRetornoDias: measuredDurations.length
+      ? Math.round(measuredDurations.reduce(function(total, value) { return total + value; }, 0) / measuredDurations.length * 10) / 10
       : null,
     pendientes: []
   };
@@ -743,12 +764,14 @@ function getEquipmentDashboardMetrics_(now) {
       ubicacionSam: clean_(equipment[10], 200),
       estado: status,
       fechaEnvio: isNaN(sentAt.getTime()) ? "" : sentAt,
-      diasEspera: waitingDays
+      diasEspera: waitingDays,
+      superaPlazoRetorno: status === "Enviados CAP" && waitingDays !== null && waitingDays > 20
     };
   }
   var pendingRows = Object.keys(pendingById).map(function(id) { return pendingById[id]; })
     .sort(function(first, second) { return (second.diasEspera || 0) - (first.diasEspera || 0); });
   metrics.pendientesRetorno = pendingRows.length;
+  metrics.pendientesFueraDePlazo = pendingRows.filter(function(item) { return item.superaPlazoRetorno; }).length;
   metrics.pendientes = pendingRows.slice(0, 10);
   return metrics;
 }
@@ -2166,13 +2189,10 @@ function archivarEquiposDisposicionFinal() {
 function archivarEquiposDisposicionFinal_() {
   var sheet = equipmentSheet_();
   var rows = sheet.getDataRange().getValues();
-  var cutoff = Date.now() - 30 * 86400000;
   var archived = 0;
   for (var i = rows.length - 1; i >= 1; i--) {
-    if (clean_(rows[i][5], 100) !== "Disposición final") continue;
-    var disposedAt = rows[i][7] instanceof Date ? rows[i][7] : new Date(rows[i][7]);
-    if (isNaN(disposedAt.getTime()) || disposedAt.getTime() > cutoff) continue;
-    archiveEquipmentRow_(sheet, i + 1, rows[i], "Disposición final por más de 30 días", "Automático");
+    if (!isEquipmentFinalDisposition_(rows[i])) continue;
+    archiveEquipmentRow_(sheet, i + 1, rows[i], "Disposición final; no volverá a la empresa", "Automático");
     archived++;
   }
   return archived;
@@ -2212,31 +2232,35 @@ function equipmentArchiveSheet_() {
 }
 
 function sincronizarUbicacionesEquipos_(equipmentSheet) {
-  var master = mainSpreadsheet_().getSheetByName(CONFIG.equipmentMasterSheet);
-  if (!master) return;
-  var header = equipmentMasterHeader_(master);
-  if (!header || !header.locationColumn) return;
-  var masterRowCount = master.getLastRow() - header.row;
-  if (masterRowCount < 1) return;
-  var imeiValues = header.imeiColumns.map(function(column) {
-    return master.getRange(header.row + 1, column, masterRowCount, 1).getDisplayValues();
-  });
-  var modelValues = header.modelColumn
-    ? master.getRange(header.row + 1, header.modelColumn, masterRowCount, 1).getDisplayValues()
-    : null;
-  var typeValues = header.typeColumn
-    ? master.getRange(header.row + 1, header.typeColumn, masterRowCount, 1).getDisplayValues()
-    : null;
-  var locationValues = master.getRange(header.row + 1, header.locationColumn, masterRowCount, 1).getDisplayValues();
+  var masterSheets = equipmentMasterSheets_();
+  if (!masterSheets.length) return;
   var locations = Object.create(null);
-  for (var masterRow = 0; masterRow < masterRowCount; masterRow++) {
-    if ((modelValues && isSimRecord_(modelValues[masterRow][0])) ||
-        (typeValues && isSimRecord_(typeValues[masterRow][0]))) continue;
-    imeiValues.forEach(function(columnValues) {
-      var imei = String(columnValues[masterRow][0] || "").replace(/\D/g, "");
-      if (imei) locations[imei] = clean_(locationValues[masterRow][0], 200);
+  masterSheets.forEach(function(master) {
+    var header = equipmentMasterHeader_(master);
+    if (!header || !header.locationColumn) return;
+    var masterRowCount = master.getLastRow() - header.row;
+    if (masterRowCount < 1) return;
+    var imeiValues = header.imeiColumns.map(function(column) {
+      return master.getRange(header.row + 1, column, masterRowCount, 1).getDisplayValues();
     });
-  }
+    var modelValues = header.modelColumn
+      ? master.getRange(header.row + 1, header.modelColumn, masterRowCount, 1).getDisplayValues()
+      : null;
+    var typeValues = header.typeColumn
+      ? master.getRange(header.row + 1, header.typeColumn, masterRowCount, 1).getDisplayValues()
+      : null;
+    var locationValues = master.getRange(header.row + 1, header.locationColumn, masterRowCount, 1).getDisplayValues();
+    for (var masterRow = 0; masterRow < masterRowCount; masterRow++) {
+      if ((modelValues && isSimRecord_(modelValues[masterRow][0])) ||
+          (typeValues && isSimRecord_(typeValues[masterRow][0]))) continue;
+      imeiValues.forEach(function(columnValues) {
+        var imei = String(columnValues[masterRow][0] || "").replace(/\D/g, "");
+        if (imei && !Object.prototype.hasOwnProperty.call(locations, imei)) {
+          locations[imei] = clean_(locationValues[masterRow][0], 200);
+        }
+      });
+    }
+  });
   var rows = equipmentSheet.getDataRange().getValues();
   for (var equipmentRow = 1; equipmentRow < rows.length; equipmentRow++) {
     var equipmentImei = String(rows[equipmentRow][9] || "").replace(/\D/g, "");
@@ -2251,46 +2275,74 @@ function searchEquipmentMaster_(data) {
   var suffix = String(data.imeiConsulta || "").replace(/\D/g, "");
   if (!/^\d{6,15}$/.test(suffix)) throw new Error("Escribe al menos 6 dígitos del IMEI; puedes ingresar hasta los 15");
 
-  var sheet = mainSpreadsheet_().getSheetByName(CONFIG.equipmentMasterSheet);
-  if (!sheet) throw new Error("No se encontró la hoja " + CONFIG.equipmentMasterSheet + " en el spreadsheet de la aplicación");
-  var header = equipmentMasterHeader_(sheet);
-  if (!header) throw new Error("No se encontró la columna IMEI_ICCID en la hoja Equipos");
-
-  var rowCount = sheet.getLastRow() - header.row;
-  if (rowCount < 1) return json_({ status: "success", data: [], total: 0 });
-  var imeiColumns = header.imeiColumns.map(function(column) {
-    return sheet.getRange(header.row + 1, column, rowCount, 1).getDisplayValues();
-  });
-  var typeValues = header.typeColumn
-    ? sheet.getRange(header.row + 1, header.typeColumn, rowCount, 1).getDisplayValues()
-    : null;
-  var modelValues = header.modelColumn
-    ? sheet.getRange(header.row + 1, header.modelColumn, rowCount, 1).getDisplayValues()
-    : null;
-  var locationValues = header.locationColumn
-    ? sheet.getRange(header.row + 1, header.locationColumn, rowCount, 1).getDisplayValues()
-    : null;
   var matches = [];
-
-  for (var row = 0; row < rowCount; row++) {
-    if ((typeValues && isSimRecord_(typeValues[row][0])) ||
-        (modelValues && isSimRecord_(modelValues[row][0]))) continue;
-    var fullImei = "";
-    for (var column = 0; column < imeiColumns.length; column++) {
-      var candidate = String(imeiColumns[column][row][0] || "").replace(/\D/g, "");
-      if (candidate.endsWith(suffix)) {
-        fullImei = candidate;
-        break;
-      }
-    }
-    if (!fullImei) continue;
-    matches.push({
-      modelo: modelValues ? clean_(modelValues[row][0], 100) : "",
-      imei: fullImei,
-      ubicacionSam: locationValues ? clean_(locationValues[row][0], 200) : ""
+  var seenImeis = Object.create(null);
+  equipmentMasterSheets_().forEach(function(sheet) {
+    var header = equipmentMasterHeader_(sheet);
+    if (!header) return;
+    var rowCount = sheet.getLastRow() - header.row;
+    if (rowCount < 1) return;
+    var imeiColumns = header.imeiColumns.map(function(column) {
+      return sheet.getRange(header.row + 1, column, rowCount, 1).getDisplayValues();
     });
-  }
+    var typeValues = header.typeColumn
+      ? sheet.getRange(header.row + 1, header.typeColumn, rowCount, 1).getDisplayValues()
+      : null;
+    var modelValues = header.modelColumn
+      ? sheet.getRange(header.row + 1, header.modelColumn, rowCount, 1).getDisplayValues()
+      : null;
+    var locationValues = header.locationColumn
+      ? sheet.getRange(header.row + 1, header.locationColumn, rowCount, 1).getDisplayValues()
+      : null;
+
+    for (var row = 0; row < rowCount; row++) {
+      if ((typeValues && isSimRecord_(typeValues[row][0])) ||
+          (modelValues && isSimRecord_(modelValues[row][0]))) continue;
+      var fullImei = "";
+      for (var column = 0; column < imeiColumns.length; column++) {
+        var candidate = String(imeiColumns[column][row][0] || "").replace(/\D/g, "");
+        if (candidate.endsWith(suffix)) {
+          fullImei = candidate;
+          break;
+        }
+      }
+      if (!fullImei || seenImeis[fullImei]) continue;
+      seenImeis[fullImei] = true;
+      matches.push({
+        modelo: modelValues ? clean_(modelValues[row][0], 100) : "",
+        imei: fullImei,
+        ubicacionSam: locationValues ? clean_(locationValues[row][0], 200) : ""
+      });
+    }
+  });
   return json_({ status: "success", data: matches.slice(0, 20), total: matches.length });
+}
+
+function equipmentMasterSheets_() {
+  var excludedSheets = [
+    CONFIG.equipmentSheet,
+    CONFIG.equipmentHistorySheet,
+    CONFIG.equipmentArchiveSheet
+  ];
+  var appSpreadsheet = mainSpreadsheet_();
+  var sourceSpreadsheet = SpreadsheetApp.openById(CONFIG.equipmentSourceSpreadsheetId);
+  var spreadsheets = [sourceSpreadsheet];
+  if (sourceSpreadsheet.getId() !== appSpreadsheet.getId()) spreadsheets.push(appSpreadsheet);
+  var sheets = [];
+  spreadsheets.forEach(function(spreadsheet) {
+    var isAppSpreadsheet = spreadsheet.getId() === appSpreadsheet.getId();
+    var workbookSheets = spreadsheet.getSheets().filter(function(sheet) {
+      if (isAppSpreadsheet && excludedSheets.indexOf(sheet.getName()) >= 0) return false;
+      return Boolean(equipmentMasterHeader_(sheet));
+    });
+    workbookSheets.sort(function(first, second) {
+      if (first.getName() === CONFIG.equipmentMasterSheet) return -1;
+      if (second.getName() === CONFIG.equipmentMasterSheet) return 1;
+      return 0;
+    });
+    sheets = sheets.concat(workbookSheets);
+  });
+  return sheets;
 }
 
 function equipmentMasterHeader_(sheet) {
@@ -2336,7 +2388,14 @@ function isSimRecord_(value) {
 }
 
 function equipmentDateDisplay_(value) {
-  var date = value instanceof Date ? value : new Date(value);
+  var date = value;
+  if (!(date instanceof Date)) {
+    var dateText = clean_(value, 20);
+    var dateParts = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateText);
+    date = dateParts
+      ? new Date(Number(dateParts[1]), Number(dateParts[2]) - 1, Number(dateParts[3]))
+      : new Date(value);
+  }
   if (isNaN(date.getTime())) return clean_(value, 20);
   return Utilities.formatDate(date, Session.getScriptTimeZone(), "dd/MM/yyyy");
 }
@@ -2369,6 +2428,7 @@ function registerEquipment_(data, session) {
     var row = [id, date, model, "", condition, status, session.usuario, now, session.usuario, imei, location];
     sheet.getRange(sheet.getLastRow() + 1, 1, 1, CONFIG.equipmentHeaders.length).setValues([row]);
     appendEquipmentHistory_(id, "", model, "", status, session.usuario, now);
+    archivarEquiposDisposicionFinal_();
     return json_({ status: "success", data: equipmentRecord_(row) });
   } finally {
     lock.releaseLock();
@@ -2424,6 +2484,7 @@ function registerEquipmentBatch_(data, session) {
       .setValues(records.map(function(record) {
         return [Utilities.getUuid(), now, record[0], "", record[2], "", record[5], session.usuario];
       }));
+    archivarEquiposDisposicionFinal_();
     return json_({ status: "success", count: records.length, ids: records.map(function(record) { return record[0]; }) });
   } finally {
     lock.releaseLock();
@@ -2449,6 +2510,7 @@ function updateEquipmentStatus_(data, session) {
         appendEquipmentHistory_(id, "", clean_(rows[i][2], 100),
           previousStatus, status, session.usuario, now);
       }
+      archivarEquiposDisposicionFinal_();
       return json_({ status: "success" });
     }
     throw new Error("No se encontró el equipo");
@@ -2495,6 +2557,7 @@ function updateEquipmentStatuses_(data, session) {
       var history = equipmentHistorySheet_();
       history.getRange(history.getLastRow() + 1, 1, changed.length, CONFIG.equipmentHistoryHeaders.length).setValues(changed);
     }
+    archivarEquiposDisposicionFinal_();
     return json_({ status: "success", requested: ids.length, updated: changed.length, estado: status });
   } finally {
     lock.releaseLock();
@@ -2631,6 +2694,15 @@ function canonicalEquipmentStatus_(status) {
   if (value === "Comunicaciones dañado") return "Dañado";
   if (value === "Enviado CAP" || value === "Enviado a CAPMOVIL (reparación)" || value === "Enviado a CAPMOVIL") return "Enviados CAP";
   return value;
+}
+
+function isFinalDispositionText_(value) {
+  return String(value || "").toLowerCase().normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "").trim().indexOf("disposicion final") === 0;
+}
+
+function isEquipmentFinalDisposition_(row) {
+  return isFinalDispositionText_(row[5]) || isFinalDispositionText_(row[4]);
 }
 
 function normalizeEquipmentStatuses_(sheet) {
