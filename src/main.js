@@ -3,7 +3,7 @@ import "@fortawesome/fontawesome-free/css/fontawesome.css";
 import "@fortawesome/fontawesome-free/css/solid.css";
 import "choices.js/public/assets/styles/choices.min.css";
 import "./tailwind.css";
-import { apiRequest } from "./services/api.js";
+import { apiRequest, invalidateApiCache } from "./services/api.js";
 
         const LOGO_URL = "assets/LOGO.png";
         const THEME_STORAGE_KEY = 'g4sTheme';
@@ -55,6 +55,9 @@ import { apiRequest } from "./services/api.js";
         let html5QrcodeScanner = null;
         let catalogoActual = [];
         let equipmentRows = [];
+        let capPendingRows = [];
+        let capPendingPage = 1;
+        const CAP_PENDING_PAGE_SIZE = 15;
         let equipmentMasterMatches = [];
         let pendingEquipmentBatch = [];
         const selectedEquipmentIds = new Set();
@@ -68,6 +71,10 @@ import { apiRequest } from "./services/api.js";
         let requestDraft = [];
         let alertTimer = null;
         let catalogRequest = null;
+        let catalogLoadedAt = 0;
+        let dashboardRequest = null;
+        let dashboardLoadedAt = 0;
+        const CLIENT_CACHE_MS = 30000;
         let historyMovementRows = [];
         let historyDateSortDirection = -1;
         let historyFilters = {
@@ -434,8 +441,13 @@ import { apiRequest } from "./services/api.js";
             window.cargarDashboard();
         }
 
-        window.cargarCatalogo = function() {
+        window.cargarCatalogo = function(force = false) {
             if (catalogRequest) return catalogRequest;
+            if (force) {
+                catalogLoadedAt = 0;
+                invalidateApiCache();
+            }
+            if (catalogLoadedAt && Date.now() - catalogLoadedAt < CLIENT_CACHE_MS) return Promise.resolve();
             if (!sessionStorage.getItem("g4sSessionToken")) {
                 window.mostrarAlerta("La sesión anterior caducó. Inicia sesión nuevamente.", "error");
                 window.cerrarSesion();
@@ -450,6 +462,7 @@ import { apiRequest } from "./services/api.js";
                     if (data.permissions) canReconcileInventory = Boolean(data.permissions.canReconcileInventory);
                     window.actualizarPermisosCatalogo();
                     catalogoActual = Array.isArray(data.data) ? data.data : [];
+                    catalogLoadedAt = Date.now();
                     window.inicializarBuscador(catalogoActual);
                     window.renderizarCatalogo();
                     window.renderizarSolicitudBorrador();
@@ -457,6 +470,12 @@ import { apiRequest } from "./services/api.js";
                     window.mostrarEstadoBuscador(data.message || 'No se pudo cargar el catálogo');
                     window.mostrarAlerta("❌ " + (data.message || "No se pudo cargar el catálogo"), "error");
                 }
+
+                window.invalidateLoadingCaches = function() {
+                    catalogLoadedAt = 0;
+                    dashboardLoadedAt = 0;
+                    invalidateApiCache();
+                };
             }).catch(e => {
                 console.error("Error catálogo:", e);
                 window.mostrarEstadoBuscador('No se pudo conectar con el catálogo. Intenta sincronizar de nuevo.');
@@ -1613,11 +1632,14 @@ import { apiRequest } from "./services/api.js";
                 'Selecciona un accesorio para ver las unidades entregadas.';
         };
 
-        window.cargarDashboard = function() {
+        window.cargarDashboard = function(force = false) {
+            if (dashboardRequest) return dashboardRequest;
+            if (force) invalidateApiCache();
+            if (!force && dashboardLoadedAt && Date.now() - dashboardLoadedAt < CLIENT_CACHE_MS) return Promise.resolve();
             const feedback = document.getElementById('dashboard-feedback');
             feedback.hidden = true;
             feedback.textContent = '';
-            apiRequest({ action: 'obtener_dashboard' })
+            dashboardRequest = apiRequest({ action: 'obtener_dashboard' })
                 .then(response => response.json()).then(result => {
                     if (result.status !== 'success') throw new Error(result.message || 'No se pudieron cargar los indicadores');
                     const data = result.data || {};
@@ -1633,38 +1655,6 @@ import { apiRequest } from "./services/api.js";
                         : averageHours >= 24 ? `${(averageHours / 24).toFixed(1)} días` : `${averageHours.toLocaleString('es-CO', { maximumFractionDigits: 1 })} h`;
                     document.getElementById('kpi-entrega-promedio').textContent = averageDelivery;
                     document.getElementById('kpi-entregadas-mes').textContent = Number(data.solicitudesEntregadasMes || 0).toLocaleString('es-CO');
-                    const phones = data.celulares || {};
-                    document.getElementById('dashboard-phone-total').textContent = Number(phones.total || 0).toLocaleString('es-CO');
-                    document.getElementById('dashboard-phone-warehouse').textContent = Number(phones.bodega || 0).toLocaleString('es-CO');
-                    document.getElementById('dashboard-phone-service').textContent =
-                        (Number(phones.enReparacion || 0) + Number(phones.enGarantia || 0)).toLocaleString('es-CO');
-                    document.getElementById('dashboard-phone-return-average').textContent = phones.promedioRetornoDias == null
-                        ? 'Sin datos'
-                        : `${Number(phones.promedioRetornoDias).toLocaleString('es-CO', { maximumFractionDigits: 1 })} días`;
-                    document.getElementById('dashboard-phone-return-count').textContent =
-                        `${Number(phones.retornosMedidos || 0).toLocaleString('es-CO')} retornos medidos`;
-                    const overdueCount = Number(phones.pendientesFueraDePlazo || 0);
-                    const returnAlert = document.getElementById('dashboard-phone-return-alert');
-                    returnAlert.hidden = overdueCount === 0;
-                    returnAlert.textContent = overdueCount
-                        ? `Alerta: ${overdueCount.toLocaleString('es-CO')} equipo(s) llevan más de 20 días enviados a CAPMOVIL.`
-                        : '';
-                    const pendingBody = document.getElementById('dashboard-phone-pending');
-                    const pendingPhones = Array.isArray(phones.pendientes) ? phones.pendientes : [];
-                    pendingBody.innerHTML = pendingPhones.length
-                        ? pendingPhones.map(phone => {
-                            const date = phone.fechaEnvio ? new Date(phone.fechaEnvio).toLocaleDateString('es-CO') : '—';
-                            const overdue = phone.superaPlazoRetorno || Number(phone.diasEspera) > 20;
-                            return `<tr${overdue ? ' class="is-overdue"' : ''}>
-                                <td data-label="Modelo"><strong>${window.escapeHtml(phone.modelo || '')}</strong></td>
-                                <td data-label="IMEI">${window.escapeHtml(phone.imei || '')}</td>
-                                <td data-label="Ubicación SAM">${window.escapeHtml(phone.ubicacionSam || '')}</td>
-                                <td data-label="Estado">${window.escapeHtml(phone.estado || '')}</td>
-                                <td data-label="Enviado">${window.escapeHtml(date)}</td>
-                                <td data-label="Días esperando">${phone.diasEspera == null ? '—' : `${Number(phone.diasEspera).toLocaleString('es-CO')} días${overdue ? ' · ALERTA' : ''}`}</td>
-                            </tr>`;
-                        }).join('')
-                        : '<tr><td colspan="6">No hay equipos pendientes de retorno.</td></tr>';
                     const states = data.solicitudesPorEstado || {};
                     dashboardChartData = Array.isArray(data.unidadesPorMes) ? data.unidadesPorMes : [];
                     dashboardRequestStates = states;
@@ -1672,12 +1662,111 @@ import { apiRequest } from "./services/api.js";
                     window.renderizarGraficoSolicitudes(states);
                     window.renderizarGraficoRegional(data.entregasPorRegional);
                     window.renderizarGraficoAccesorios(data.accesoriosMasEntregadosPorPeriodo, data.accesoriosMasEntregados);
+                    dashboardLoadedAt = Date.now();
                     feedback.hidden = true;
                 }).catch(error => {
                     console.error('Dashboard no disponible:', error);
                     feedback.textContent = `No se pudieron cargar los indicadores: ${error.message}. Verifica que Apps Script tenga desplegada la acción obtener_dashboard.`;
                     feedback.hidden = false;
                     feedback.classList.add('is-error');
+                }).finally(() => {
+                    dashboardRequest = null;
+                });
+            return dashboardRequest;
+        };
+
+        const formatCapDate = value => value ? new Date(value).toLocaleDateString('es-CO') : '—';
+
+        window.renderizarPaginaCapMovil = function() {
+            const body = document.getElementById('cap-pending-body');
+            if (!body) return;
+            const totalPages = Math.max(1, Math.ceil(capPendingRows.length / CAP_PENDING_PAGE_SIZE));
+            capPendingPage = Math.min(Math.max(1, capPendingPage), totalPages);
+            const start = (capPendingPage - 1) * CAP_PENDING_PAGE_SIZE;
+            const pageRows = capPendingRows.slice(start, start + CAP_PENDING_PAGE_SIZE);
+            body.innerHTML = pageRows.length
+                ? pageRows.map(item => {
+                    const overdue = item.superaPlazoRetorno || Number(item.diasEspera) > 20;
+                    return `<tr${overdue ? ' class="is-overdue"' : ''}>
+                        <td data-label="Modelo"><strong>${window.escapeHtml(item.modelo || '')}</strong></td>
+                        <td data-label="IMEI">${window.escapeHtml(item.imei || '')}</td>
+                        <td data-label="Ubicación SAM">${window.escapeHtml(item.ubicacionSam || '')}</td>
+                        <td data-label="Enviado">${formatCapDate(item.fechaEnvio)}</td>
+                        <td data-label="Esperando"><span class="cap-days${overdue ? ' is-overdue' : ''}">${item.diasEspera == null ? '—' : `${Number(item.diasEspera).toLocaleString('es-CO')} días`}</span></td>
+                    </tr>`;
+                }).join('')
+                : '<tr><td colspan="5">No hay equipos pendientes de retorno.</td></tr>';
+            document.getElementById('cap-pagination-summary').textContent = capPendingRows.length
+                ? `Mostrando ${start + 1}–${Math.min(start + pageRows.length, capPendingRows.length)} de ${capPendingRows.length} equipos`
+                : 'No hay equipos pendientes';
+            document.getElementById('cap-pagination-pages').textContent = `Página ${capPendingPage} de ${totalPages}`;
+            document.getElementById('cap-pagination-prev').disabled = capPendingPage === 1;
+            document.getElementById('cap-pagination-next').disabled = capPendingPage === totalPages;
+        };
+
+        window.cargarCapMovil = function() {
+            const pendingBody = document.getElementById('cap-pending-body');
+            if (!pendingBody) return;
+            pendingBody.innerHTML = '<tr><td colspan="5">Cargando...</td></tr>';
+            apiRequest({ action: 'obtener_capmovil' })
+                .then(response => response.json())
+                .then(result => {
+                    if (result.status !== 'success') throw new Error(result.message || 'No se pudo cargar CAPMOVIL');
+                    const data = result.data || {};
+                    document.getElementById('cap-kpi-pending').textContent = Number(data.equiposEnCAP || 0).toLocaleString('es-CO');
+                    document.getElementById('cap-kpi-returned').textContent = Number(data.equiposRetornados || 0).toLocaleString('es-CO');
+                    document.getElementById('cap-kpi-average').textContent = data.retornoPromedioDias == null ? 'Sin datos' : `${Number(data.retornoPromedioDias).toLocaleString('es-CO', { maximumFractionDigits: 1 })} días`;
+                    document.getElementById('cap-kpi-overdue').textContent = Number(data.pendientesFueraDePlazo || 0).toLocaleString('es-CO');
+                    capPendingRows = Array.isArray(data.pendientes) ? data.pendientes : [];
+                    capPendingPage = 1;
+                    window.renderizarPaginaCapMovil();
+                    const cycles = Array.isArray(data.ciclos) ? data.ciclos : [];
+                    document.getElementById('cap-cycles-body').innerHTML = cycles.length
+                        ? cycles.slice(0, 15).map(cycle => `<tr>
+                            <td data-label="Modelo">${window.escapeHtml(cycle.modelo || '')}</td>
+                            <td data-label="Enviado">${formatCapDate(cycle.fechaEnvio)}</td>
+                            <td data-label="Retorno">${formatCapDate(cycle.fechaRetorno)}</td>
+                            <td data-label="Días">${Number(cycle.dias).toLocaleString('es-CO', { maximumFractionDigits: 1 })}</td>
+                            <td data-label="Estado retorno"><span class="cap-status">${window.escapeHtml(cycle.estadoRetorno || '')}</span></td>
+                        </tr>`).join('')
+                        : '<tr><td colspan="5">Aún no hay retornos medidos.</td></tr>';
+                    const requests = Array.isArray(data.solicitudes) ? data.solicitudes : [];
+                    const lots = Array.isArray(data.lotesSalidaCAP) ? data.lotesSalidaCAP : [];
+                    document.getElementById('cap-lots-body').innerHTML = lots.length
+                        ? lots.map(lot => `<tr>
+                            <td data-label="Lote"><strong>${window.escapeHtml(lot.idLote)}</strong></td>
+                            <td data-label="Entrega">${formatCapDate(lot.fechaEntrega)}</td>
+                            <td data-label="Equipos">${Number(lot.equipos.length).toLocaleString('es-CO')}</td>
+                            <td data-label="Responsables">${window.escapeHtml(lot.responsableEntrega)} → ${window.escapeHtml(lot.responsableRecibe)}</td>
+                            <td data-label="Evidencia">${lot.evidencia ? `<a href="${window.escapeHtml(lot.evidencia)}" target="_blank" rel="noopener">Abrir</a>` : 'Pendiente'}</td>
+                        </tr>`).join('')
+                        : '<tr><td colspan="5">Aún no hay lotes vendidos a CAP.</td></tr>';
+                    document.getElementById('cap-request-summary').textContent =
+                        `${Number(data.solicitudesTotal || 0).toLocaleString('es-CO')} solicitudes · ${Number(data.unidadesSolicitadas || 0).toLocaleString('es-CO')} unidades`;
+                    document.getElementById('cap-requests-body').innerHTML = requests.length
+                        ? requests.map(request => `<tr>
+                            <td data-label="Referencia"><strong class="request-reference">SOL-${window.escapeHtml(String(request.idSolicitud || '').slice(0, 8).toUpperCase())}</strong></td>
+                            <td data-label="Estado"><span class="cap-status">${window.escapeHtml(request.estado)}</span></td>
+                            <td data-label="Registrada">${formatCapDate(request.fechaRegistro)}</td>
+                            <td data-label="Unidades">${Number(request.unidades || 0).toLocaleString('es-CO')}</td>
+                            <td data-label="Artículos">${request.items.map(item => `${window.escapeHtml(item.descripcion)} (${Number(item.cantidad || 0)})`).join(', ')}</td>
+                        </tr>`).join('')
+                        : '<tr><td colspan="5">No hay solicitudes asociadas a CAPMOVIL.</td></tr>';
+                    const chart = document.getElementById('cap-cycle-chart');
+                    const chartRows = cycles.slice(0, 10).reverse();
+                    const maxDays = Math.max(1, ...chartRows.map(item => Number(item.dias) || 0));
+                    chart.innerHTML = chartRows.length
+                        ? chartRows.map(item => `<div class="regional-chart-row"><span>${window.escapeHtml(item.modelo || item.id)}</span><div class="regional-chart-track"><i style="width:${Math.max(4, (Number(item.dias) || 0) / maxDays * 100)}%"></i></div><b>${Number(item.dias).toLocaleString('es-CO', { maximumFractionDigits: 1 })} d</b></div>`).join('')
+                        : '<p class="empty-state">No hay ciclos cerrados para graficar.</p>';
+                    const requestChart = document.getElementById('cap-request-chart');
+                    const requestStates = Object.entries(data.solicitudesPorEstado || {}).sort((first, second) => second[1] - first[1]);
+                    const maxRequests = Math.max(1, ...requestStates.map(([, count]) => Number(count) || 0));
+                    requestChart.innerHTML = requestStates.length
+                        ? requestStates.map(([state, count]) => `<div class="regional-chart-row"><span>${window.escapeHtml(state)}</span><div class="regional-chart-track"><i style="width:${Math.max(4, Number(count) / maxRequests * 100)}%"></i></div><b>${Number(count).toLocaleString('es-CO')}</b></div>`).join('')
+                        : '<p class="empty-state">No hay solicitudes asociadas.</p>';
+                })
+                .catch(error => {
+                    pendingBody.innerHTML = `<tr><td colspan="5">${window.escapeHtml(error.message)}</td></tr>`;
                 });
         };
 
@@ -1768,7 +1857,19 @@ import { apiRequest } from "./services/api.js";
         document.getElementById('btn-add-request-line').addEventListener('click', window.agregarLineaSolicitud);
         document.getElementById('btn-save-request').addEventListener('click', window.guardarSolicitud);
         document.getElementById('request-status-filter').addEventListener('change', window.cargarSolicitudes);
-        document.getElementById('btn-dashboard-refresh').addEventListener('click', window.cargarDashboard);
+        document.getElementById('btn-dashboard-refresh').addEventListener('click', () => window.cargarDashboard(true));
+        document.getElementById('btn-capmovil-refresh').addEventListener('click', () => {
+            invalidateApiCache();
+            window.cargarCapMovil();
+        });
+        document.getElementById('cap-pagination-prev').addEventListener('click', () => {
+            capPendingPage--;
+            window.renderizarPaginaCapMovil();
+        });
+        document.getElementById('cap-pagination-next').addEventListener('click', () => {
+            capPendingPage++;
+            window.renderizarPaginaCapMovil();
+        });
         document.querySelectorAll('[data-dashboard-months]').forEach(button => {
             button.addEventListener('click', () => {
                 dashboardChartMonths = Number(button.dataset.dashboardMonths) === 12 ? 12 : 6;
@@ -2459,6 +2560,9 @@ import { apiRequest } from "./services/api.js";
             const selectedCount = selectedEquipmentIds.size;
             document.getElementById('equipment-selection-count').textContent = `${selectedCount.toLocaleString('es-CO')} seleccionados`;
             document.getElementById('btn-apply-equipment-status').disabled = selectedCount === 0;
+            const selectedEquipment = equipmentRows.filter(item => selectedEquipmentIds.has(item.id));
+            const capLotButton = document.getElementById('btn-create-cap-lot');
+            capLotButton.disabled = selectedCount === 0 || selectedEquipment.some(item => item.estado !== 'Disposición final');
             ['equipment-select-visible', 'equipment-select-all-visible'].forEach(id => {
                 const checkbox = document.getElementById(id);
                 checkbox.checked = visible.length > 0 && selectedVisible === visible.length;
@@ -2500,13 +2604,15 @@ import { apiRequest } from "./services/api.js";
             const availableIds = new Set(equipmentRows.map(item => item.id));
             selectedEquipmentIds.forEach(id => { if (!availableIds.has(id)) selectedEquipmentIds.delete(id); });
             const serviceStatuses = new Set([
-                'Dañado', 'Garantía', 'Enviados CAP'
+                'Garantía', 'Enviados CAP'
             ]);
             document.getElementById('equipment-count-total').textContent = equipmentRows.length.toLocaleString('es-CO');
             document.getElementById('equipment-count-warehouse').textContent = equipmentRows
                 .filter(item => item.estado === 'Disponible').length.toLocaleString('es-CO');
             document.getElementById('equipment-count-service').textContent = equipmentRows
                 .filter(item => serviceStatuses.has(item.estado)).length.toLocaleString('es-CO');
+            document.getElementById('equipment-count-damaged').textContent = equipmentRows
+                .filter(item => item.estado === 'Dañado').length.toLocaleString('es-CO');
             const rows = getEquipmentBaseFilterRows().filter(item =>
                 equipmentFilterColumns.every(column => equipmentMatchesColumn(item, column))
             );
@@ -2683,6 +2789,45 @@ import { apiRequest } from "./services/api.js";
             }
         };
 
+        window.registrarLoteSalidaCap = async function() {
+            const ids = [...selectedEquipmentIds];
+            const date = document.getElementById('cap-lot-delivery-date').value;
+            const deliveredBy = document.getElementById('cap-lot-delivered-by').value.trim();
+            const receivedBy = document.getElementById('cap-lot-received-by').value.trim();
+            const evidence = document.getElementById('cap-lot-evidence').value.trim();
+            const feedback = document.getElementById('equipment-bulk-feedback');
+            if (!ids.length || !date || !deliveredBy || !receivedBy) {
+                feedback.textContent = 'Completa la fecha y los responsables del lote.';
+                feedback.classList.add('is-error');
+                return;
+            }
+            const button = document.getElementById('btn-save-cap-lot');
+            button.disabled = true;
+            try {
+                const response = await apiRequest({
+                    action: 'registrar_lote_salida_cap',
+                    ids,
+                    fechaEntrega: date,
+                    responsableEntrega: deliveredBy,
+                    responsableRecibe: receivedBy,
+                    evidencia: evidence
+                });
+                const result = await response.json();
+                if (result.status !== 'success') throw new Error(result.message || 'No se pudo registrar el lote');
+                selectedEquipmentIds.clear();
+                document.getElementById('cap-lot-form').hidden = true;
+                feedback.classList.remove('is-error');
+                feedback.textContent = `Lote ${result.idLote} registrado: ${result.equipos} equipos vendidos a CAP.`;
+                window.cargarEquipos();
+            } catch (error) {
+                feedback.textContent = error.message;
+                feedback.classList.add('is-error');
+            } finally {
+                button.disabled = false;
+                updateEquipmentSelectionUi();
+            }
+        };
+
         document.getElementById('equipment-form').addEventListener('submit', window.agregarEquipoLote);
         document.getElementById('equipment-condition').addEventListener('keydown', event => {
             if (event.key === 'Enter' && !event.shiftKey) {
@@ -2700,7 +2845,10 @@ import { apiRequest } from "./services/api.js";
         });
         document.getElementById('equipment-search').addEventListener('input', window.renderizarEquipos);
         document.getElementById('equipment-status-filter').addEventListener('change', window.renderizarEquipos);
-        document.getElementById('btn-equipment-refresh').addEventListener('click', window.cargarEquipos);
+        document.getElementById('btn-equipment-refresh').addEventListener('click', () => {
+            invalidateApiCache();
+            window.cargarEquipos();
+        });
         document.getElementById('equipment-table-body').addEventListener('change', event => {
             const checkbox = event.target.closest('[data-equipment-select]');
             if (!checkbox) return;
@@ -2711,6 +2859,15 @@ import { apiRequest } from "./services/api.js";
         document.getElementById('equipment-select-visible').addEventListener('change', event => selectVisibleEquipmentRows(event.currentTarget.checked));
         document.getElementById('equipment-select-all-visible').addEventListener('change', event => selectVisibleEquipmentRows(event.currentTarget.checked));
         document.getElementById('btn-apply-equipment-status').addEventListener('click', window.aplicarEstadoMasivoEquipos);
+        document.getElementById('btn-create-cap-lot').addEventListener('click', () => {
+            document.getElementById('cap-lot-form').hidden = false;
+            document.getElementById('cap-lot-delivery-date').value = localDateValue();
+            document.getElementById('cap-lot-delivery-date').focus();
+        });
+        document.getElementById('btn-cancel-cap-lot').addEventListener('click', () => {
+            document.getElementById('cap-lot-form').hidden = true;
+        });
+        document.getElementById('btn-save-cap-lot').addEventListener('click', window.registrarLoteSalidaCap);
 
         window.actualizarEstadoEquipo = async function(id, status, button) {
             const currentEquipment = equipmentRows.find(item => item.id === id);
@@ -2846,7 +3003,9 @@ import { apiRequest } from "./services/api.js";
             });
             tabElement.classList.add('active');
             if (tabName === 'dashboard') window.cargarDashboard();
+            if (tabName === 'catalogo') window.cargarCatalogo();
             if (tabName === 'equipos') window.cargarEquipos();
+            if (tabName === 'capmovil') window.cargarCapMovil();
             if (tabName === 'reportes') window.cargarAnaliticaInventario();
             if (tabName === 'solicitudes') window.cargarSolicitudes();
             if (tabName === 'historial') window.cargarHistorial();
@@ -3125,7 +3284,10 @@ import { apiRequest } from "./services/api.js";
                 }).catch(error => window.mostrarAlerta(error.message, 'error'));
         };
 
-        document.getElementById('btn-history-search').addEventListener('click', window.cargarHistorial);
+        document.getElementById('btn-history-search').addEventListener('click', () => {
+            invalidateApiCache();
+            window.cargarHistorial();
+        });
         const equipmentPopover = document.getElementById('equipment-filter-popover');
         const closeEquipmentFilterPopover = () => {
             equipmentPopover.hidden = true;

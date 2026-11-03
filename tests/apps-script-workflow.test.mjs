@@ -1542,7 +1542,7 @@ test('bulk cellphone status change records a separate KPI trace for each selecte
 
 });
 
-test('equipment sheet initializer creates sheets, preserves rows, and installs one daily archive trigger', () => {
+test('equipment sheet initializer creates sheets and preserves rows without a disposition archive trigger', () => {
   const { context, spreadsheet, scheduledTriggers } = createRuntime();
 
   assert.match(context.inicializarHojasEquipos(), /inicializadas/);
@@ -1555,8 +1555,7 @@ test('equipment sheet initializer creates sheets, preserves rows, and installs o
   context.inicializarHojasEquipos();
   assert.equal(equipment.getRange(2, 1).getValue(), 'existing-equipment');
   assert.equal(spreadsheet.getSheetByName(context.CONFIG.equipmentArchiveSheet).getRange(1, 1).getValue(), 'ID_Equipo');
-  assert.equal(scheduledTriggers.length, 1);
-  assert.equal(scheduledTriggers[0].getHandlerFunction(), 'archivarEquiposDisposicionFinal');
+  assert.equal(scheduledTriggers.length, 0);
 });
 
 test('existing equipment sheet gains SAM location column without changing stored rows', () => {
@@ -1620,7 +1619,7 @@ test('existing cellphone archive migrates the Serial header and preserves its da
   assert.equal(archive.hiddenColumns.has(4), true);
 });
 
-test('all disposal rows are archived immediately regardless of their age', () => {
+test('disposition rows remain active until a CAP sale lot is registered', () => {
   const { context, spreadsheet } = createRuntime();
   const equipment = context.equipmentSheet_();
   const now = new Date();
@@ -1632,15 +1631,39 @@ test('all disposal rows are archived immediately regardless of their age', () =>
     row('phone-old', 31), row('phone-recent', 0)
   ]);
 
-  assert.equal(context.archivarEquiposDisposicionFinal(), 2);
+  assert.equal(context.archivarEquiposDisposicionFinal(), 0);
+  assert.equal(equipment.getLastRow(), 3);
+  assert.equal(spreadsheet.getSheetByName(context.CONFIG.equipmentArchiveSheet), null);
+});
+
+test('CAP sale lot archives disposition equipment with traceability and no value field', () => {
+  const { context, spreadsheet, sessionEntries } = createRuntime();
+  const equipment = context.equipmentSheet_();
+  equipment.getRange(2, 1, 2, context.CONFIG.equipmentHeaders.length).setValues([
+    ['phone-lot-1', '2026-09-01', 'MOTO G08', '', 'Pantalla rota', 'Disposición final', 'op', new Date(), 'op', '123456789012345', 'BODEGA'],
+    ['phone-lot-2', '2026-09-01', 'MOTO G08', '', 'No enciende', 'Disposición final', 'op', new Date(), 'op', '223456789012345', 'BODEGA']
+  ]);
+  const token = 'cap-lot-token';
+  sessionEntries.set(context.sessionKey_(token), JSON.stringify({ usuario: 'op', rol: 'usuario' }));
+  const result = response(context.doPost({
+    postData: { contents: JSON.stringify({
+      token,
+      action: 'registrar_lote_salida_cap',
+      ids: ['phone-lot-1', 'phone-lot-2'],
+      fechaEntrega: '2026-11-03',
+      responsableEntrega: 'Entrega',
+      responsableRecibe: 'CAP',
+      evidencia: ''
+    }) }
+  }));
+  assert.equal(result.status, 'success');
+  assert.equal(result.equipos, 2);
   assert.equal(equipment.getLastRow(), 1);
-  const archive = spreadsheet.getSheetByName(context.CONFIG.equipmentArchiveSheet);
-  assert.deepEqual(
-    archive.getRange(2, 1, 2, 1).getValues().flat().sort(),
-    ['phone-old', 'phone-recent']
-  );
-  assert.equal(archive.getRange(2, 13).getValue(), 'Disposición final; no volverá a la empresa');
-  assert.equal(archive.getRange(3, 13).getValue(), 'Disposición final; no volverá a la empresa');
+  const lotSheet = spreadsheet.getSheetByName(context.CONFIG.capDispositionSheet);
+  assert.equal(lotSheet.getLastRow(), 3);
+  assert.equal(lotSheet.getRange(2, 4).getValue(), 'Repuestos');
+  assert.equal(lotSheet.getRange(2, 8).getValue(), 'Vendido a CAP');
+  assert.equal(context.CONFIG.capDispositionHeaders.some(header => header.toLowerCase().includes('valor')), false);
 });
 
 test('cellphone dashboard measures CAPMOVIL and warranty return durations separately from stock', () => {
@@ -1674,7 +1697,7 @@ test('cellphone dashboard measures CAPMOVIL and warranty return durations separa
   assert.equal(dashboard.data.unidades, 0);
 });
 
-test('CAP equipment beyond 20 days is flagged while final disposition is archived outside provider KPIs', () => {
+test('CAP equipment beyond 20 days is flagged while disposition remains outside provider KPIs', () => {
   const { context, spreadsheet } = createRuntime();
   const equipment = context.equipmentSheet_();
   const history = context.equipmentHistorySheet_();
@@ -1695,7 +1718,7 @@ test('CAP equipment beyond 20 days is flagged while final disposition is archive
 
   const metrics = context.getEquipmentDashboardMetrics_(now);
 
-  assert.equal(metrics.total, 2);
+  assert.equal(metrics.total, 3);
   assert.equal(metrics.disposicionFinal, 0);
   assert.equal(metrics.pendientesRetorno, 2);
   assert.equal(metrics.pendientesFueraDePlazo, 1);
@@ -1704,7 +1727,7 @@ test('CAP equipment beyond 20 days is flagged while final disposition is archive
   assert.equal(metrics.pendientes.find(item => item.id === 'phone-limit').superaPlazoRetorno, false);
   assert.equal(metrics.retornosMedidos, 1);
   assert.equal(metrics.promedioRetornoDias, 4);
-  assert.equal(spreadsheet.getSheetByName(context.CONFIG.equipmentArchiveSheet).getRange(2, 1).getValue(), 'phone-disposed');
+  assert.equal(spreadsheet.getSheetByName(context.CONFIG.equipmentArchiveSheet).getLastRow(), 1);
 });
 
 test('equipment list refreshes SAM location from the current master row', () => {

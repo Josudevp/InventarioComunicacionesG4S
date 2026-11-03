@@ -91,6 +91,10 @@
     @apply flex shrink-0 items-center gap-2;
   }
 
+  .header-report-link {
+    @apply m-0 flex w-auto items-center gap-2 border-0 bg-transparent px-2 py-2 text-xs font-bold text-slate-300 transition hover:text-white;
+  }
+
   .theme-toggle {
     @apply m-0 flex w-auto items-center gap-2 rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-xs font-bold text-slate-100 hover:bg-slate-700;
   }
@@ -185,7 +189,7 @@
   }
 
   .equipment-summary {
-    @apply mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3;
+    @apply mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4;
   }
 
   .equipment-summary-stat {
@@ -206,6 +210,182 @@
 
   .equipment-summary-stat strong {
     @apply text-2xl font-extrabold leading-none text-slate-900;
+  }
+
+  .capmovil-summary {
+    @apply mb-7 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4;
+  }
+
+  .capmovil-summary-stat {
+    @apply flex min-h-24 flex-col justify-center rounded-xl border border-slate-200 border-l-4 border-sky-500 bg-white px-5 py-4 shadow-sm;
+  }
+
+  .capmovil-summary-stat--active {
+    @apply border-l-g4s-red;
+  }
+
+  .capmovil-summary-stat--warning {
+    @apply border-l-amber-500;
+  }
+
+  .capmovil-summary-stat span {
+    @apply flex items-center gap-2 text-xs font-extrabold uppercase tracking-wide text-slate-500;
+  }
+
+  .capmovil-summary-stat span i {
+    @apply text-sky-600;
+  }
+
+  .capmovil-summary-stat--active span i {
+    @apply text-g4s-red;
+  }
+
+  .capmovil-summary-stat--warning span i {
+    @apply text-amber-600;
+  }
+
+  .capmovil-summary-stat strong {
+    @apply mt-2 text-3xl font-black leading-none text-slate-900;
+  }
+
+  .capmovil-summary-stat small {
+    @apply mt-1 text-xs text-slate-500;
+  }
+
+  .capmovil-section-heading {
+    @apply mb-3 mt-7 flex items-end justify-between gap-4 border-b border-slate-200 pb-2;
+  }
+
+  .capmovil-section-heading h2 {
+    @apply m-0 text-lg font-black text-slate-900;
+  }
+
+  .capmovil-section-heading > p {
+    @apply mb-0 text-xs text-slate-500;
+  }
+
+  .capmovil-section-kicker {
+    @apply mb-1 block text-[10px] font-black uppercase tracking-widest text-g4s-red;
+  }
+
+  .capmovil-pending-panel,
+  .capmovil-analysis-panel,
+  .capmovil-table-panel {
+    @apply rounded-xl border border-slate-200 bg-white p-5 shadow-sm;
+  }
+
+  .capmovil-panel-heading {
+    @apply mb-4 flex items-start justify-between gap-4;
+  }
+
+  .capmovil-panel-heading h3 {
+    @apply m-0 text-base font-black text-slate-900;
+  }
+
+  .capmovil-panel-heading p {
+    @apply mb-0 mt-1 text-xs text-slate-500;
+  }
+
+  .capmovil-status-pill {
+    @apply flex shrink-0 items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-700;
+  }
+
+  .capmovil-status-pill i {
+    @apply text-[8px];
+  }
+
+  .capmovil-analysis-grid {
+    @apply grid grid-cols-1 gap-4 lg:grid-cols-2;
+  }
+
+  .capmovil-analysis-panel {
+    @apply min-h-64;
+  }
+
+  .capmovil-panel-icon {
+    @apply text-xl text-slate-300;
+  }
+
+  .capmovil-pending-panel .catalog-table-wrap,
+  .capmovil-table-panel .catalog-table-wrap {
+    @apply rounded-lg border border-slate-200;
+  }
+
+  .capmovil-table-panel .insight-panel-help {
+    @apply mb-3 mt-0;
+  }
+
+  .regional-chart-row {
+    @apply grid grid-cols-[minmax(90px,1fr)_minmax(90px,2fr)_auto] items-center gap-3 border-b border-slate-100 py-2.5 text-xs;
+  }
+
+  .regional-chart-row:last-child {
+    @apply border-b-0;
+  }
+
+  .regional-chart-row > span {
+    @apply truncate font-bold text-slate-600;
+  }
+
+  .regional-chart-row > b {
+    @apply text-right text-slate-700;
+  }
+
+  .regional-chart-track {
+    @apply h-2 overflow-hidden rounded-full bg-slate-100;
+  }
+
+  .regional-chart-track i {
+    @apply block h-full rounded-full bg-gradient-to-r from-sky-400 to-sky-600;
+  }
+
+  .capmovil-pending-panel .equipment-dashboard-table {
+    min-width: 700px;
+  }
+
+  .cap-pagination {
+    @apply mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-3 text-xs text-slate-500;
+  }
+
+  .cap-pagination > div {
+    @apply flex items-center gap-2;
+  }
+
+  .cap-pagination-button {
+    @apply m-0 w-auto px-3 py-2 text-xs;
+  }
+
+  .cap-pagination-pages {
+    @apply whitespace-nowrap font-bold text-slate-700;
+  }
+
+  .cap-lot-form {
+    @apply mt-4 rounded-xl border border-red-200 bg-red-50 p-4;
+  }
+
+  .cap-lot-fields {
+    @apply grid grid-cols-1 gap-3 md:grid-cols-2;
+  }
+
+  .cap-lot-fields label {
+    @apply m-0;
+  }
+
+  .cap-lot-actions {
+    @apply mt-3 flex justify-end gap-3;
+  }
+
+  .cap-lot-actions button {
+    @apply m-0 w-auto px-4 py-2.5;
+  }
+
+  .cap-status,
+  .cap-days {
+    @apply inline-flex rounded-full bg-slate-100 px-2 py-1 text-[11px] font-bold text-slate-700;
+  }
+
+  .cap-days.is-overdue {
+    @apply bg-red-100 text-red-700;
   }
 
   .equipment-dashboard {
@@ -2232,6 +2412,20 @@
     @apply grid-cols-2;
   }
 
+  .capmovil-section-heading {
+    @apply items-start flex-col gap-1;
+  }
+
+  .capmovil-section-heading > p {
+    @apply text-[11px];
+  }
+
+  .capmovil-pending-panel,
+  .capmovil-analysis-panel,
+  .capmovil-table-panel {
+    @apply p-3.5;
+  }
+
   .equipment-summary-stat:last-child {
     grid-column: 1 / -1;
   }
@@ -2581,6 +2775,44 @@
 
   :root[data-theme="dark"] #app-screen .dashboard-chart-panel {
     @apply border-slate-700 bg-[#1e2235] text-slate-100 shadow-slate-950/20;
+  }
+
+  :root[data-theme="dark"] #app-screen .capmovil-summary-stat,
+  :root[data-theme="dark"] #app-screen .capmovil-pending-panel,
+  :root[data-theme="dark"] #app-screen .capmovil-analysis-panel,
+  :root[data-theme="dark"] #app-screen .capmovil-table-panel {
+    @apply border-slate-700 bg-[#1e2235] text-slate-100;
+  }
+
+  :root[data-theme="dark"] #app-screen .capmovil-summary-stat strong,
+  :root[data-theme="dark"] #app-screen .capmovil-section-heading h2,
+  :root[data-theme="dark"] #app-screen .capmovil-panel-heading h3 {
+    @apply text-slate-100;
+  }
+
+  :root[data-theme="dark"] #app-screen .capmovil-summary-stat span,
+  :root[data-theme="dark"] #app-screen .capmovil-summary-stat small,
+  :root[data-theme="dark"] #app-screen .capmovil-section-heading > p,
+  :root[data-theme="dark"] #app-screen .capmovil-panel-heading p,
+  :root[data-theme="dark"] #app-screen .regional-chart-row > span {
+    @apply text-slate-400;
+  }
+
+  :root[data-theme="dark"] #app-screen .regional-chart-row {
+    @apply border-slate-700;
+  }
+
+  :root[data-theme="dark"] #app-screen .regional-chart-track {
+    @apply bg-slate-700;
+  }
+
+  :root[data-theme="dark"] #app-screen .regional-chart-row > b {
+    @apply text-slate-300;
+  }
+
+  :root[data-theme="dark"] #app-screen .cap-status,
+  :root[data-theme="dark"] #app-screen .cap-days {
+    @apply bg-slate-700 text-slate-200;
   }
 
   :root[data-theme="dark"] #app-screen .dashboard-chart-panel .recharts-rectangle {

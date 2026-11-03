@@ -42,8 +42,10 @@ var CONFIG = {
   equipmentSheet: "Inventario de celulares",
   equipmentHistorySheet: "Historial de celulares",
   equipmentArchiveSheet: "Celulares archivados",
+  capDispositionSheet: "Lotes CAP disposición",
   equipmentHeaders: ["ID_Equipo", "Fecha_Recepcion", "Modelo", "Dato legado", "Dano_Reparacion", "Estado", "Registrado_Por", "Fecha_Actualizacion", "Actualizado_Por", "IMEI", "Ubicacion_SAM"],
   equipmentArchiveHeaders: ["ID_Equipo", "Fecha_Recepcion", "Modelo", "Dato legado", "Dano_Reparacion", "Estado", "Registrado_Por", "Fecha_Actualizacion", "Actualizado_Por", "IMEI", "Ubicacion_SAM", "Fecha_Archivado", "Motivo_Archivo", "Archivado_Por"],
+  capDispositionHeaders: ["ID_Lote", "Fecha_Creacion", "Fecha_Entrega", "Motivo", "Responsable_Entrega", "Responsable_Recibe", "Evidencia_URL", "Estado_Lote", "ID_Equipo", "IMEI", "Modelo", "Dano_Reparacion", "Ubicacion_SAM", "Registrado_Por"],
   equipmentHistoryHeaders: ["ID_Cambio", "Fecha_Hora", "ID_Equipo", "Dato legado", "Modelo", "Estado_Anterior", "Estado_Nuevo", "Registrado_Por"],
   equipmentStatuses: ["Disponible", "Dañado", "Disposición final", "Garantía", "Enviados CAP", "Despachado a puesto"],
   requestHeaders: ["ID_Solicitud", "Fecha_Registro", "Registrado_Por", "Cliente", "Regional", "Entregado_A", "ID_Articulo", "Descripcion", "Cantidad", "Estado", "Proveedor", "Fecha_Solicitud_Proveedor", "Fecha_Recepcion", "Fecha_Entrega", "ID_Transaccion_Recepcion", "ID_Transaccion_Entrega", "Observaciones", "Actualizado_Por", "Fecha_Actualizacion", "Costo_Unitario_COP", "Correo_Solicitante", "Gmail_Thread_ID", "Gmail_Thread_URL", "Fecha_Revision_Disponibilidad", "Justificacion_Anulacion", "Tipo_Solicitud"],
@@ -188,6 +190,7 @@ function doPost(e) {
     if (action === "auditar_inventario") return auditInventory_(session);
     if (action === "reparar_formulas_inventario") return rebuildInventoryFormulas_(session);
     if (action === "obtener_dashboard") return getDashboard_(session);
+    if (action === "obtener_capmovil") return getCapMovil_(session);
     if (action === "obtener_analitica_inventario") return getInventoryInsights_(data, session);
     if (action === "obtener_solicitudes") return getRequests_(data, session);
     if (action === "obtener_equipos") return getEquipment_(session);
@@ -196,6 +199,7 @@ function doPost(e) {
     if (action === "registrar_equipos_lote") return registerEquipmentBatch_(data, session);
     if (action === "actualizar_estado_equipo") return updateEquipmentStatus_(data, session);
     if (action === "actualizar_estados_equipos") return updateEquipmentStatuses_(data, session);
+    if (action === "registrar_lote_salida_cap") return registerCapDispositionLot_(data, session);
     if (action === "eliminar_equipo") return deleteEquipment_(data, session);
     if (action === "crear_solicitud") return createRequest_(data, session);
     if (action === "revisar_disponibilidad_solicitud") return checkRequestAvailability_(data, session);
@@ -466,6 +470,115 @@ function pagination_(data, defaultLimit) {
   return { limit: limit, offset: offset };
 }
 
+function getCapMovil_(session) {
+  var now = new Date();
+  var equipmentMetrics = getEquipmentDashboardMetrics_(now);
+  var historyRows = equipmentHistorySheet_().getDataRange().getValues();
+  var open = Object.create(null);
+  var cycles = [];
+  for (var h = 1; h < historyRows.length; h++) {
+    var history = historyRows[h];
+    var id = clean_(history[2], 100);
+    var date = history[1] instanceof Date ? history[1] : new Date(history[1]);
+    var next = canonicalEquipmentStatus_(history[6]);
+    if (!id || isNaN(date.getTime())) continue;
+    if (next === "Enviados CAP") {
+      open[id] = { id: id, sentAt: date, model: clean_(history[4], 100) };
+      continue;
+    }
+    if (!open[id]) continue;
+    if (["Disponible", "Dañado", "Despachado a puesto"].indexOf(next) >= 0) {
+      var cycle = open[id];
+      cycles.push({
+        id: id,
+        modelo: cycle.model,
+        fechaEnvio: cycle.sentAt,
+        fechaRetorno: date,
+        dias: Math.round((date.getTime() - cycle.sentAt.getTime()) / 864000) / 10,
+        estadoRetorno: next
+      });
+      delete open[id];
+    }
+  }
+  cycles.sort(function(a, b) { return b.fechaRetorno.getTime() - a.fechaRetorno.getTime(); });
+  var pending = equipmentMetrics.pendientes.filter(function(item) { return item.estado === "Enviados CAP"; });
+  var requestRows = requestSheet_().getDataRange().getValues();
+  var requests = Object.create(null);
+  for (var r = 1; r < requestRows.length; r++) {
+    var row = requestRows[r];
+    var requestId = clean_(row[0], 100);
+    if (!requestId || dashboardSupplierName_(row[10]) !== "CAPMOVIL") continue;
+    if (!requests[requestId]) {
+      requests[requestId] = {
+        idSolicitud: requestId,
+        estado: clean_(row[9], 30) || "Registrada",
+        fechaRegistro: row[1],
+        fechaSolicitudProveedor: row[11],
+        fechaRecepcion: row[12],
+        items: [],
+        unidades: 0
+      };
+    }
+    var quantity = number_(row[8]);
+    requests[requestId].items.push({
+      descripcion: clean_(row[7], 200) || clean_(row[6], 100),
+      cantidad: quantity
+    });
+    requests[requestId].unidades += quantity;
+  }
+  var accessoryRequests = Object.keys(requests).map(function(id) { return requests[id]; })
+    .sort(function(a, b) { return new Date(b.fechaRegistro).getTime() - new Date(a.fechaRegistro).getTime(); });
+  var requestStates = Object.create(null);
+  accessoryRequests.forEach(function(request) {
+    requestStates[request.estado] = (requestStates[request.estado] || 0) + 1;
+  });
+  var totalDays = cycles.reduce(function(sum, cycle) { return sum + cycle.dias; }, 0);
+  var averageDays = cycles.length ? Math.round(totalDays / cycles.length * 10) / 10 : null;
+  var maxDays = cycles.length ? Math.max.apply(null, cycles.map(function(cycle) { return cycle.dias; })) : null;
+  var lotRows = capDispositionSheet_().getDataRange().getValues();
+  var lotes = Object.create(null);
+  for (var l = 1; l < lotRows.length; l++) {
+    var lotRow = lotRows[l];
+    var lotId = clean_(lotRow[0], 100);
+    if (!lotId) continue;
+    if (!lotes[lotId]) {
+      lotes[lotId] = {
+        idLote: lotId,
+        fechaCreacion: lotRow[1],
+        fechaEntrega: lotRow[2],
+        motivo: clean_(lotRow[3], 100),
+        responsableEntrega: clean_(lotRow[4], 150),
+        responsableRecibe: clean_(lotRow[5], 150),
+        evidencia: clean_(lotRow[6], 500),
+        estado: clean_(lotRow[7], 50),
+        equipos: []
+      };
+    }
+    lotes[lotId].equipos.push({
+      imei: clean_(lotRow[9], 20),
+      modelo: clean_(lotRow[10], 100)
+    });
+  }
+  return json_({
+    status: "success",
+    data: {
+      equiposEnCAP: pending.length,
+      equiposRetornados: cycles.length,
+      retornoPromedioDias: averageDays,
+      retornoMaximoDias: maxDays,
+      pendientesFueraDePlazo: pending.filter(function(item) { return item.superaPlazoRetorno; }).length,
+      pendientes: pending,
+      ciclos: cycles.slice(0, 30),
+      solicitudes: accessoryRequests.slice(0, 50),
+      solicitudesPorEstado: requestStates,
+      solicitudesTotal: accessoryRequests.length,
+      unidadesSolicitadas: accessoryRequests.reduce(function(sum, request) { return sum + request.unidades; }, 0),
+      lotesSalidaCAP: Object.keys(lotes).map(function(id) { return lotes[id]; }).reverse().slice(0, 30),
+      fechaActualizacion: now
+    }
+  });
+}
+
 function getDashboard_(session) {
   var inventory = inventorySheet_();
   var inventoryRows = inventory.getDataRange().getValues();
@@ -689,6 +802,11 @@ function getEquipmentDashboardMetrics_(now) {
   var returnStates = ["Disponible", "Dañado", "Despachado a puesto"];
   var openCycles = Object.create(null);
   var conditionDispositionIds = Object.create(null);
+  for (var activeIndex = 1; activeIndex < equipmentRows.length; activeIndex++) {
+    if (isEquipmentFinalDisposition_(equipmentRows[activeIndex])) {
+      conditionDispositionIds[clean_(equipmentRows[activeIndex][0], 100)] = true;
+    }
+  }
   var completedDurations = [];
 
   for (var archivedIndex = 1; archivedIndex < archivedRows.length; archivedIndex++) {
@@ -773,7 +891,7 @@ function getEquipmentDashboardMetrics_(now) {
     .sort(function(first, second) { return (second.diasEspera || 0) - (first.diasEspera || 0); });
   metrics.pendientesRetorno = pendingRows.length;
   metrics.pendientesFueraDePlazo = pendingRows.filter(function(item) { return item.superaPlazoRetorno; }).length;
-  metrics.pendientes = pendingRows.slice(0, 10);
+  metrics.pendientes = pendingRows;
   return metrics;
 }
 
@@ -2170,11 +2288,14 @@ function deleteEquipment_(data, session) {
 
 function configurarArchivadoAutomaticoCelulares() {
   var handler = "archivarEquiposDisposicionFinal";
-  var exists = ScriptApp.getProjectTriggers().some(function(trigger) {
-    return trigger.getHandlerFunction() === handler;
+  var removed = 0;
+  ScriptApp.getProjectTriggers().forEach(function(trigger) {
+    if (trigger.getHandlerFunction() === handler) {
+      ScriptApp.deleteTrigger(trigger);
+      removed++;
+    }
   });
-  if (!exists) ScriptApp.newTrigger(handler).timeBased().everyDays(1).atHour(3).create();
-  return "Archivado diario de disposición final configurado";
+  return "Archivado automático de disposición final desactivado; activadores eliminados: " + removed;
 }
 
 function archivarEquiposDisposicionFinal() {
@@ -2188,15 +2309,7 @@ function archivarEquiposDisposicionFinal() {
 }
 
 function archivarEquiposDisposicionFinal_() {
-  var sheet = equipmentSheet_();
-  var rows = sheet.getDataRange().getValues();
-  var archived = 0;
-  for (var i = rows.length - 1; i >= 1; i--) {
-    if (!isEquipmentFinalDisposition_(rows[i])) continue;
-    archiveEquipmentRow_(sheet, i + 1, rows[i], "Disposición final; no volverá a la empresa", "Automático");
-    archived++;
-  }
-  return archived;
+  return 0;
 }
 
 function archivarEquiposDespachadosAPuesto_() {
@@ -2222,6 +2335,54 @@ function archiveEquipmentRow_(sheet, rowNumber, row, reason, user) {
   values.push(new Date(), reason, clean_(user, 100));
   archive.getRange(archive.getLastRow() + 1, 1, 1, CONFIG.equipmentArchiveHeaders.length).setValues([values]);
   sheet.deleteRow(rowNumber);
+}
+
+function capDispositionSheet_() {
+  return ensureEquipmentSheet_(CONFIG.capDispositionSheet, CONFIG.capDispositionHeaders, 0);
+}
+
+function registerCapDispositionLot_(data, session) {
+  var ids = Array.isArray(data.ids) ? data.ids.map(function(id) { return clean_(id, 100); }).filter(Boolean) : [];
+  var deliveryDate = clean_(data.fechaEntrega, 10);
+  var deliveredBy = clean_(data.responsableEntrega, 150);
+  var receivedBy = clean_(data.responsableRecibe, 150);
+  var evidence = clean_(data.evidencia, 500);
+  if (!ids.length) throw new Error("Selecciona al menos un equipo en disposición final");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(deliveryDate)) throw new Error("Indica la fecha de entrega a CAP");
+  if (!deliveredBy || !receivedBy) throw new Error("Indica quién entrega y quién recibe");
+  if (evidence && !/^https?:\/\//i.test(evidence)) throw new Error("La evidencia debe ser un enlace http o https");
+
+  var sheet = equipmentSheet_();
+  var rows = sheet.getDataRange().getValues();
+  var selected = [];
+  var requested = Object.create(null);
+  ids.forEach(function(id) { requested[id] = true; });
+  for (var i = 1; i < rows.length; i++) {
+    var id = clean_(rows[i][0], 100);
+    if (!requested[id]) continue;
+    if (!isFinalDispositionText_(rows[i][5])) {
+      throw new Error("El equipo " + clean_(rows[i][9], 30) + " debe estar en Disposición final");
+    }
+    selected.push({ rowNumber: i + 1, row: rows[i] });
+  }
+  if (selected.length !== ids.length) throw new Error("Uno o más equipos seleccionados ya no están activos");
+
+  var lotId = "CAP-" + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyyMMdd-HHmmss");
+  var now = new Date();
+  var output = selected.map(function(item) {
+    var row = item.row;
+    return [lotId, now, deliveryDate, "Repuestos", deliveredBy, receivedBy, evidence,
+      "Vendido a CAP", clean_(row[0], 100), clean_(row[9], 20), clean_(row[2], 100),
+      clean_(row[4], 500), clean_(row[10], 200), session.usuario];
+  });
+  var lotSheet = capDispositionSheet_();
+  lotSheet.getRange(lotSheet.getLastRow() + 1, 1, output.length, CONFIG.capDispositionHeaders.length).setValues(output);
+  selected.sort(function(a, b) { return b.rowNumber - a.rowNumber; }).forEach(function(item) {
+    appendEquipmentHistory_(clean_(item.row[0], 100), "", clean_(item.row[2], 100),
+      clean_(item.row[5], 100), "Vendido a CAP", session.usuario, now);
+    archiveEquipmentRow_(sheet, item.rowNumber, item.row, "Vendido a CAP; lote " + lotId, session.usuario);
+  });
+  return json_({ status: "success", idLote: lotId, equipos: selected.length });
 }
 
 function equipmentArchiveSheet_() {

@@ -89,6 +89,7 @@
                     <i class="fa-solid fa-moon" aria-hidden="true"></i><span data-theme-label>Modo oscuro</span>
                 </button>
                 <button class="btn-secondary logout-button" onclick="window.cerrarSesion()"><i class="fa-solid fa-right-from-bracket"></i> Salir</button>
+                <button id="tab-reportes-trigger" type="button" class="header-report-link" onclick="window.switchTab('reportes', this)"><i class="fa-solid fa-file-arrow-down" aria-hidden="true"></i> Reportes</button>
             </div>
         </div>
 
@@ -98,8 +99,8 @@
             <button id="tab-solicitudes-trigger" type="button" class="tab" role="tab" aria-selected="false" aria-controls="tab-solicitudes" tabindex="-1" onclick="window.switchTab('solicitudes', this)">Solicitudes</button>
             <button id="tab-catalogo-trigger" type="button" class="tab" role="tab" aria-selected="false" aria-controls="tab-catalogo" tabindex="-1" onclick="window.switchTab('catalogo', this)">Accesorios</button>
             <button id="tab-equipos-trigger" type="button" class="tab" role="tab" aria-selected="false" aria-controls="tab-equipos" tabindex="-1" onclick="window.switchTab('equipos', this)">Equipos</button>
+            <button id="tab-capmovil-trigger" type="button" class="tab" role="tab" aria-selected="false" aria-controls="tab-capmovil" tabindex="-1" onclick="window.switchTab('capmovil', this)">CAPMOVIL</button>
             <button id="tab-historial-trigger" type="button" class="tab" role="tab" aria-selected="false" aria-controls="tab-historial" tabindex="-1" onclick="window.switchTab('historial', this)">Historial</button>
-            <button id="tab-reportes-trigger" type="button" class="tab" role="tab" aria-selected="false" aria-controls="tab-reportes" tabindex="-1" onclick="window.switchTab('reportes', this)">Reportes</button>
         </div>
 
         <main class="container" id="main-content" tabindex="-1">
@@ -187,28 +188,6 @@
                         <button type="button" class="btn-secondary" onclick="window.switchTab('registro', document.querySelector('[aria-controls=tab-registro]'))"><i class="fa-solid fa-arrow-right-arrow-left"></i> Registrar movimiento</button>
                     </section>
                 </div>
-                <section class="equipment-dashboard" aria-labelledby="equipment-dashboard-title">
-                    <div class="equipment-dashboard-heading">
-                        <div><p class="equipment-eyebrow">SEGUIMIENTO INDEPENDIENTE</p><h2 id="equipment-dashboard-title">Equipos celulares</h2></div>
-                        <p>Reparación y garantía gestionadas por CAPMOVIL.</p>
-                    </div>
-                    <div class="equipment-dashboard-kpis" aria-live="polite">
-                        <article><span>En inventario</span><strong id="dashboard-phone-total">—</strong></article>
-                        <article><span>Disponibles</span><strong id="dashboard-phone-warehouse">—</strong></article>
-                        <article><span>En CAPMOVIL / garantía</span><strong id="dashboard-phone-service">—</strong></article>
-                        <article><span>Retorno promedio</span><strong id="dashboard-phone-return-average">—</strong><small id="dashboard-phone-return-count">—</small></article>
-                    </div>
-                    <div class="equipment-dashboard-waiting">
-                        <h3>Equipos pendientes de retorno</h3>
-                        <p id="dashboard-phone-return-alert" class="equipment-return-alert" role="status" hidden></p>
-                        <div class="catalog-table-wrap">
-                            <table class="catalog-table equipment-dashboard-table">
-                                <thead><tr><th>Modelo</th><th>IMEI</th><th>Ubicación SAM</th><th>Estado</th><th>Enviado</th><th>Días esperando</th></tr></thead>
-                                <tbody id="dashboard-phone-pending"><tr><td colspan="6">Cargando...</td></tr></tbody>
-                            </table>
-                        </div>
-                    </div>
-                </section>
             </section>
 
             <!-- TAB REGISTRO -->
@@ -566,7 +545,7 @@
                     <button class="btn-black" id="btn-editar-acc"><i class="fa-solid fa-save"></i> GUARDAR CAMBIOS</button>
                 </div>
                 <div class="card">
-                    <button type="button" class="btn-secondary" id="btn-sync-catalog" onclick="window.cargarCatalogo()">
+                    <button type="button" class="btn-secondary" id="btn-sync-catalog" onclick="window.cargarCatalogo(true)">
                         <i class="fa-solid fa-rotate"></i> Forzar Sincronización de Catálogo
                     </button>
                         <button type="button" class="btn-secondary" id="btn-audit-inventory" style="margin-top:10px;">
@@ -578,6 +557,62 @@
                         <div id="inventory-audit-result" class="inventory-audit-result" aria-live="polite" hidden></div>
                 </div>
             </div>
+            <section id="tab-capmovil" class="section" role="tabpanel" aria-labelledby="tab-capmovil-trigger">
+                <div class="equipment-page-heading">
+                    <div>
+                        <p class="equipment-eyebrow">OPERACIÓN · CAPMOVIL</p>
+                        <h1>Seguimiento CAPMOVIL</h1>
+                        <p>Una vista rápida de lo que está en CAPMOVIL, lo que ya regresó y las solicitudes pendientes.</p>
+                    </div>
+                    <button type="button" class="btn-secondary equipment-refresh-btn" id="btn-capmovil-refresh" aria-label="Actualizar CAPMOVIL" title="Actualizar CAPMOVIL"><i class="fa-solid fa-rotate" aria-hidden="true"></i></button>
+                </div>
+                <div class="capmovil-summary" aria-live="polite">
+                    <div class="capmovil-summary-stat capmovil-summary-stat--active"><span><i class="fa-solid fa-truck-fast" aria-hidden="true"></i> En CAPMOVIL</span><strong id="cap-kpi-pending">—</strong><small>Esperando retorno</small></div>
+                    <div class="capmovil-summary-stat"><span><i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i> Retornos medidos</span><strong id="cap-kpi-returned">—</strong><small>Ciclos cerrados</small></div>
+                    <div class="capmovil-summary-stat"><span><i class="fa-solid fa-stopwatch" aria-hidden="true"></i> Días promedio de retorno</span><strong id="cap-kpi-average">—</strong><small>Desde el envío hasta el regreso</small></div>
+                    <div class="capmovil-summary-stat capmovil-summary-stat--warning"><span><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> Requieren atención</span><strong id="cap-kpi-overdue">—</strong><small>Más de 20 días</small></div>
+                </div>
+                <div class="capmovil-section-heading"><div><span class="capmovil-section-kicker">OPERACIÓN ACTUAL</span><h2>Equipos enviados a CAPMOVIL</h2></div><p>Prioriza los que llevan más tiempo esperando.</p></div>
+                <section class="dashboard-panel capmovil-pending-panel">
+                    <div class="capmovil-panel-heading"><div><h3>Equipos actualmente en CAPMOVIL</h3><p>Ubicación, fecha de envío y días transcurridos.</p></div><span class="capmovil-status-pill"><i class="fa-solid fa-circle" aria-hidden="true"></i> En seguimiento</span></div>
+                        <div class="catalog-table-wrap"><table class="catalog-table equipment-dashboard-table"><thead><tr><th>Modelo</th><th>IMEI</th><th>Ubicación SAM</th><th>Enviado</th><th>Esperando</th></tr></thead><tbody id="cap-pending-body"><tr><td colspan="5">Cargando...</td></tr></tbody></table></div>
+                        <div class="cap-pagination" aria-label="Paginación de equipos CAPMOVIL">
+                            <span id="cap-pagination-summary">Cargando equipos...</span>
+                            <div>
+                                <button type="button" class="btn-secondary cap-pagination-button" id="cap-pagination-prev" disabled><i class="fa-solid fa-chevron-left" aria-hidden="true"></i> Anterior</button>
+                                <span id="cap-pagination-pages" class="cap-pagination-pages">Página 1 de 1</span>
+                                <button type="button" class="btn-secondary cap-pagination-button" id="cap-pagination-next" disabled>Siguiente <i class="fa-solid fa-chevron-right" aria-hidden="true"></i></button>
+                            </div>
+                        </div>
+                </section>
+                <div class="capmovil-section-heading"><div><span class="capmovil-section-kicker">ANÁLISIS</span><h2>Retornos y solicitudes</h2></div><p>Indicadores para revisar la operación de CAPMOVIL.</p></div>
+                <div class="capmovil-analysis-grid">
+                    <section class="dashboard-panel capmovil-analysis-panel">
+                        <div class="capmovil-panel-heading"><div><h3>Días que tardaron en regresar</h3><p>Días entre el envío a CAPMOVIL y el retorno.</p></div><i class="fa-solid fa-chart-column capmovil-panel-icon" aria-hidden="true"></i></div>
+                        <div id="cap-cycle-chart" class="regional-chart" role="img" aria-label="Tiempo de retorno de equipos CAPMOVIL"></div>
+                    </section>
+                    <section class="dashboard-panel capmovil-analysis-panel">
+                        <div class="capmovil-panel-heading"><div><h3>Solicitudes por estado</h3><p>Accesorios asociados a CAPMOVIL.</p></div><i class="fa-solid fa-boxes-stacked capmovil-panel-icon" aria-hidden="true"></i></div>
+                        <div id="cap-request-chart" class="regional-chart" role="img" aria-label="Solicitudes de accesorios CAPMOVIL por estado"></div>
+                    </section>
+                </div>
+                <div class="dashboard-insight-grid">
+                    <section class="dashboard-panel capmovil-table-panel">
+                        <div class="capmovil-panel-heading"><div><h3>Lotes vendidos a CAP</h3><p>Equipos retirados definitivamente del inventario por repuestos.</p></div></div>
+                        <div class="catalog-table-wrap"><table class="catalog-table insight-table"><thead><tr><th>Lote</th><th>Entrega</th><th>Equipos</th><th>Responsables</th><th>Evidencia</th></tr></thead><tbody id="cap-lots-body"><tr><td colspan="5">Cargando...</td></tr></tbody></table></div>
+                    </section>
+                    <section class="dashboard-panel capmovil-table-panel">
+                        <div class="capmovil-panel-heading"><div><h3>Solicitudes de accesorios</h3><p>Solicitudes realizadas para la operación de CAPMOVIL.</p></div></div>
+                        <p id="cap-request-summary" class="insight-panel-help">Cargando solicitudes...</p>
+                        <div class="catalog-table-wrap"><table class="catalog-table insight-table"><thead><tr><th>Referencia</th><th>Estado</th><th>Registrada</th><th>Unidades</th><th>Artículos</th></tr></thead><tbody id="cap-requests-body"><tr><td colspan="5">Cargando...</td></tr></tbody></table></div>
+                    </section>
+                    <section class="dashboard-panel capmovil-table-panel">
+                        <div class="capmovil-panel-heading"><div><h3>Historial de retornos</h3><p>Tiempo medido desde el envío hasta el retorno.</p></div></div>
+                        <div class="catalog-table-wrap"><table class="catalog-table insight-table"><thead><tr><th>Modelo</th><th>Enviado</th><th>Retorno</th><th>Días</th><th>Estado retorno</th></tr></thead><tbody id="cap-cycles-body"><tr><td colspan="5">Cargando...</td></tr></table></div>
+                    </section>
+                </div>
+            </section>
+
             <section id="tab-equipos" class="section" role="tabpanel" aria-labelledby="tab-equipos-trigger">
                 <div class="equipment-page-heading">
                     <div>
@@ -591,6 +626,7 @@
                     <div class="equipment-summary-stat"><span>Equipos registrados</span><strong id="equipment-count-total">0</strong></div>
                     <div class="equipment-summary-stat"><span>Disponibles</span><strong id="equipment-count-warehouse">0</strong></div>
                     <div class="equipment-summary-stat"><span>En reparación o garantía</span><strong id="equipment-count-service">0</strong></div>
+                    <div class="equipment-summary-stat"><span>Dañados</span><strong id="equipment-count-damaged">0</strong></div>
                 </div>
                 <div class="card equipment-lookup-card">
                     <div class="equipment-card-heading">
@@ -684,8 +720,22 @@
                             </select>
                         </label>
                         <button type="button" class="btn-secondary" id="btn-apply-equipment-status" disabled><i class="fa-solid fa-check-double" aria-hidden="true"></i> Aplicar estado</button>
+                        <button type="button" class="btn-primary" id="btn-create-cap-lot" disabled><i class="fa-solid fa-boxes-packing" aria-hidden="true"></i> Crear salida definitiva a CAP</button>
                     </div>
                     <p id="equipment-bulk-feedback" class="helper-text" role="status" aria-live="polite"></p>
+                    <div id="cap-lot-form" class="cap-lot-form" hidden>
+                        <div class="equipment-list-heading"><div><h3>Registrar lote vendido a CAP</h3><p>Solo incluye equipos que estén en “Disposición final”. No se registra valor acordado.</p></div></div>
+                        <div class="cap-lot-fields">
+                            <label for="cap-lot-delivery-date">Fecha de entrega<input id="cap-lot-delivery-date" type="date" required></label>
+                            <label for="cap-lot-delivered-by">Responsable que entrega<input id="cap-lot-delivered-by" type="text" maxlength="150" required></label>
+                            <label for="cap-lot-received-by">Responsable que recibe<input id="cap-lot-received-by" type="text" maxlength="150" required></label>
+                            <label for="cap-lot-evidence">Evidencia (enlace opcional)<input id="cap-lot-evidence" type="url" maxlength="500" placeholder="Acta, factura o correo"></label>
+                        </div>
+                        <div class="cap-lot-actions">
+                            <button type="button" class="btn-secondary" id="btn-cancel-cap-lot">Cancelar</button>
+                            <button type="button" class="btn-primary" id="btn-save-cap-lot">Confirmar venta a CAP</button>
+                        </div>
+                    </div>
                     <div class="history-filter-toolbar">
                         <span id="equipment-filter-summary">Filtra seleccionando una o varias opciones por columna</span>
                         <button type="button" class="btn-secondary history-clear-column-filters" id="equipment-clear-column-filters" hidden><i class="fa-solid fa-filter-circle-xmark"></i> Limpiar filtros</button>
