@@ -2413,6 +2413,7 @@ function registerEquipment_(data, session) {
   var location = clean_(data.ubicacionSam, 200);
   var condition = clean_(data.danoReparacion, 500);
   var status = canonicalEquipmentStatus_(data.estado) || "Disponible";
+  if (status === "Disponible") condition = "BUEN ESTADO";
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || isNaN(new Date(date + "T00:00:00").getTime())) {
     throw new Error("La fecha de recepción no es válida");
   }
@@ -2456,7 +2457,14 @@ function registerEquipmentBatch_(data, session) {
     }
     if (!model || !/^\d{15}$/.test(imei) || !condition) throw new Error("Cada celular requiere modelo, IMEI completo y daño/reparación");
     if (CONFIG.equipmentStatuses.indexOf(status) < 0) throw new Error("Hay un estado no permitido en el lote");
-    return { date: date, model: model, imei: imei, location: location, condition: condition, status: status };
+    return {
+      date: date,
+      model: model,
+      imei: imei,
+      location: location,
+      condition: status === "Disponible" ? "BUEN ESTADO" : condition,
+      status: status
+    };
   });
 
   var requestedImeis = Object.create(null);
@@ -2509,12 +2517,17 @@ function updateEquipmentStatus_(data, session) {
     for (var i = 1; i < rows.length; i++) {
       if (clean_(rows[i][0], 100) !== id) continue;
       var previousStatus = canonicalEquipmentStatus_(rows[i][5]);
-      if (previousStatus !== status) {
+      var conditionChanged = status === "Disponible" &&
+        clean_(rows[i][4], 500).toUpperCase() !== "BUEN ESTADO";
+      if (previousStatus !== status || conditionChanged) {
         var now = new Date();
         sheet.getRange(i + 1, 6).setValue(status);
+        if (status === "Disponible") sheet.getRange(i + 1, 5).setValue("BUEN ESTADO");
         sheet.getRange(i + 1, 8, 1, 2).setValues([[now, session.usuario]]);
-        appendEquipmentHistory_(id, "", clean_(rows[i][2], 100),
-          previousStatus, status, session.usuario, now);
+        if (previousStatus !== status) {
+          appendEquipmentHistory_(id, "", clean_(rows[i][2], 100),
+            previousStatus, status, session.usuario, now);
+        }
       }
       archivarEquiposDisposicionFinal_();
       return json_({ status: "success" });
@@ -2551,12 +2564,18 @@ function updateEquipmentStatuses_(data, session) {
       if (!rowById[id]) throw new Error("No se encontró el celular " + id);
     });
     var now = new Date();
+    var updatedCount = 0;
     var changed = ids.map(function(id) {
       var match = rowById[id];
       var oldStatus = canonicalEquipmentStatus_(match.values[5]);
-      if (oldStatus === status) return null;
+      var conditionChanged = status === "Disponible" &&
+        clean_(match.values[4], 500).toUpperCase() !== "BUEN ESTADO";
+      if (oldStatus === status && !conditionChanged) return null;
+      updatedCount++;
       sheet.getRange(match.rowNumber, 6).setValue(status);
+      if (status === "Disponible") sheet.getRange(match.rowNumber, 5).setValue("BUEN ESTADO");
       sheet.getRange(match.rowNumber, 8, 1, 2).setValues([[now, session.usuario]]);
+      if (oldStatus === status) return null;
       return [Utilities.getUuid(), now, id, "", clean_(match.values[2], 100), oldStatus, status, session.usuario];
     }).filter(Boolean);
     if (changed.length) {
@@ -2564,7 +2583,7 @@ function updateEquipmentStatuses_(data, session) {
       history.getRange(history.getLastRow() + 1, 1, changed.length, CONFIG.equipmentHistoryHeaders.length).setValues(changed);
     }
     archivarEquiposDisposicionFinal_();
-    return json_({ status: "success", requested: ids.length, updated: changed.length, estado: status });
+    return json_({ status: "success", requested: ids.length, updated: updatedCount, estado: status });
   } finally {
     lock.releaseLock();
   }

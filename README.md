@@ -159,6 +159,8 @@ Los usuarios que no estén en esa lista pueden consultar el catálogo, pero no c
 
 Para **Equipos**, configura la propiedad privada `EQUIPMENT_SOURCE_SPREADSHEET_ID` con el ID del archivo maestro descargado de SAM. La importación busca la primera pestaña compatible y crea `Equipos` únicamente con `Modelo`, `IMEI_ICCID` y `ubicacion`; descarta filas cuyo modelo o tipo sea SIM. El estado operativo lo administra la aplicación y no se toma de SAM. `sincronizarMaestroCelularesDesdeFuente` puede ejecutarse diariamente mediante el activador configurado. La consulta por IMEI también revisa todas las pestañas compatibles del archivo fuente y las hojas maestras de respaldo de la aplicación, actualizando la `Ubicación SAM` de los equipos registrados.
 
+Al cambiar un equipo a `Disponible`, individualmente o mediante cambio masivo, la aplicación actualiza automáticamente `Daño / reparación` a `BUEN ESTADO`.
+
 El backend registra un mismo lote para varios clientes mediante varias filas con el mismo `ID_Transacción`, validando que la suma por artículo coincida con el carrito. Además usa `LockService` para evitar que dos salidas descuenten el mismo stock simultáneamente.
 
 El frontend envía el token en el JSON porque los web apps de Apps Script no exponen siempre los encabezados HTTP al evento `doPost`.

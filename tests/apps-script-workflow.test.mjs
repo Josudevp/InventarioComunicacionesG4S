@@ -1452,14 +1452,20 @@ test('returned phones register by IMEI and retain state transition history', () 
   assert.equal(post({
     action: 'actualizar_estado_equipo', id: created.data.id, estado: 'Enviados CAP'
   }).status, 'success');
+  assert.equal(post({
+    action: 'actualizar_estado_equipo', id: created.data.id, estado: 'Disponible'
+  }).status, 'success');
   const savedEquipment = post({ action: 'obtener_equipos' }).data[0];
-  assert.equal(savedEquipment.estado, 'Enviados CAP');
+  assert.equal(savedEquipment.estado, 'Disponible');
+  assert.equal(savedEquipment.danoReparacion, 'BUEN ESTADO');
   assert.equal(savedEquipment.fechaRecepcion, '23/10/2026');
   assert.equal(savedEquipment.ubicacionSam, 'BODEGA COMUNICACIONES');
   const history = spreadsheet.getSheetByName(context.CONFIG.equipmentHistorySheet);
-  assert.equal(history.getLastRow(), 3);
+  assert.equal(history.getLastRow(), 4);
   assert.equal(history.getRange(3, 6).getValue(), 'Disponible');
   assert.equal(history.getRange(3, 7).getValue(), 'Enviados CAP');
+  assert.equal(history.getRange(4, 6).getValue(), 'Enviados CAP');
+  assert.equal(history.getRange(4, 7).getValue(), 'Disponible');
 });
 
 test('cellphone batch registration writes multiple unique IMEIs in one request', () => {
@@ -1508,6 +1514,11 @@ test('bulk cellphone status change records a separate KPI trace for each selecte
   assert.equal(history.getRange(4, 7).getValue(), 'Enviados CAP');
   assert.equal(history.getRange(5, 6).getValue(), 'Disponible');
   assert.equal(history.getRange(5, 7).getValue(), 'Enviados CAP');
+
+  const available = post({ action: 'actualizar_estados_equipos', ids: created.ids, estado: 'Disponible' });
+  assert.equal(available.status, 'success');
+  assert.equal(available.updated, 2);
+  assert.deepEqual(post({ action: 'obtener_equipos' }).data.map(item => item.danoReparacion), ['BUEN ESTADO', 'BUEN ESTADO']);
 
   const disposed = post({ action: 'actualizar_estados_equipos', ids: created.ids, estado: 'Disposición final' });
   assert.equal(disposed.status, 'success');
