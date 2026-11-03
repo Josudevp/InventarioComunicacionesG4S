@@ -75,7 +75,12 @@ import { apiRequest, invalidateApiCache } from "./services/api.js";
         let dashboardRequest = null;
         let dashboardLoadedAt = 0;
         const CLIENT_CACHE_MS = 30000;
+        const loadedSections = new Map();
         let historyMovementRows = [];
+        let historyPage = 1;
+        let equipmentHistoryRows = [];
+        let equipmentHistoryPage = 1;
+        const HISTORY_PAGE_SIZE = 25;
         let historyDateSortDirection = -1;
         let historyFilters = {
             fecha: [], articulo: [], tipo: [], cantidad: [],
@@ -441,6 +446,13 @@ import { apiRequest, invalidateApiCache } from "./services/api.js";
             window.cargarDashboard();
         }
 
+        window.invalidateLoadingCaches = function() {
+            catalogLoadedAt = 0;
+            dashboardLoadedAt = 0;
+            loadedSections.clear();
+            invalidateApiCache();
+        };
+
         window.cargarCatalogo = function(force = false) {
             if (catalogRequest) return catalogRequest;
             if (force) {
@@ -471,11 +483,6 @@ import { apiRequest, invalidateApiCache } from "./services/api.js";
                     window.mostrarAlerta("❌ " + (data.message || "No se pudo cargar el catálogo"), "error");
                 }
 
-                window.invalidateLoadingCaches = function() {
-                    catalogLoadedAt = 0;
-                    dashboardLoadedAt = 0;
-                    invalidateApiCache();
-                };
             }).catch(e => {
                 console.error("Error catálogo:", e);
                 window.mostrarEstadoBuscador('No se pudo conectar con el catálogo. Intenta sincronizar de nuevo.');
@@ -1093,9 +1100,22 @@ import { apiRequest, invalidateApiCache } from "./services/api.js";
                 if (!line.idArticulo && items.length) line.idArticulo = items[0].idArticulo;
             });
             const requestType = document.getElementById('request-type').value;
+            const multipleDistribution = requestType === 'Cliente' &&
+                document.getElementById('request-multiple-distribution')?.checked;
+            if (multipleDistribution) {
+                const defaultRegional = document.getElementById('request-regional').value;
+                const defaultRecipient = document.getElementById('request-recipient').value.trim();
+                requestDraft.forEach(line => {
+                    if (!line.regional) line.regional = defaultRegional;
+                    if (!line.entregadoA) line.entregadoA = defaultRecipient;
+                });
+            }
             container.innerHTML = requestDraft.map((line, index) => `<div class="request-draft-row">
                 <div class="request-field"><label for="request-article-${index}">Artículo</label><select id="request-article-${index}" aria-label="Artículo de la línea ${index + 1}" onchange="window.actualizarLineaSolicitud(${index}, 'idArticulo', this.value)"><option value="">Selecciona artículo</option>${itemOptions}</select></div>
                 ${requestType === 'Cliente' ? `<label>Cliente<input type="text" value="${window.escapeHtml(line.cliente)}" placeholder="Cliente" maxlength="150" onchange="window.actualizarLineaSolicitud(${index}, 'cliente', this.value)"></label>` : '<span class="request-communications-label"><span class="request-communications-icon"><i class="fa-solid fa-tower-broadcast" aria-hidden="true"></i></span><strong>Comunicaciones</strong><small>Solicitud interna</small></span>'}
+                ${multipleDistribution ? `<label>Regional<select onchange="window.actualizarLineaSolicitud(${index}, 'regional', this.value)">
+                    <option value="Bogota">Bogotá</option><option value="Eje Cafetero">Eje Cafetero</option><option value="Noroccidente">Noroccidente</option><option value="Sabana">Sabana</option><option value="Cordoba">Córdoba</option><option value="Costa">Costa</option><option value="Suroccidente">Suroccidente</option><option value="Santanderes">Santanderes</option>
+                </select></label><label>Entregado a<input type="text" value="${window.escapeHtml(line.entregadoA || '')}" placeholder="Persona destinataria" maxlength="150" onchange="window.actualizarLineaSolicitud(${index}, 'entregadoA', this.value)"></label>` : ''}
                 <label class="request-quantity">Cantidad<input type="number" min="1" max="9999" value="${line.cantidad}" aria-label="Cantidad de la línea ${index + 1}" onchange="window.actualizarLineaSolicitud(${index}, 'cantidad', this.value)"></label>
                 <button type="button" class="btn-danger request-remove" aria-label="Eliminar línea ${index + 1}" onclick="window.eliminarLineaSolicitud(${index})"><i class="fa-solid fa-trash"></i></button>
             </div>`).join('');
@@ -1103,7 +1123,9 @@ import { apiRequest, invalidateApiCache } from "./services/api.js";
                 const select = container.querySelector(`#request-article-${index}`);
                 if (select) select.value = line.idArticulo;
                 const row = container.querySelectorAll('.request-draft-row')[index];
-                row.querySelectorAll('select').forEach(selectElement => {
+                const regionalSelect = row.querySelector('select:not([id^="request-article-"])');
+                if (regionalSelect && line.regional) regionalSelect.value = line.regional;
+                row.querySelectorAll(`#request-article-${index}`).forEach(selectElement => {
                     const instance = new Choices(selectElement, {
                         searchEnabled: true,
                         searchPlaceholderValue: 'Buscar coincidencias...',
@@ -1138,6 +1160,8 @@ import { apiRequest, invalidateApiCache } from "./services/api.js";
             const correoSolicitante = document.getElementById('requester-email').value.trim();
             const gmailThreadUrl = document.getElementById('request-thread-url').value.trim();
             const tipoSolicitud = document.getElementById('request-type').value;
+            const distribucionMultiple = tipoSolicitud === 'Cliente' &&
+                document.getElementById('request-multiple-distribution').checked;
             const regional = tipoSolicitud === 'Comunicaciones'
                 ? 'Comunicaciones'
                 : document.getElementById('request-regional').value;
@@ -1147,11 +1171,18 @@ import { apiRequest, invalidateApiCache } from "./services/api.js";
             const items = requestDraft.map(line => ({
                 idArticulo: line.idArticulo,
                 cliente: tipoSolicitud === 'Comunicaciones' ? 'Comunicaciones' : line.cliente.trim(),
+                regional: distribucionMultiple ? String(line.regional || '').trim() : undefined,
+                entregadoA: distribucionMultiple ? String(line.entregadoA || '').trim() : undefined,
                 cantidad: Number(line.cantidad)
             }));
-            if (!items.length || !regional || !entregadoA ||
+            const hasMissingDistribution = distribucionMultiple &&
+                items.some(line => !line.regional || !line.entregadoA);
+            if (!items.length || (!distribucionMultiple && (!regional || !entregadoA)) ||
+                hasMissingDistribution ||
                 items.some(line => !line.idArticulo || (tipoSolicitud === 'Cliente' && !line.cliente) || !Number.isInteger(line.cantidad) || line.cantidad < 1)) {
-                window.mostrarAlerta('Completa artículo, regional, destinatario común, cantidad y cliente en cada línea', 'error');
+                window.mostrarAlerta(distribucionMultiple
+                    ? 'Completa artículo, cliente, regional, persona y cantidad en cada línea'
+                    : 'Completa artículo, regional, destinatario común, cantidad y cliente en cada línea', 'error');
                 return;
             }
             if (correoSolicitante && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(correoSolicitante)) {
@@ -1160,7 +1191,7 @@ import { apiRequest, invalidateApiCache } from "./services/api.js";
             }
             const button = document.getElementById('btn-save-request');
             button.disabled = true;
-            apiRequest({ action: 'crear_solicitud', tipoSolicitud, regional, entregadoA, correoSolicitante, gmailThreadUrl, items })
+            apiRequest({ action: 'crear_solicitud', tipoSolicitud, regional, entregadoA, distribucionMultiple, correoSolicitante, gmailThreadUrl, items })
                 .then(response => response.json()).then(result => {
                     if (result.status !== 'success') throw new Error(result.message || 'No se pudo registrar la solicitud');
                     window.mostrarAlerta(`Solicitud ${result.idSolicitud.slice(0, 8)} registrada`, 'success');
@@ -1168,6 +1199,7 @@ import { apiRequest, invalidateApiCache } from "./services/api.js";
                     document.getElementById('requester-email').value = '';
                     document.getElementById('request-thread-url').value = '';
                     document.getElementById('request-recipient').value = '';
+                    document.getElementById('request-multiple-distribution').checked = false;
                     document.getElementById('request-type').value = 'Cliente';
                     document.getElementById('request-recipient-field').hidden = false;
                     document.getElementById('request-regional-field').hidden = false;
@@ -1187,6 +1219,7 @@ import { apiRequest, invalidateApiCache } from "./services/api.js";
             const isClientRequest = event.target.value === 'Cliente';
             document.getElementById('request-recipient-field').hidden = !isClientRequest;
             document.getElementById('request-regional-field').hidden = !isClientRequest;
+            document.getElementById('request-distribution-toggle').hidden = !isClientRequest;
             const emailFields = document.getElementById('request-email-fields');
             const communicationsFlow = document.getElementById('request-communications-flow');
             emailFields.hidden = !isClientRequest;
@@ -1198,6 +1231,15 @@ import { apiRequest, invalidateApiCache } from "./services/api.js";
                 document.getElementById('requester-email').value = '';
                 document.getElementById('request-thread-url').value = '';
             }
+            window.renderizarSolicitudBorrador();
+        });
+        document.getElementById('request-multiple-distribution').addEventListener('change', event => {
+            const enabled = event.target.checked;
+            document.getElementById('request-regional-field').hidden = enabled;
+            document.getElementById('request-recipient-field').hidden = enabled;
+            document.getElementById('request-form-guidance').textContent = enabled
+                ? 'Cada línea puede tener una regional y una persona destinataria diferente.'
+                : 'Todas las líneas comparten una regional y una persona destinataria.';
             window.renderizarSolicitudBorrador();
         });
 
@@ -1707,12 +1749,14 @@ import { apiRequest, invalidateApiCache } from "./services/api.js";
         window.cargarCapMovil = function() {
             const pendingBody = document.getElementById('cap-pending-body');
             if (!pendingBody) return;
+            if (loadedSections.has('capmovil') && Date.now() - loadedSections.get('capmovil') < CLIENT_CACHE_MS) return;
             pendingBody.innerHTML = '<tr><td colspan="5">Cargando...</td></tr>';
             apiRequest({ action: 'obtener_capmovil' })
                 .then(response => response.json())
                 .then(result => {
                     if (result.status !== 'success') throw new Error(result.message || 'No se pudo cargar CAPMOVIL');
                     const data = result.data || {};
+                    loadedSections.set('capmovil', Date.now());
                     document.getElementById('cap-kpi-pending').textContent = Number(data.equiposEnCAP || 0).toLocaleString('es-CO');
                     document.getElementById('cap-kpi-returned').textContent = Number(data.equiposRetornados || 0).toLocaleString('es-CO');
                     document.getElementById('cap-kpi-average').textContent = data.retornoPromedioDias == null ? 'Sin datos' : `${Number(data.retornoPromedioDias).toLocaleString('es-CO', { maximumFractionDigits: 1 })} días`;
@@ -2661,6 +2705,7 @@ import { apiRequest, invalidateApiCache } from "./services/api.js";
         window.cargarEquipos = async function() {
             const body = document.getElementById('equipment-table-body');
             if (!body) return;
+            if (loadedSections.has('equipos') && Date.now() - loadedSections.get('equipos') < CLIENT_CACHE_MS) return;
             body.innerHTML = '<tr><td colspan="7">Cargando equipos...</td></tr>';
             const dateField = document.getElementById('equipment-date');
             if (!dateField.value) dateField.value = localDateValue();
@@ -2669,6 +2714,7 @@ import { apiRequest, invalidateApiCache } from "./services/api.js";
                 const result = await response.json();
                 if (result.status !== 'success') throw new Error(result.message || 'No se pudo consultar el inventario de celulares');
                 equipmentRows = Array.isArray(result.data) ? result.data : [];
+                loadedSections.set('equipos', Date.now());
                 if (Array.isArray(result.estados)) equipmentStatusOptions.splice(0, equipmentStatusOptions.length, ...result.estados);
                 pruneEquipmentFilters(0);
                 window.renderizarEquipos();
@@ -3008,7 +3054,9 @@ import { apiRequest, invalidateApiCache } from "./services/api.js";
             if (tabName === 'capmovil') window.cargarCapMovil();
             if (tabName === 'reportes') window.cargarAnaliticaInventario();
             if (tabName === 'solicitudes') window.cargarSolicitudes();
-            if (tabName === 'historial') window.cargarHistorial();
+            if (tabName === 'historial') {
+                document.querySelector('[data-history-view="accessories"]')?.click();
+            }
         }
 
         document.querySelector('[role="tablist"]').addEventListener('keydown', event => {
@@ -3212,12 +3260,16 @@ import { apiRequest, invalidateApiCache } from "./services/api.js";
                 positionHistoryFilterPopover();
             }
             const resultCount = document.getElementById('history-result-count');
-            if (resultCount) resultCount.textContent = `${rows.length.toLocaleString('es-CO')} movimientos`;
+            const totalPages = Math.max(1, Math.ceil(rows.length / HISTORY_PAGE_SIZE));
+            historyPage = Math.min(historyPage, totalPages);
+            const pageRows = rows.slice((historyPage - 1) * HISTORY_PAGE_SIZE, historyPage * HISTORY_PAGE_SIZE);
+            if (resultCount) resultCount.textContent = `${rows.length.toLocaleString('es-CO')} movimientos · página ${historyPage} de ${totalPages}`;
+            updateHistoryPagination(historyPage, totalPages, 'history');
             if (!rows.length) {
                 body.innerHTML = '<tr><td colspan="9">No hay movimientos para los filtros seleccionados.</td></tr>';
                 return;
             }
-            body.innerHTML = rows.map(row => {
+            body.innerHTML = pageRows.map(row => {
                 const date = row.fechaHora ? new Date(row.fechaHora).toLocaleString('es-CO') : '';
                 const canAnnul = canReconcileInventory && row.estado === 'Confirmado' && !row.relacionada;
                 const statusClass = String(row.estado || '').toLowerCase().replace(/[^a-z0-9]+/g, '-');
@@ -3238,6 +3290,17 @@ import { apiRequest, invalidateApiCache } from "./services/api.js";
             }).join('');
         };
 
+        const updateHistoryPagination = (page, totalPages, type) => {
+            const prefix = type === 'equipment' ? 'equipment-history' : 'history';
+            const previous = document.getElementById(`${prefix}-previous`);
+            const next = document.getElementById(`${prefix}-next`);
+            const label = document.getElementById(`${prefix}-page`);
+            if (!previous || !next || !label) return;
+            previous.disabled = page <= 1;
+            next.disabled = page >= totalPages;
+            label.textContent = `Página ${page} de ${totalPages}`;
+        };
+
         window.cargarHistorial = function() {
             const body = document.getElementById('history-table-body');
             if (!body) {
@@ -3250,6 +3313,50 @@ import { apiRequest, invalidateApiCache } from "./services/api.js";
                 desde: document.getElementById('history-from')?.value || '',
                 hasta: document.getElementById('history-to')?.value || '',
                 filtro: document.getElementById('history-filter')?.value.trim() || ''
+            };
+
+            window.renderizarHistorialEquipos = function() {
+                const body = document.getElementById('equipment-history-table-body');
+                const rows = equipmentHistoryRows;
+                const totalPages = Math.max(1, Math.ceil(rows.length / HISTORY_PAGE_SIZE));
+                equipmentHistoryPage = Math.min(equipmentHistoryPage, totalPages);
+                updateHistoryPagination(equipmentHistoryPage, totalPages, 'equipment');
+                if (!rows.length) {
+                    body.innerHTML = '<tr><td colspan="6">No hay movimientos de celulares para los filtros seleccionados.</td></tr>';
+                    return;
+                }
+                const pageRows = rows.slice((equipmentHistoryPage - 1) * HISTORY_PAGE_SIZE, equipmentHistoryPage * HISTORY_PAGE_SIZE);
+                body.innerHTML = pageRows.map(row => {
+                    const date = row.fechaHora ? new Date(row.fechaHora).toLocaleString('es-CO') : '';
+                    return `<tr>
+                        <td data-label="Fecha">${window.escapeHtml(date)}</td>
+                        <td data-label="IMEI"><strong>${window.escapeHtml(row.imei || 'No disponible')}</strong></td>
+                        <td data-label="Modelo">${window.escapeHtml(row.modelo)}</td>
+                        <td data-label="Movimiento">${window.escapeHtml(`${row.estadoAnterior || 'Nuevo'} → ${row.estadoNuevo || 'Sin estado'}`)}</td>
+                        <td data-label="Estado nuevo">${window.escapeHtml(row.estadoNuevo)}</td>
+                        <td data-label="Usuario">${window.escapeHtml(row.registradoPor)}</td>
+                    </tr>`;
+                }).join('');
+            };
+
+            window.cargarHistorialEquipos = function() {
+                const body = document.getElementById('equipment-history-table-body');
+                if (!body) return;
+                body.innerHTML = '<tr><td colspan="6">Cargando movimientos de celulares...</td></tr>';
+                const payload = {
+                    action: 'obtener_historial_equipos',
+                    desde: document.getElementById('equipment-history-from')?.value || '',
+                    hasta: document.getElementById('equipment-history-to')?.value || '',
+                    filtro: document.getElementById('equipment-history-filter')?.value.trim() || ''
+                };
+                apiRequest(payload).then(response => response.json()).then(result => {
+                    if (result.status !== 'success') throw new Error(result.message || 'No se pudo cargar el historial de celulares');
+                    equipmentHistoryRows = Array.isArray(result.data) ? result.data : [];
+                    equipmentHistoryPage = 1;
+                    window.renderizarHistorialEquipos();
+                }).catch(error => {
+                    body.innerHTML = `<tr><td colspan="6">${window.escapeHtml(error.message)}</td></tr>`;
+                });
             };
             apiRequest(payload)
                 .then(response => response.json()).then(result => {
@@ -3286,7 +3393,45 @@ import { apiRequest, invalidateApiCache } from "./services/api.js";
 
         document.getElementById('btn-history-search').addEventListener('click', () => {
             invalidateApiCache();
+            historyPage = 1;
             window.cargarHistorial();
+        });
+        document.getElementById('btn-equipment-history-search').addEventListener('click', () => {
+            invalidateApiCache();
+            equipmentHistoryPage = 1;
+            window.cargarHistorialEquipos();
+        });
+        document.getElementById('history-previous').addEventListener('click', () => {
+            if (historyPage > 1) { historyPage--; window.renderizarHistorial(); }
+        });
+        document.getElementById('history-next').addEventListener('click', () => {
+            historyPage++;
+            window.renderizarHistorial();
+        });
+        document.getElementById('equipment-history-previous').addEventListener('click', () => {
+            if (equipmentHistoryPage > 1) {
+                equipmentHistoryPage--;
+                window.renderizarHistorialEquipos();
+            }
+        });
+        document.getElementById('equipment-history-next').addEventListener('click', () => {
+            equipmentHistoryPage++;
+            window.renderizarHistorialEquipos();
+        });
+        document.querySelectorAll('[data-history-view]').forEach(button => {
+            button.addEventListener('click', () => {
+                const view = button.dataset.historyView;
+                document.querySelectorAll('[data-history-view]').forEach(tab => {
+                    const selected = tab === button;
+                    tab.classList.toggle('active', selected);
+                    tab.setAttribute('aria-selected', String(selected));
+                });
+                document.querySelectorAll('[data-history-panel]').forEach(panel => {
+                    panel.hidden = panel.dataset.historyPanel !== view;
+                });
+                if (view === 'equipment') window.cargarHistorialEquipos();
+                else window.cargarHistorial();
+            });
         });
         const equipmentPopover = document.getElementById('equipment-filter-popover');
         const closeEquipmentFilterPopover = () => {

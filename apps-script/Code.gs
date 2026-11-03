@@ -72,6 +72,50 @@ function autorizarDrive() {
   Logger.log("Carpeta autorizada: " + folder.getName() + " (" + folder.getId() + ")");
 }
 
+function getEquipmentHistory_(data, session) {
+  var rows = equipmentHistorySheet_().getDataRange().getValues();
+  var equipmentRows = equipmentSheet_().getDataRange().getValues();
+  var archivedRows = equipmentArchiveSheet_().getDataRange().getValues();
+  var imeiById = Object.create(null);
+  equipmentRows.slice(1).concat(archivedRows.slice(1)).forEach(function(equipment) {
+    var equipmentId = clean_(equipment[0], 100);
+    if (equipmentId) imeiById[equipmentId] = clean_(equipment[9], 20);
+  });
+  var from = clean_(data.desde, 30);
+  var to = clean_(data.hasta, 30);
+  var filter = clean_(data.filtro, 200).toLowerCase();
+  var result = [];
+  for (var i = 1; i < rows.length; i++) {
+    var row = rows[i];
+    if (!row[0]) continue;
+    var date = row[1] instanceof Date ? row[1] : new Date(row[1]);
+    var dateKey = isNaN(date.getTime()) ? "" : Utilities.formatDate(date, Session.getScriptTimeZone(), "yyyy-MM-dd");
+    var imei = imeiById[clean_(row[2], 100)] || "";
+    var text = (row.join(" ") + " " + imei).toLowerCase();
+    if (from && dateKey < from) continue;
+    if (to && dateKey > to) continue;
+    if (filter && text.indexOf(filter) < 0) continue;
+    result.push({
+      idCambio: clean_(row[0], 100),
+      fechaHora: date,
+      imei: imei || "No disponible",
+      idEquipo: clean_(row[2], 100),
+      modelo: clean_(row[4], 100),
+      estadoAnterior: canonicalEquipmentStatus_(row[5]),
+      estadoNuevo: canonicalEquipmentStatus_(row[6]),
+      registradoPor: clean_(row[7], 100)
+    });
+  }
+  result.reverse();
+  var page = pagination_(data, 500);
+  return json_({
+    status: "success",
+    usuario: session.usuario,
+    data: result.slice(page.offset, page.offset + page.limit),
+    pagination: { offset: page.offset, limit: page.limit, total: result.length, hasMore: page.offset + page.limit < result.length }
+  });
+}
+
 function doGet() {
   return json_({ status: "success", message: "API Enterprise activa" });
 }
@@ -194,6 +238,7 @@ function doPost(e) {
     if (action === "obtener_analitica_inventario") return getInventoryInsights_(data, session);
     if (action === "obtener_solicitudes") return getRequests_(data, session);
     if (action === "obtener_equipos") return getEquipment_(session);
+    if (action === "obtener_historial_equipos") return getEquipmentHistory_(data, session);
     if (action === "buscar_equipo_maestro") return searchEquipmentMaster_(data);
     if (action === "registrar_equipo") return registerEquipment_(data, session);
     if (action === "registrar_equipos_lote") return registerEquipmentBatch_(data, session);
@@ -1399,13 +1444,14 @@ function createRequest_(data, session) {
     if (requesterEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(requesterEmail)) {
       throw new Error("El correo del solicitante no es valido");
     }
+    var multipleDistribution = requestType === "Cliente" && Boolean(data.distribucionMultiple);
     var sharedRegional = requestType === "Comunicaciones"
       ? "Comunicaciones"
-      : clean_(data.regional, 100) || clean_(lines[0].regional, 100);
+      : (multipleDistribution ? "" : clean_(data.regional, 100) || clean_(lines[0].regional, 100));
     var sharedRecipient = requestType === "Comunicaciones"
       ? "Comunicaciones"
-      : clean_(data.entregadoA, 150) || clean_(lines[0].entregadoA || lines[0].usuario, 150);
-    if (!sharedRegional || !sharedRecipient) {
+      : (multipleDistribution ? "" : clean_(data.entregadoA, 150) || clean_(lines[0].entregadoA || lines[0].usuario, 150));
+    if (!multipleDistribution && (!sharedRegional || !sharedRecipient)) {
       throw new Error("La solicitud requiere una regional y una persona destinataria comunes");
     }
     var gmailThreadUrl = requestType === "Comunicaciones" ? "" : gmailThreadUrlFromInput_(data.gmailThreadUrl);
@@ -1415,16 +1461,19 @@ function createRequest_(data, session) {
       var item = catalog[id];
       var quantity = Number(line.cantidad);
       var client = requestType === "Comunicaciones" ? "Comunicaciones" : clean_(line.cliente, 150);
-      var lineRegional = clean_(line.regional, 100);
-      var lineRecipient = clean_(line.entregadoA || line.usuario, 150);
+      var requestedRegional = clean_(line.regional, 100);
+      var requestedRecipient = clean_(line.entregadoA || line.usuario, 150);
+      var lineRegional = multipleDistribution ? requestedRegional : sharedRegional;
+      var lineRecipient = multipleDistribution ? requestedRecipient : sharedRecipient;
       if (!item || !item.active) throw new Error("Articulo inexistente o inactivo: " + id);
       if ((!client && requestType !== "Comunicaciones") ||
-          (lineRegional && lineRegional !== sharedRegional) ||
-          (lineRecipient && requestType !== "Comunicaciones" && lineRecipient !== sharedRecipient) ||
+          (!multipleDistribution && requestedRegional && requestedRegional !== sharedRegional) ||
+          (!multipleDistribution && requestedRecipient && requestedRecipient !== sharedRecipient) ||
+          (!lineRegional || !lineRecipient) ||
           !Number.isInteger(quantity) || quantity < 1 || quantity > 9999) {
         throw new Error("Cada linea requiere cliente, regional, destinatario y cantidad valida");
       }
-      return [requestId, now, session.usuario, client, sharedRegional, sharedRecipient, id, item.description, quantity,
+      return [requestId, now, session.usuario, client, lineRegional, lineRecipient, id, item.description, quantity,
         "Registrada", "", "", "", "", "", "", observations, session.usuario, now, item.cost, requesterEmail, gmailThreadId, gmailThreadUrl, "", "", requestType];
     });
     var sheet = requestSheet_();

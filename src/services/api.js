@@ -1,4 +1,4 @@
-const API_URL = import.meta.env.VITE_API_URL || 'https://script.google.com/macros/s/AKfycby9FnT4TQvhfEViq9zMS2FD-7yfUFpPTUzL2-0gyYOKy9YniPUDUl6dfEWaXOpgDniX/exec';
+const API_URL = import.meta.env.VITE_API_URL || 'https://script.google.com/macros/s/AKfycbxz9KZLLhT3HZI4XERjX7aVS7565lX_Besd31Sme5JDqNtHQFOdgp5GIGn7kPa66g8/exec';
 const READ_ACTIONS = new Set([
   'obtener_dashboard',
   'obtener_catalogo',

@@ -289,6 +289,10 @@
                             <input type="text" id="request-recipient" maxlength="150" placeholder="Nombre de la persona">
                         </label>
                     </div>
+                    <label class="request-distribution-toggle" id="request-distribution-toggle">
+                        <input type="checkbox" id="request-multiple-distribution">
+                        <span><strong>Distribución por línea</strong><small>Permite asignar cada artículo a una regional y persona diferente dentro de la misma solicitud.</small></span>
+                    </label>
                     <div id="request-email-fields">
                         <label class="request-email-field" for="requester-email">Correo de quien solicitó (opcional)
                             <input type="email" id="requester-email" maxlength="200" autocomplete="email" placeholder="nombre@empresa.com">
@@ -330,7 +334,11 @@
             </section>
 
             <div id="tab-historial" class="section" role="tabpanel" aria-labelledby="tab-historial-trigger">
-                <div class="card">
+                <div class="history-switcher" role="tablist" aria-label="Tipo de historial">
+                    <button type="button" class="history-switch active" role="tab" aria-selected="true" aria-controls="accessory-history-panel" data-history-view="accessories">Accesorios</button>
+                    <button type="button" class="history-switch" role="tab" aria-selected="false" aria-controls="equipment-history-panel" data-history-view="equipment">Celulares</button>
+                </div>
+                <div class="card history-view-panel" id="accessory-history-panel" data-history-panel="accessories" role="tabpanel">
                     <h3 style="margin-top:0; color:var(--g4s-black);">Historial de movimientos</h3>
                     <div class="catalog-toolbar">
                         <input type="date" id="history-from" aria-label="Desde">
@@ -357,12 +365,37 @@
                         </tr></thead>
                         <tbody id="history-table-body"><tr><td colspan="9">Carga el historial para consultar movimientos.</td></tr></tbody></table>
                     </div>
+                    <div class="history-pagination" aria-label="Paginación del historial de accesorios">
+                        <button type="button" class="btn-secondary" id="history-previous">Anterior</button>
+                        <span id="history-page">Página 1 de 1</span>
+                        <button type="button" class="btn-secondary" id="history-next">Siguiente</button>
+                    </div>
                 </div>
                 <section id="history-filter-popover" class="history-filter-popover" role="dialog" aria-modal="false" aria-labelledby="history-filter-title" hidden>
                     <header><div><strong id="history-filter-title">Filtrar</strong><small id="history-filter-count"></small></div><button type="button" id="history-filter-close" aria-label="Cerrar filtros"><i class="fa-solid fa-xmark"></i></button></header>
                     <div id="history-filter-options" class="history-filter-options"></div>
                     <footer><button type="button" id="history-filter-clear">Limpiar columna</button><button type="button" id="history-filter-done">Listo</button></footer>
                 </section>
+                <div class="card history-view-panel" id="equipment-history-panel" data-history-panel="equipment" role="tabpanel" hidden>
+                    <h3 style="margin-top:0; color:var(--g4s-black);">Historial de movimientos de celulares</h3>
+                    <div class="catalog-toolbar">
+                        <input type="date" id="equipment-history-from" aria-label="Desde">
+                        <input type="date" id="equipment-history-to" aria-label="Hasta">
+                        <input type="search" id="equipment-history-filter" placeholder="IMEI, modelo, estado o usuario" aria-label="Filtrar historial de celulares">
+                        <button type="button" class="btn-secondary" id="btn-equipment-history-search" style="width:auto; margin:0;"><i class="fa-solid fa-filter"></i> Filtrar</button>
+                    </div>
+                    <div class="catalog-table-wrap">
+                        <table class="catalog-table"><thead><tr>
+                            <th>Fecha</th><th>IMEI</th><th>Modelo</th><th>Movimiento</th><th>Estado nuevo</th><th>Usuario</th>
+                        </tr></thead>
+                        <tbody id="equipment-history-table-body"><tr><td colspan="6">Carga el historial para consultar movimientos.</td></tr></tbody></table>
+                    </div>
+                    <div class="history-pagination" aria-label="Paginación del historial de celulares">
+                        <button type="button" class="btn-secondary" id="equipment-history-previous">Anterior</button>
+                        <span id="equipment-history-page">Página 1 de 1</span>
+                        <button type="button" class="btn-secondary" id="equipment-history-next">Siguiente</button>
+                    </div>
+                </div>
             </div>
 
             <section id="tab-reportes" class="section" role="tabpanel" aria-labelledby="tab-reportes-trigger">

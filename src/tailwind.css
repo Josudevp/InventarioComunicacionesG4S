@@ -1839,7 +1839,39 @@
 
   .request-draft-row {
     @apply grid items-end gap-2 rounded-md border border-slate-200 bg-slate-50 p-3;
-    grid-template-columns: minmax(12rem, 2fr) minmax(10rem, 1.3fr) 6rem 44px;
+    grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
+  }
+  .request-draft-row label {
+    min-width: 0;
+  }
+  .request-draft-row label select,
+  .request-draft-row label input {
+    min-width: 0;
+    width: 100%;
+  }
+  .request-draft-row label:has(select) {
+    min-width: 150px;
+  }
+  .request-draft-row label:has(input[placeholder="Persona destinataria"]) {
+    min-width: 180px;
+  }
+  .history-switcher {
+    @apply mb-4 flex gap-2 rounded-xl border border-slate-200 bg-slate-100 p-1;
+  }
+  .history-switch {
+    @apply flex-1 cursor-pointer rounded-lg border-0 bg-transparent px-4 py-2.5 text-sm font-bold text-slate-500;
+  }
+  .history-switch.active {
+    @apply bg-white text-slate-900 shadow-sm;
+  }
+  .history-view-panel[hidden] {
+    display: none;
+  }
+  .history-pagination {
+    @apply mt-4 flex items-center justify-center gap-4 text-sm font-bold text-slate-600;
+  }
+  .history-pagination button:disabled {
+    @apply cursor-not-allowed opacity-50;
   }
 
   .request-draft-row label {
