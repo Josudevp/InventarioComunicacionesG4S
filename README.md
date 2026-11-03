@@ -161,6 +161,8 @@ Para **Equipos**, configura la propiedad privada `EQUIPMENT_SOURCE_SPREADSHEET_I
 
 Al cambiar un equipo a `Disponible`, individualmente o mediante cambio masivo, la aplicación actualiza automáticamente `Daño / reparación` a `BUEN ESTADO`.
 
+Los equipos que pasan a `Despachado a puesto` se archivan automáticamente con la justificación `Enviados a puesto`. Un IMEI archivado deja de ocupar el inventario activo y puede registrarse nuevamente como un equipo nuevo.
+
 El backend registra un mismo lote para varios clientes mediante varias filas con el mismo `ID_Transacción`, validando que la suma por artículo coincida con el carrito. Además usa `LockService` para evitar que dos salidas descuenten el mismo stock simultáneamente.
 
 El frontend envía el token en el JSON porque los web apps de Apps Script no exponen siempre los encabezados HTTP al evento `doPost`.

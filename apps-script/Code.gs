@@ -2199,6 +2199,22 @@ function archivarEquiposDisposicionFinal_() {
   return archived;
 }
 
+function archivarEquiposDespachadosAPuesto_() {
+  var sheet = equipmentSheet_();
+  var rows = sheet.getDataRange().getValues();
+  var archived = 0;
+  for (var i = rows.length - 1; i >= 1; i--) {
+    if (canonicalEquipmentStatus_(rows[i][5]) !== "Despachado a puesto") continue;
+    archiveEquipmentRow_(sheet, i + 1, rows[i], "Enviados a puesto", "Automático");
+    archived++;
+  }
+  return archived;
+}
+
+function archivarEquiposNoActivos_() {
+  return archivarEquiposDisposicionFinal_() + archivarEquiposDespachadosAPuesto_();
+}
+
 function archiveEquipmentRow_(sheet, rowNumber, row, reason, user) {
   var archive = equipmentArchiveSheet_();
   var values = row.slice(0, CONFIG.equipmentHeaders.length);
@@ -2435,7 +2451,7 @@ function registerEquipment_(data, session) {
     var row = [id, date, model, "", condition, status, session.usuario, now, session.usuario, imei, location];
     sheet.getRange(sheet.getLastRow() + 1, 1, 1, CONFIG.equipmentHeaders.length).setValues([row]);
     appendEquipmentHistory_(id, "", model, "", status, session.usuario, now);
-    archivarEquiposDisposicionFinal_();
+    archivarEquiposNoActivos_();
     return json_({ status: "success", data: equipmentRecord_(row) });
   } finally {
     lock.releaseLock();
@@ -2498,7 +2514,7 @@ function registerEquipmentBatch_(data, session) {
       .setValues(records.map(function(record) {
         return [Utilities.getUuid(), now, record[0], "", record[2], "", record[5], session.usuario];
       }));
-    archivarEquiposDisposicionFinal_();
+    archivarEquiposNoActivos_();
     return json_({ status: "success", count: records.length, ids: records.map(function(record) { return record[0]; }) });
   } finally {
     lock.releaseLock();
@@ -2529,7 +2545,7 @@ function updateEquipmentStatus_(data, session) {
             previousStatus, status, session.usuario, now);
         }
       }
-      archivarEquiposDisposicionFinal_();
+      archivarEquiposNoActivos_();
       return json_({ status: "success" });
     }
     throw new Error("No se encontró el equipo");
@@ -2582,7 +2598,7 @@ function updateEquipmentStatuses_(data, session) {
       var history = equipmentHistorySheet_();
       history.getRange(history.getLastRow() + 1, 1, changed.length, CONFIG.equipmentHistoryHeaders.length).setValues(changed);
     }
-    archivarEquiposDisposicionFinal_();
+    archivarEquiposNoActivos_();
     return json_({ status: "success", requested: ids.length, updated: updatedCount, estado: status });
   } finally {
     lock.releaseLock();

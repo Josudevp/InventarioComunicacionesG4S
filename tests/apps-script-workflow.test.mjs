@@ -1520,14 +1520,26 @@ test('bulk cellphone status change records a separate KPI trace for each selecte
   assert.equal(available.updated, 2);
   assert.deepEqual(post({ action: 'obtener_equipos' }).data.map(item => item.danoReparacion), ['BUEN ESTADO', 'BUEN ESTADO']);
 
-  const disposed = post({ action: 'actualizar_estados_equipos', ids: created.ids, estado: 'Disposición final' });
-  assert.equal(disposed.status, 'success');
-  assert.equal(disposed.updated, 2);
-  assert.equal(spreadsheet.getSheetByName(context.CONFIG.equipmentSheet).getLastRow(), 1);
-  assert.deepEqual(
-    spreadsheet.getSheetByName(context.CONFIG.equipmentArchiveSheet).getRange(2, 1, 2, 1).getValues().flat().sort(),
-    created.ids.slice().sort()
-  );
+  const dispatched = post({ action: 'actualizar_estados_equipos', ids: created.ids, estado: 'Despachado a puesto' });
+  assert.equal(dispatched.status, 'success');
+  assert.equal(dispatched.updated, 2);
+  assert.equal(post({ action: 'obtener_equipos' }).data.length, 0);
+  const archive = spreadsheet.getSheetByName(context.CONFIG.equipmentArchiveSheet);
+  assert.deepEqual(archive.getRange(archive.getLastRow() - 1, 13, 2, 1).getValues().flat(), [
+    'Enviados a puesto', 'Enviados a puesto'
+  ]);
+
+  const reRegistered = post({
+    action: 'registrar_equipo',
+    fechaRecepcion: '2026-11-03',
+    modelo: 'MOTO G23',
+    imei: '111111111111111',
+    danoReparacion: 'PANTALLA ROTA',
+    estado: 'Dañado'
+  });
+  assert.equal(reRegistered.status, 'success');
+  assert.equal(post({ action: 'obtener_equipos' }).data[0].imei, '111111111111111');
+
 });
 
 test('equipment sheet initializer creates sheets, preserves rows, and installs one daily archive trigger', () => {
