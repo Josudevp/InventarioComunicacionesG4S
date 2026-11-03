@@ -2510,6 +2510,9 @@ import { apiRequest } from "./services/api.js";
             const rows = getEquipmentBaseFilterRows().filter(item =>
                 equipmentFilterColumns.every(column => equipmentMatchesColumn(item, column))
             );
+            rows.sort((first, second) =>
+                Number(selectedEquipmentIds.has(second.id)) - Number(selectedEquipmentIds.has(first.id))
+            );
             updateEquipmentFilterIndicators();
             if (activeEquipmentFilter) {
                 renderEquipmentFilterPopover();

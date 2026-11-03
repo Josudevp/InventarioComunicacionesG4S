@@ -1719,9 +1719,12 @@ test('master spreadsheet import copies its first tab and synchronizes later upda
   const openById = context.SpreadsheetApp.openById;
   context.SpreadsheetApp.openById = id => id === context.CONFIG.equipmentSourceSpreadsheetId ? source : openById(id);
 
-  assert.match(context.importarMaestroCelularesDesdeFuente(), /2 filas de datos/);
+  assert.match(context.importarMaestroCelularesDesdeFuente(), /1 equipos válidos/);
   const imported = spreadsheet.getSheetByName(context.CONFIG.equipmentMasterSheet);
-  assert.deepEqual(imported.getDataRange().getValues(), sourceRows);
+  assert.deepEqual(imported.getDataRange().getValues(), [
+    ['Modelo', 'IMEI_ICCID', 'ubicacion'],
+    ['MOTO G23', '354696572315130', 'BODEGA']
+  ]);
   assert.equal(spreadsheet.getSheetByName('Equipos').name, context.CONFIG.equipmentMasterSheet);
   assert.equal([...spreadsheet.sheets.keys()].some(name => name.indexOf('Equipos respaldo ') === 0), true);
   assert.equal(scheduledTriggers.filter(trigger => trigger.getHandlerFunction() === 'sincronizarMaestroCelularesDesdeFuente').length, 1);
@@ -1729,7 +1732,7 @@ test('master spreadsheet import copies its first tab and synchronizes later upda
   sourceSheet.getRange(2, 5).setValue('NUEVA UBICACION');
   context.sincronizarMaestroCelularesDesdeFuente();
   const updatedMaster = spreadsheet.getSheetByName(context.CONFIG.equipmentMasterSheet);
-  assert.equal(updatedMaster.getRange(2, 5).getValue(), 'NUEVA UBICACION');
+  assert.equal(updatedMaster.getRange(2, 3).getValue(), 'NUEVA UBICACION');
   assert.equal(scheduledTriggers.filter(trigger => trigger.getHandlerFunction() === 'sincronizarMaestroCelularesDesdeFuente').length, 1);
 });
 

@@ -37,7 +37,8 @@ var CONFIG = {
   legacyRequestsSheet: "Solicitudes",
   equipmentMasterSheet: "Equipos",
   equipmentSourceSpreadsheetId: "12r2OlaIV8HH_HdenI2BST2_zsNmpA-UB-C3AK4-yUxg",
-  equipmentSourceImportProperty: "EQUIPMENT_SOURCE_SPREADSHEET_ID",
+  equipmentSourceSpreadsheetProperty: "EQUIPMENT_SOURCE_SPREADSHEET_ID",
+  equipmentSourceImportProperty: "EQUIPMENT_SOURCE_IMPORTED_ID",
   equipmentSheet: "Inventario de celulares",
   equipmentHistorySheet: "Historial de celulares",
   equipmentArchiveSheet: "Celulares archivados",
@@ -2325,7 +2326,7 @@ function equipmentMasterSheets_() {
     CONFIG.equipmentArchiveSheet
   ];
   var appSpreadsheet = mainSpreadsheet_();
-  var sourceSpreadsheet = SpreadsheetApp.openById(CONFIG.equipmentSourceSpreadsheetId);
+  var sourceSpreadsheet = SpreadsheetApp.openById(equipmentSourceSpreadsheetId_());
   var spreadsheets = [sourceSpreadsheet];
   if (sourceSpreadsheet.getId() !== appSpreadsheet.getId()) spreadsheets.push(appSpreadsheet);
   var sheets = [];
@@ -2345,6 +2346,11 @@ function equipmentMasterSheets_() {
   return sheets;
 }
 
+function equipmentSourceSpreadsheetId_() {
+  return String(PropertiesService.getScriptProperties()
+    .getProperty(CONFIG.equipmentSourceSpreadsheetProperty) || CONFIG.equipmentSourceSpreadsheetId).trim();
+}
+
 function equipmentMasterHeader_(sheet) {
   var headerRowLimit = Math.min(sheet.getLastRow(), 20);
   var columnCount = sheet.getLastColumn();
@@ -2361,7 +2367,7 @@ function equipmentMasterHeader_(sheet) {
       if (tokens.indexOf("imei") >= 0 || /^imei\d+$/.test(name)) imeiColumns.push(index + 1);
       if (!typeColumn && /^(tipo|categoria|clase|elemento|producto|clasificacion|estado)( |$)/.test(name)) typeColumn = index + 1;
       if (!modelColumn && /^(modelo|model|marca|referencia|equipo)( |$)/.test(name)) modelColumn = index + 1;
-      if (!locationColumn && /^(ubicacion|location)( |$)/.test(name)) locationColumn = index + 1;
+      if (!locationColumn && /^(ubicacion|localizacion|location)( |$)/.test(name)) locationColumn = index + 1;
     });
     if (imeiColumns.length) {
       return {
@@ -2602,7 +2608,7 @@ function sincronizarMaestroCelularesDesdeFuente_(initialImport) {
   try {
     var source;
     try {
-      source = SpreadsheetApp.openById(CONFIG.equipmentSourceSpreadsheetId);
+      source = SpreadsheetApp.openById(equipmentSourceSpreadsheetId_());
     } catch (error) {
       throw new Error("No se pudo leer el maestro. Comparte el archivo como lector con la cuenta que ejecuta este Apps Script y vuelve a intentar");
     }
@@ -2610,19 +2616,40 @@ function sincronizarMaestroCelularesDesdeFuente_(initialImport) {
     if (source.getId() === destination.getId()) {
       throw new Error("El archivo maestro ya es el spreadsheet de la aplicación; no se puede copiar sobre sí mismo");
     }
-    var sourceSheet = source.getSheets()[0];
+    var sourceSheet = source.getSheets().find(function(sheet) {
+      return Boolean(equipmentMasterHeader_(sheet));
+    });
     if (!sourceSheet) throw new Error("El archivo maestro no contiene pestañas");
     var sourceRows = sourceSheet.getDataRange().getValues();
-    if (!sourceRows.length || !sourceRows[0].length || !equipmentMasterHeader_(sourceSheet)) {
-      throw new Error("La primera pestaña del maestro debe incluir encabezados de Modelo e IMEI_ICCID");
+    if (!sourceRows.length || !sourceRows[0].length) {
+      throw new Error("El maestro debe incluir una pestaña con encabezados de modelo e IMEI");
+    }
+    var sourceHeader = equipmentMasterHeader_(sourceSheet);
+    var sourceValues = [["Modelo", "IMEI_ICCID", "ubicacion"]];
+    var modelColumn = sourceHeader.modelColumn;
+    var locationColumn = sourceHeader.locationColumn;
+    var typeColumn = sourceHeader.typeColumn;
+    var imeiColumn = sourceHeader.imeiColumns[0];
+    for (var sourceRow = sourceHeader.row; sourceRow < sourceRows.length; sourceRow++) {
+      var sourceModel = clean_(sourceRows[sourceRow][modelColumn - 1], 100);
+      if (isSimRecord_(sourceModel) ||
+          (typeColumn && isSimRecord_(sourceRows[sourceRow][typeColumn - 1]))) continue;
+      var sourceImei = String(sourceRows[sourceRow][imeiColumn - 1] || "").replace(/\D/g, "");
+      if (!sourceModel || !sourceImei) continue;
+      sourceValues.push([
+        sourceModel,
+        sourceImei,
+        locationColumn ? clean_(sourceRows[sourceRow][locationColumn - 1], 200) : ""
+      ]);
     }
 
     var properties = PropertiesService.getScriptProperties();
+    var sourceId = equipmentSourceSpreadsheetId_();
     var importedSourceId = properties.getProperty(CONFIG.equipmentSourceImportProperty) || "";
     var target = destination.getSheetByName(CONFIG.equipmentMasterSheet);
-    var staging = sourceSheet.copyTo(destination);
-    staging.setName("Importacion celulares " + Utilities.getUuid().replace(/-/g, "").slice(0, 12));
-    if (target && importedSourceId !== CONFIG.equipmentSourceSpreadsheetId && target.getLastRow() > 0) {
+    var staging = destination.insertSheet("Importacion celulares " + Utilities.getUuid().replace(/-/g, "").slice(0, 12));
+    staging.getRange(1, 1, sourceValues.length, sourceValues[0].length).setValues(sourceValues);
+    if (target && importedSourceId !== sourceId && target.getLastRow() > 0) {
       var backupName = "Equipos respaldo " + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyyMMdd_HHmmss");
       if (destination.getSheetByName(backupName)) backupName += "_" + new Date().getTime();
       target.setName(backupName);
@@ -2630,11 +2657,12 @@ function sincronizarMaestroCelularesDesdeFuente_(initialImport) {
       destination.deleteSheet(target);
     }
     staging.setName(CONFIG.equipmentMasterSheet);
-    properties.setProperty(CONFIG.equipmentSourceImportProperty, CONFIG.equipmentSourceSpreadsheetId);
+    properties.setProperty(CONFIG.equipmentSourceImportProperty, sourceId);
     SpreadsheetApp.flush();
 
     if (initialImport) configurarSincronizacionMaestroCelulares();
-    return "Maestro copiado a " + CONFIG.equipmentMasterSheet + ": " + Math.max(sourceRows.length - 1, 0) + " filas de datos";
+    return "Maestro copiado a " + CONFIG.equipmentMasterSheet + ": " +
+      Math.max(sourceValues.length - 1, 0) + " equipos válidos";
   } finally {
     lock.releaseLock();
   }
