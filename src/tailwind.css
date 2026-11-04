@@ -505,6 +505,19 @@
     @apply mb-2 flex flex-wrap items-end gap-3 border-y border-slate-200 bg-slate-50 px-3 py-2;
   }
 
+  .equipment-bulk-heading {
+    @apply flex flex-col gap-0.5 border-t border-slate-200 px-3 pb-1 pt-3;
+  }
+
+  .equipment-bulk-heading strong {
+    @apply text-sm text-slate-800;
+  }
+
+  .equipment-bulk-heading small,
+  .equipment-summary-note {
+    @apply text-[11px] font-normal text-slate-500;
+  }
+
   .equipment-select-visible {
     @apply m-0 inline-flex min-h-10 items-center gap-2 text-xs font-bold text-slate-700;
   }
@@ -2105,6 +2118,10 @@
     @apply mb-0 mt-0 w-full max-w-md text-[11px];
   }
 
+  .request-thread-link-control {
+    @apply flex w-full max-w-md items-end gap-2 opacity-80 transition-opacity hover:opacity-100;
+  }
+
   .request-thread-link-field input {
     @apply mt-1 p-2 text-sm;
   }
@@ -2745,6 +2762,34 @@
     @apply min-h-screen text-slate-200;
   }
 
+  :root[data-theme="dark"] #app-screen p,
+  :root[data-theme="dark"] #app-screen .equipment-page-heading > p,
+  :root[data-theme="dark"] #app-screen .equipment-card-heading p,
+  :root[data-theme="dark"] #app-screen .equipment-list-heading p,
+  :root[data-theme="dark"] #app-screen .equipment-bulk-heading small,
+  :root[data-theme="dark"] #app-screen .equipment-summary-note,
+  :root[data-theme="dark"] #app-screen .history-filter-toolbar,
+  :root[data-theme="dark"] #app-screen .equipment-lookup-hint,
+  :root[data-theme="dark"] #app-screen .equipment-feedback,
+  :root[data-theme="dark"] #app-screen .equipment-bulk-feedback {
+    @apply text-slate-300;
+  }
+
+  :root[data-theme="dark"] #app-screen .equipment-eyebrow,
+  :root[data-theme="dark"] #app-screen .dashboard-eyebrow,
+  :root[data-theme="dark"] #app-screen .capmovil-section-kicker {
+    @apply text-cyan-300;
+  }
+
+  :root[data-theme="dark"] #app-screen .equipment-page-heading h1,
+  :root[data-theme="dark"] #app-screen .equipment-card-heading h2,
+  :root[data-theme="dark"] #app-screen .equipment-list-heading h2,
+  :root[data-theme="dark"] #app-screen .equipment-list-heading h3,
+  :root[data-theme="dark"] #app-screen .equipment-bulk-heading strong,
+  :root[data-theme="dark"] #app-screen .history-filter-toolbar strong {
+    @apply text-slate-100;
+  }
+
   :root[data-theme="dark"] #app-screen label {
     @apply text-slate-300;
   }
@@ -2754,7 +2799,7 @@
   }
 
   :root[data-theme="dark"] .tab {
-    @apply bg-[#111827] text-slate-400;
+    @apply bg-[#111827] text-slate-300;
   }
 
   :root[data-theme="dark"] .tab.active {
@@ -3015,6 +3060,17 @@
     @apply border-slate-700 text-slate-300;
   }
 
+  :root[data-theme="dark"] #app-screen .catalog-table th,
+  :root[data-theme="dark"] #app-screen .catalog-table td,
+  :root[data-theme="dark"] #app-screen .catalog-table td strong,
+  :root[data-theme="dark"] #app-screen .catalog-table td span {
+    color: #e2e8f0;
+  }
+
+  :root[data-theme="dark"] #app-screen .catalog-table th {
+    color: #f8fafc;
+  }
+
   :root[data-theme="dark"] #app-screen .catalog-table tbody tr:nth-child(even) {
     @apply bg-slate-800/40;
   }
@@ -3050,7 +3106,7 @@
 
   :root[data-theme="dark"] #app-screen input::placeholder,
   :root[data-theme="dark"] #app-screen textarea::placeholder {
-    @apply text-slate-500;
+    @apply text-slate-400;
   }
 
   :root[data-theme="dark"] #app-screen input[readonly] {
@@ -3094,6 +3150,12 @@
 
   :root[data-theme="dark"] #app-screen .btn-secondary {
     @apply border-slate-600 text-slate-100 hover:bg-slate-700;
+  }
+
+  :root[data-theme="dark"] #app-screen button:disabled,
+  :root[data-theme="dark"] #app-screen select:disabled,
+  :root[data-theme="dark"] #app-screen input:disabled {
+    @apply text-slate-400 opacity-80;
   }
 
   :root[data-theme="dark"] #app-screen .distribution-header,

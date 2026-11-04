@@ -1350,14 +1350,14 @@ import { apiRequest, invalidateApiCache } from "./services/api.js";
                         ? `<a class="btn-secondary request-transition" href="${window.escapeHtml(deliveryMailto)}"><i class="fa-solid fa-envelope"></i> Redactar aviso de entrega</a>`
                         : '<span class="request-no-email">Sin correo o hilo vinculado</span>';
                     const copyResponseButton = `<button type="button" class="btn-secondary request-transition" data-delivery-response="${window.escapeHtml(deliveryBody)}" onclick="window.copiarRespuestaEntrega(this)"><i class="fa-solid fa-copy" aria-hidden="true"></i> Copiar respuesta</button>`;
-                    const linkThreadControl = request.tipoSolicitud !== 'Comunicaciones' && !request.gmailThreadUrl
-                        ? `<label class="request-thread-link-field">Enlace del hilo<input type="url" data-thread-url-for="${safeId}" placeholder="Pega aquí la URL de Gmail" maxlength="500"></label><button type="button" class="btn-secondary request-transition" onclick="window.vincularHiloSolicitud('${safeId}', this)">Vincular hilo</button>`
-                        : '';
-                    action = `<span class="request-complete"><i class="fa-solid fa-circle-check"></i> Entregada</span>${composeButton}${copyResponseButton}${linkThreadControl}`;
+                    action = `<span class="request-complete"><i class="fa-solid fa-circle-check"></i> Entregada</span>${composeButton}${copyResponseButton}`;
                 } else if (request.estado === 'Cerrada') {
                     action = '<span class="request-complete"><i class="fa-solid fa-circle-check"></i> Recepción registrada · solicitud cerrada</span>';
                 } else {
                     action = '<span class="request-complete"><i class="fa-solid fa-circle-check"></i> Entregada</span>';
+                }
+                if (request.tipoSolicitud !== 'Comunicaciones' && !request.gmailThreadUrl && request.estado !== 'Anulada') {
+                    action += `<span class="request-thread-link-control"><label class="request-thread-link-field">Vincular hilo de Gmail (opcional)<input type="url" data-thread-url-for="${safeId}" placeholder="Pega aquí la URL de Gmail" maxlength="500"></label><button type="button" class="btn-secondary request-transition" onclick="window.vincularHiloSolicitud('${safeId}', this)">Vincular</button></span>`;
                 }
                 if (request.estado !== 'Anulada' && canReconcileInventory &&
                     ['Registrada', 'Revisión de disponibilidad', 'Solicitada'].includes(request.estado)) {
@@ -2273,6 +2273,9 @@ import { apiRequest, invalidateApiCache } from "./services/api.js";
             }, [
                 { indicador: 'Equipos activos', valor: Number(metrics.total) || 0 },
                 { indicador: 'En Bodega', valor: Number(metrics.bodega) || 0 },
+                { indicador: 'MOTO G8 POWER TOUCH excluidos', valor: Number(metrics.g8PowerTouchExcluidos) || 0 },
+                { indicador: 'MOTO G8 excluidos', valor: Number(metrics.g8Excluidos) || 0 },
+                { indicador: 'Bodega disposición final excluidos', valor: Number(metrics.bodegaDisposicionFinalExcluidos) || 0 },
                 { indicador: 'En reparación', valor: Number(metrics.enReparacion) || 0 },
                 { indicador: 'En garantía', valor: Number(metrics.enGarantia) || 0 },
                 { indicador: 'Retornos medidos', valor: Number(metrics.retornosMedidos) || 0 },
@@ -2651,8 +2654,39 @@ import { apiRequest, invalidateApiCache } from "./services/api.js";
                 'Garantía', 'Enviados CAP'
             ]);
             document.getElementById('equipment-count-total').textContent = equipmentRows.length.toLocaleString('es-CO');
-            document.getElementById('equipment-count-warehouse').textContent = equipmentRows
-                .filter(item => item.estado === 'Disponible').length.toLocaleString('es-CO');
+            const excludedAvailable = equipmentRows.filter(item => {
+                if (item.estado !== 'Disponible') return false;
+                const model = String(item.modelo || '').toUpperCase().replace(/\s+/g, ' ').trim();
+                const condition = String(item.danoReparacion || '').trim().toUpperCase();
+                const location = String(item.ubicacionSam || '').toUpperCase()
+                    .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+                const isG8PowerTouch = model.includes('MOTO G8 POWER TOUCH');
+                const isMotoG8 = !isG8PowerTouch && /(?:^|[\s-])MOTO G8(?:$|[\s-])/.test(model);
+                const isBodegaDisposition = condition === 'BUEN ESTADO' &&
+                    location.includes('BODEGA DISPOSICION FINAL');
+                return isG8PowerTouch || isMotoG8 || isBodegaDisposition;
+            });
+            const counts = {
+                g8PowerTouch: excludedAvailable.filter(item => String(item.modelo || '').toUpperCase().includes('MOTO G8 POWER TOUCH')).length,
+                g8: excludedAvailable.filter(item => {
+                    const model = String(item.modelo || '').toUpperCase().replace(/\s+/g, ' ').trim();
+                    return !model.includes('MOTO G8 POWER TOUCH') && /(?:^|[\s-])MOTO G8(?:$|[\s-])/.test(model);
+                }).length,
+                disposition: excludedAvailable.filter(item =>
+                    String(item.danoReparacion || '').trim().toUpperCase() === 'BUEN ESTADO' &&
+                    String(item.ubicacionSam || '').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').includes('BODEGA DISPOSICION FINAL')
+                ).length
+            };
+            const availableEquipment = equipmentRows.filter(item => item.estado === 'Disponible').length - excludedAvailable.length;
+            document.getElementById('equipment-count-warehouse').textContent = availableEquipment.toLocaleString('es-CO');
+            const warehouseNote = document.getElementById('equipment-count-warehouse-note');
+            const exclusions = [
+                counts.g8PowerTouch && `${counts.g8PowerTouch} MOTO G8 POWER TOUCH`,
+                counts.g8 && `${counts.g8} MOTO G8`,
+                counts.disposition && `${counts.disposition} en BODEGA DISPOSICION FINAL`
+            ].filter(Boolean);
+            warehouseNote.hidden = exclusions.length === 0;
+            warehouseNote.textContent = exclusions.length ? `Excluidos: ${exclusions.join(' · ')}` : '';
             document.getElementById('equipment-count-service').textContent = equipmentRows
                 .filter(item => serviceStatuses.has(item.estado)).length.toLocaleString('es-CO');
             document.getElementById('equipment-count-damaged').textContent = equipmentRows
@@ -3052,7 +3086,6 @@ import { apiRequest, invalidateApiCache } from "./services/api.js";
             if (tabName === 'catalogo') window.cargarCatalogo();
             if (tabName === 'equipos') window.cargarEquipos();
             if (tabName === 'capmovil') window.cargarCapMovil();
-            if (tabName === 'reportes') window.cargarAnaliticaInventario();
             if (tabName === 'solicitudes') window.cargarSolicitudes();
             if (tabName === 'historial') {
                 document.querySelector('[data-history-view="accessories"]')?.click();

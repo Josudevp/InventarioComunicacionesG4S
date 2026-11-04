@@ -89,7 +89,6 @@
                     <i class="fa-solid fa-moon" aria-hidden="true"></i><span data-theme-label>Modo oscuro</span>
                 </button>
                 <button class="btn-secondary logout-button" onclick="window.cerrarSesion()"><i class="fa-solid fa-right-from-bracket"></i> Salir</button>
-                <button id="tab-reportes-trigger" type="button" class="header-report-link" onclick="window.switchTab('reportes', this)"><i class="fa-solid fa-file-arrow-down" aria-hidden="true"></i> Reportes</button>
             </div>
         </div>
 
@@ -398,7 +397,7 @@
                 </div>
             </div>
 
-            <section id="tab-reportes" class="section" role="tabpanel" aria-labelledby="tab-reportes-trigger">
+            <section id="tab-reportes" class="section" role="tabpanel" aria-labelledby="tab-reportes-trigger" hidden>
                 <section id="dashboard-inventory-insights" class="dashboard-panel dashboard-insights-panel" aria-labelledby="inventory-insights-title">
                     <div class="dashboard-panel-heading">
                         <div>
@@ -657,7 +656,7 @@
                 </div>
                 <div class="equipment-summary" aria-live="polite">
                     <div class="equipment-summary-stat"><span>Equipos registrados</span><strong id="equipment-count-total">0</strong></div>
-                    <div class="equipment-summary-stat"><span>Disponibles</span><strong id="equipment-count-warehouse">0</strong></div>
+                    <div class="equipment-summary-stat"><span>Disponibles</span><strong id="equipment-count-warehouse">0</strong><small id="equipment-count-warehouse-note" class="equipment-summary-note" hidden></small></div>
                     <div class="equipment-summary-stat"><span>En reparación o garantía</span><strong id="equipment-count-service">0</strong></div>
                     <div class="equipment-summary-stat"><span>Dañados</span><strong id="equipment-count-damaged">0</strong></div>
                 </div>
@@ -738,6 +737,10 @@
                             <option>Enviados CAP</option>
                             <option>Despachado a puesto</option>
                         </select>
+                    </div>
+                    <div class="equipment-bulk-heading">
+                        <strong>Cambio de estado masivo</strong>
+                        <small>Selecciona uno o varios celulares y elige el nuevo estado para aplicarlo a todos.</small>
                     </div>
                     <div class="equipment-bulk-toolbar">
                         <label class="equipment-select-visible"><input id="equipment-select-visible" type="checkbox"> Seleccionar visibles</label>

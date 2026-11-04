@@ -1749,37 +1749,17 @@ test('equipment list refreshes SAM location from the current master row', () => 
   assert.equal(equipment.getRange(2, 11).getValue(), 'NUEVA UBICACION');
 });
 
-test('master spreadsheet import copies its first tab and synchronizes later updates', () => {
+test('local SAM master sheet is used without external spreadsheet synchronization', () => {
   const { context, spreadsheet, scheduledTriggers } = createRuntime();
-  const source = new Spreadsheet(context.CONFIG.equipmentSourceSpreadsheetId);
-  source.sheets.clear();
-  const sourceSheet = source.insertSheet('Maestro telefónico');
-  const sourceRows = [
+  const master = spreadsheet.insertSheet(context.CONFIG.equipmentMasterSheet);
+  master.getRange(1, 1, 3, 6).setValues([
     ['id', 'Modelo', 'linea', 'IMEI_ICCID', 'ubicacion', 'Estado'],
     [25387, 'MOTO G23', '3222634305', '354696572315130', 'BODEGA', 'Activo'],
     [25388, 'SIM Card', 'sin linea', '000000000123456', 'BODEGA', 'Activo']
-  ];
-  sourceSheet.getRange(1, 1, sourceRows.length, sourceRows[0].length).setValues(sourceRows);
-  const oldMaster = spreadsheet.insertSheet('Equipos');
-  oldMaster.getRange(1, 1, 2, 2).setValues([['Maestro anterior'], ['conservar']]);
-  const openById = context.SpreadsheetApp.openById;
-  context.SpreadsheetApp.openById = id => id === context.CONFIG.equipmentSourceSpreadsheetId ? source : openById(id);
-
-  assert.match(context.importarMaestroCelularesDesdeFuente(), /1 equipos válidos/);
-  const imported = spreadsheet.getSheetByName(context.CONFIG.equipmentMasterSheet);
-  assert.deepEqual(imported.getDataRange().getValues(), [
-    ['Modelo', 'IMEI_ICCID', 'ubicacion'],
-    ['MOTO G23', '354696572315130', 'BODEGA']
   ]);
-  assert.equal(spreadsheet.getSheetByName('Equipos').name, context.CONFIG.equipmentMasterSheet);
-  assert.equal([...spreadsheet.sheets.keys()].some(name => name.indexOf('Equipos respaldo ') === 0), true);
-  assert.equal(scheduledTriggers.filter(trigger => trigger.getHandlerFunction() === 'sincronizarMaestroCelularesDesdeFuente').length, 1);
-
-  sourceSheet.getRange(2, 5).setValue('NUEVA UBICACION');
-  context.sincronizarMaestroCelularesDesdeFuente();
-  const updatedMaster = spreadsheet.getSheetByName(context.CONFIG.equipmentMasterSheet);
-  assert.equal(updatedMaster.getRange(2, 3).getValue(), 'NUEVA UBICACION');
-  assert.equal(scheduledTriggers.filter(trigger => trigger.getHandlerFunction() === 'sincronizarMaestroCelularesDesdeFuente').length, 1);
+  const result = response(context.getEquipment_({ usuario: 'operador', rol: 'usuario' }));
+  assert.equal(result.status, 'success');
+  assert.equal(spreadsheet.getSheetByName(context.CONFIG.equipmentMasterSheet).getName(), 'Equipos');
 });
 
 test('accessory sheet migration renames legacy sheets without losing rows', () => {
@@ -1862,17 +1842,13 @@ test('IMEI suffix lookup searches backup master tabs and returns a duplicate IME
   assert.equal(duplicate.data[0].ubicacionSam, 'UBICACION ACTUAL');
 });
 
-test('IMEI lookup searches every tab in the configured source workbook', () => {
+test('IMEI lookup searches every compatible local master tab', () => {
   const { context, spreadsheet, sessionEntries } = createRuntime();
-  const source = new Spreadsheet(context.CONFIG.equipmentSourceSpreadsheetId);
-  source.sheets.clear();
-  const sourceTab = source.insertSheet('Otra hoja del maestro');
+  const sourceTab = spreadsheet.insertSheet('Otra hoja del maestro');
   sourceTab.getRange(1, 1, 2, 4).setValues([
     ['Modelo', 'IMEI_ICCID', 'ubicacion', 'Estado'],
     ['MOTO G23', '359099107544479', 'PUESTO NORTE', 'Activo']
   ]);
-  const openById = context.SpreadsheetApp.openById;
-  context.SpreadsheetApp.openById = id => id === context.CONFIG.equipmentSourceSpreadsheetId ? source : openById(id);
   const token = 'imei-source-tab-session';
   sessionEntries.set(context.sessionKey_(token), JSON.stringify({ usuario: 'operador', rol: 'usuario' }));
 

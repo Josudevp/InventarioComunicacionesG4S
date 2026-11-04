@@ -36,9 +36,6 @@ var CONFIG = {
   requestsSheet: "Solicitudes accesorios",
   legacyRequestsSheet: "Solicitudes",
   equipmentMasterSheet: "Equipos",
-  equipmentSourceSpreadsheetId: "12r2OlaIV8HH_HdenI2BST2_zsNmpA-UB-C3AK4-yUxg",
-  equipmentSourceSpreadsheetProperty: "EQUIPMENT_SOURCE_SPREADSHEET_ID",
-  equipmentSourceImportProperty: "EQUIPMENT_SOURCE_IMPORTED_ID",
   equipmentSheet: "Inventario de celulares",
   equipmentHistorySheet: "Historial de celulares",
   equipmentArchiveSheet: "Celulares archivados",
@@ -895,6 +892,9 @@ function getEquipmentDashboardMetrics_(now) {
   var metrics = {
     total: 0,
     bodega: 0,
+    g8PowerTouchExcluidos: 0,
+    g8Excluidos: 0,
+    bodegaDisposicionFinalExcluidos: 0,
     enReparacion: 0,
     enGarantia: 0,
     disposicionFinal: 0,
@@ -913,7 +913,16 @@ function getEquipmentDashboardMetrics_(now) {
     if (!id) continue;
     metrics.total++;
     var status = clean_(equipment[5], 100);
-    if (status === "Disponible") metrics.bodega++;
+    var model = clean_(equipment[2], 100).toUpperCase().replace(/\s+/g, " ").trim();
+    var condition = clean_(equipment[4], 500).toUpperCase();
+    var location = clean_(equipment[10], 200).toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    var isG8PowerTouch = model.indexOf("MOTO G8 POWER TOUCH") >= 0;
+    var isMotoG8 = !isG8PowerTouch && /(?:^|[\s-])MOTO G8(?:$|[\s-])/.test(model);
+    var isBodegaDisposition = condition === "BUEN ESTADO" && location.indexOf("BODEGA DISPOSICION FINAL") >= 0;
+    if (status === "Disponible" && isG8PowerTouch) metrics.g8PowerTouchExcluidos++;
+    if (status === "Disponible" && isMotoG8) metrics.g8Excluidos++;
+    if (status === "Disponible" && isBodegaDisposition) metrics.bodegaDisposicionFinalExcluidos++;
+    if (status === "Disponible" && !isG8PowerTouch && !isMotoG8 && !isBodegaDisposition) metrics.bodega++;
     if (status === "Disposición final") metrics.disposicionFinal++;
     if (serviceStates.indexOf(status) < 0) continue;
     if (status === "Garantía") metrics.enGarantia++;
@@ -2504,7 +2513,16 @@ function searchEquipmentMaster_(data) {
 
   var matches = [];
   var seenImeis = Object.create(null);
-  equipmentMasterSheets_().forEach(function(sheet) {
+  var localMaster = mainSpreadsheet_().getSheetByName(CONFIG.equipmentMasterSheet);
+  searchEquipmentMasterSheets_(localMaster ? [localMaster] : [], suffix, matches, seenImeis);
+  if (!matches.length) searchEquipmentMasterSheets_(equipmentMasterSheets_().filter(function(sheet) {
+    return sheet !== localMaster;
+  }), suffix, matches, seenImeis);
+  return json_({ status: "success", data: matches.slice(0, 20), total: matches.length });
+}
+
+function searchEquipmentMasterSheets_(sheets, suffix, matches, seenImeis) {
+  sheets.forEach(function(sheet) {
     var header = equipmentMasterHeader_(sheet);
     if (!header) return;
     var rowCount = sheet.getLastRow() - header.row;
@@ -2542,7 +2560,6 @@ function searchEquipmentMaster_(data) {
       });
     }
   });
-  return json_({ status: "success", data: matches.slice(0, 20), total: matches.length });
 }
 
 function equipmentMasterSheets_() {
@@ -2552,29 +2569,17 @@ function equipmentMasterSheets_() {
     CONFIG.equipmentArchiveSheet
   ];
   var appSpreadsheet = mainSpreadsheet_();
-  var sourceSpreadsheet = SpreadsheetApp.openById(equipmentSourceSpreadsheetId_());
-  var spreadsheets = [sourceSpreadsheet];
-  if (sourceSpreadsheet.getId() !== appSpreadsheet.getId()) spreadsheets.push(appSpreadsheet);
   var sheets = [];
-  spreadsheets.forEach(function(spreadsheet) {
-    var isAppSpreadsheet = spreadsheet.getId() === appSpreadsheet.getId();
-    var workbookSheets = spreadsheet.getSheets().filter(function(sheet) {
-      if (isAppSpreadsheet && excludedSheets.indexOf(sheet.getName()) >= 0) return false;
-      return Boolean(equipmentMasterHeader_(sheet));
-    });
-    workbookSheets.sort(function(first, second) {
-      if (first.getName() === CONFIG.equipmentMasterSheet) return -1;
-      if (second.getName() === CONFIG.equipmentMasterSheet) return 1;
-      return 0;
-    });
-    sheets = sheets.concat(workbookSheets);
+  var workbookSheets = appSpreadsheet.getSheets().filter(function(sheet) {
+    return excludedSheets.indexOf(sheet.getName()) < 0 && Boolean(equipmentMasterHeader_(sheet));
   });
+  workbookSheets.sort(function(first, second) {
+    if (first.getName() === CONFIG.equipmentMasterSheet) return -1;
+    if (second.getName() === CONFIG.equipmentMasterSheet) return 1;
+    return 0;
+  });
+  sheets = sheets.concat(workbookSheets);
   return sheets;
-}
-
-function equipmentSourceSpreadsheetId_() {
-  return String(PropertiesService.getScriptProperties()
-    .getProperty(CONFIG.equipmentSourceSpreadsheetProperty) || CONFIG.equipmentSourceSpreadsheetId).trim();
 }
 
 function equipmentMasterHeader_(sheet) {
@@ -2837,89 +2842,6 @@ function inicializarHojasEquipos() {
   equipmentArchiveSheet_();
   configurarArchivadoAutomaticoCelulares();
   return "Hojas de inventario e historial de celulares inicializadas; archivado diario configurado";
-}
-
-function importarMaestroCelularesDesdeFuente() {
-  return sincronizarMaestroCelularesDesdeFuente_(true);
-}
-
-function sincronizarMaestroCelularesDesdeFuente() {
-  return sincronizarMaestroCelularesDesdeFuente_(false);
-}
-
-function sincronizarMaestroCelularesDesdeFuente_(initialImport) {
-  var lock = LockService.getScriptLock();
-  lock.waitLock(30000);
-  try {
-    var source;
-    try {
-      source = SpreadsheetApp.openById(equipmentSourceSpreadsheetId_());
-    } catch (error) {
-      throw new Error("No se pudo leer el maestro. Comparte el archivo como lector con la cuenta que ejecuta este Apps Script y vuelve a intentar");
-    }
-    var destination = mainSpreadsheet_();
-    if (source.getId() === destination.getId()) {
-      throw new Error("El archivo maestro ya es el spreadsheet de la aplicación; no se puede copiar sobre sí mismo");
-    }
-    var sourceSheet = source.getSheets().find(function(sheet) {
-      return Boolean(equipmentMasterHeader_(sheet));
-    });
-    if (!sourceSheet) throw new Error("El archivo maestro no contiene pestañas");
-    var sourceRows = sourceSheet.getDataRange().getValues();
-    if (!sourceRows.length || !sourceRows[0].length) {
-      throw new Error("El maestro debe incluir una pestaña con encabezados de modelo e IMEI");
-    }
-    var sourceHeader = equipmentMasterHeader_(sourceSheet);
-    var sourceValues = [["Modelo", "IMEI_ICCID", "ubicacion"]];
-    var modelColumn = sourceHeader.modelColumn;
-    var locationColumn = sourceHeader.locationColumn;
-    var typeColumn = sourceHeader.typeColumn;
-    var imeiColumn = sourceHeader.imeiColumns[0];
-    for (var sourceRow = sourceHeader.row; sourceRow < sourceRows.length; sourceRow++) {
-      var sourceModel = clean_(sourceRows[sourceRow][modelColumn - 1], 100);
-      if (isSimRecord_(sourceModel) ||
-          (typeColumn && isSimRecord_(sourceRows[sourceRow][typeColumn - 1]))) continue;
-      var sourceImei = String(sourceRows[sourceRow][imeiColumn - 1] || "").replace(/\D/g, "");
-      if (!sourceModel || !sourceImei) continue;
-      sourceValues.push([
-        sourceModel,
-        sourceImei,
-        locationColumn ? clean_(sourceRows[sourceRow][locationColumn - 1], 200) : ""
-      ]);
-    }
-
-    var properties = PropertiesService.getScriptProperties();
-    var sourceId = equipmentSourceSpreadsheetId_();
-    var importedSourceId = properties.getProperty(CONFIG.equipmentSourceImportProperty) || "";
-    var target = destination.getSheetByName(CONFIG.equipmentMasterSheet);
-    var staging = destination.insertSheet("Importacion celulares " + Utilities.getUuid().replace(/-/g, "").slice(0, 12));
-    staging.getRange(1, 1, sourceValues.length, sourceValues[0].length).setValues(sourceValues);
-    if (target && importedSourceId !== sourceId && target.getLastRow() > 0) {
-      var backupName = "Equipos respaldo " + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyyMMdd_HHmmss");
-      if (destination.getSheetByName(backupName)) backupName += "_" + new Date().getTime();
-      target.setName(backupName);
-    } else if (target) {
-      destination.deleteSheet(target);
-    }
-    staging.setName(CONFIG.equipmentMasterSheet);
-    properties.setProperty(CONFIG.equipmentSourceImportProperty, sourceId);
-    SpreadsheetApp.flush();
-
-    if (initialImport) configurarSincronizacionMaestroCelulares();
-    return "Maestro copiado a " + CONFIG.equipmentMasterSheet + ": " +
-      Math.max(sourceValues.length - 1, 0) + " equipos válidos";
-  } finally {
-    lock.releaseLock();
-  }
-}
-
-function configurarSincronizacionMaestroCelulares() {
-  var handler = "sincronizarMaestroCelularesDesdeFuente";
-  var exists = ScriptApp.getProjectTriggers().some(function(trigger) {
-    return trigger.getHandlerFunction() === handler;
-  });
-  if (!exists) ScriptApp.newTrigger(handler).timeBased().everyDays(1).atHour(4).create();
-  return "Sincronización diaria del maestro de celulares configurada";
 }
 
 function equipmentHistorySheet_() {

@@ -1,4 +1,4 @@
-const API_URL = import.meta.env.VITE_API_URL || 'https://script.google.com/macros/s/AKfycbxz9KZLLhT3HZI4XERjX7aVS7565lX_Besd31Sme5JDqNtHQFOdgp5GIGn7kPa66g8/exec';
+const API_URL = import.meta.env.VITE_API_URL || 'https://script.google.com/macros/s/AKfycbypDUTGs7UgtTnPBi63kJNtiAJAVAxu2rs_LDeVlGtKf04eJ5isSM-Tg8gEYOPPjGk/exec';
 const READ_ACTIONS = new Set([
   'obtener_dashboard',
   'obtener_catalogo',
@@ -6,7 +6,8 @@ const READ_ACTIONS = new Set([
   'obtener_equipos',
   'obtener_solicitudes',
   'obtener_movimientos',
-  'obtener_analitica_inventario'
+  'obtener_analitica_inventario',
+  'buscar_equipo_maestro'
 ]);
 const RESPONSE_CACHE_TTL_MS = 30000;
 const responseCache = new Map();
