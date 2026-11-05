@@ -2642,7 +2642,7 @@ function registerEquipment_(data, session) {
   var model = clean_(data.modelo, 100);
   var imei = String(data.imei || "").replace(/\D/g, "");
   var location = clean_(data.ubicacionSam, 200);
-  var condition = clean_(data.danoReparacion, 500);
+  var condition = clean_(data.danoReparacion, 500).toUpperCase();
   var status = canonicalEquipmentStatus_(data.estado) || "Disponible";
   if (status === "Disponible") condition = "BUEN ESTADO";
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || isNaN(new Date(date + "T00:00:00").getTime())) {
@@ -2681,7 +2681,7 @@ function registerEquipmentBatch_(data, session) {
     var model = clean_(item.modelo, 100);
     var imei = String(item.imei || "").replace(/\D/g, "");
     var location = clean_(item.ubicacionSam, 200);
-    var condition = clean_(item.danoReparacion, 500);
+    var condition = clean_(item.danoReparacion, 500).toUpperCase();
     var status = canonicalEquipmentStatus_(item.estado) || "Disponible";
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || isNaN(new Date(date + "T00:00:00").getTime())) {
       throw new Error("Hay una fecha de recepción no válida en el lote");

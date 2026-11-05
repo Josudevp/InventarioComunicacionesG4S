@@ -2631,6 +2631,7 @@ import { apiRequest, invalidateApiCache } from "./services/api.js";
             const count = pendingEquipmentBatch.length;
             document.getElementById('equipment-batch-count').textContent = `${count.toLocaleString('es-CO')} en el lote`;
             document.getElementById('btn-clear-equipment-batch').disabled = count === 0;
+            document.getElementById('btn-export-equipment-batch').disabled = count === 0;
             document.getElementById('btn-save-equipment-batch').disabled = count === 0;
             if (!count) {
                 body.innerHTML = '<tr><td colspan="6">Añade celulares al lote.</td></tr>';
@@ -2644,6 +2645,54 @@ import { apiRequest, invalidateApiCache } from "./services/api.js";
                 <td data-label="Estado">${window.escapeHtml(item.estado)}</td>
                 <td><button type="button" class="btn-secondary equipment-batch-remove" data-remove-batch-item="${index}" aria-label="Quitar IMEI ${window.escapeHtml(item.imei)} del lote" title="Quitar del lote"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button></td>
             </tr>`).join('');
+        };
+
+        window.exportarLoteEquipos = async function() {
+            if (!pendingEquipmentBatch.length) return;
+            const button = document.getElementById('btn-export-equipment-batch');
+            const feedback = document.getElementById('equipment-feedback');
+            button.disabled = true;
+            try {
+                const headers = ['Fecha de recepción', 'Modelo', 'IMEI', 'Ubicación SAM', 'Daño / reparación', 'Estado'];
+                const cell = value => `<td>${window.escapeHtml(String(value || ''))}</td>`;
+                const rows = pendingEquipmentBatch.map(item => {
+                    const values = [
+                        item.fechaRecepcion,
+                        item.modelo,
+                        item.imei,
+                        item.ubicacionSam,
+                        item.danoReparacion,
+                        item.estado
+                    ];
+                    const rowStyle = String(item.danoReparacion || '').trim().toUpperCase() === 'BUEN ESTADO'
+                        ? ' style="background-color:#00ff00"'
+                        : '';
+                    return `<tr${rowStyle}>${values.map(cell).join('')}</tr>`;
+                }).join('');
+                const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><style>
+                    table { border-collapse: collapse; font-family: Arial, sans-serif; }
+                    th, td { border: 1px solid #000; padding: 5px 8px; }
+                    th { background-color: #d9eaf7; font-weight: bold; }
+                </style></head><body><table><thead><tr>${headers.map(header => `<th>${window.escapeHtml(header)}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></body></html>`;
+                const blob = new Blob([html], { type: 'application/vnd.ms-excel;charset=utf-8' });
+                const downloadUrl = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = downloadUrl;
+                link.download = `Lote_celulares_${reportFileDate()}.xls`;
+                document.body.appendChild(link);
+                link.click();
+                link.remove();
+                URL.revokeObjectURL(downloadUrl);
+                feedback.classList.remove('is-error');
+                feedback.textContent = 'El lote se exportó correctamente.';
+            } catch (error) {
+                console.error('Error al exportar el lote de celulares:', error);
+                feedback.textContent = `No se pudo exportar el lote: ${error.message}`;
+                feedback.classList.add('is-error');
+                window.mostrarAlerta(error.message, 'error');
+            } finally {
+                button.disabled = pendingEquipmentBatch.length === 0;
+            }
         };
 
         window.renderizarEquipos = function() {
@@ -2771,7 +2820,7 @@ import { apiRequest, invalidateApiCache } from "./services/api.js";
                 modelo: document.getElementById('equipment-model').value.trim(),
                 imei: document.getElementById('equipment-imei').value.trim(),
                 ubicacionSam: document.getElementById('equipment-location').value.trim(),
-                danoReparacion: document.getElementById('equipment-condition').value.trim(),
+                danoReparacion: document.getElementById('equipment-condition').value.trim().toLocaleUpperCase('es-CO'),
                 estado: document.getElementById('equipment-state').value
             };
             if (pendingEquipmentBatch.some(row => row.imei === item.imei) || equipmentRows.some(row => row.imei === item.imei)) {
@@ -2915,7 +2964,14 @@ import { apiRequest, invalidateApiCache } from "./services/api.js";
                 document.getElementById('equipment-form').requestSubmit();
             }
         });
+        document.getElementById('equipment-condition').addEventListener('input', event => {
+            const start = event.target.selectionStart;
+            const value = event.target.value.toLocaleUpperCase('es-CO');
+            event.target.value = value;
+            event.target.setSelectionRange(start, start);
+        });
         document.getElementById('btn-clear-equipment-batch').addEventListener('click', window.vaciarLoteEquipos);
+        document.getElementById('btn-export-equipment-batch').addEventListener('click', window.exportarLoteEquipos);
         document.getElementById('btn-save-equipment-batch').addEventListener('click', window.registrarLoteEquipos);
         document.getElementById('equipment-batch-body').addEventListener('click', event => {
             const button = event.target.closest('[data-remove-batch-item]');
