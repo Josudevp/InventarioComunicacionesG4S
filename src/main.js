@@ -60,6 +60,7 @@ import { apiRequest, invalidateApiCache } from "./services/api.js";
         const CAP_PENDING_PAGE_SIZE = 15;
         let equipmentMasterMatches = [];
         let pendingEquipmentBatch = [];
+        const PENDING_EQUIPMENT_BATCH_KEY = 'g4sPendingEquipmentBatch';
         const selectedEquipmentIds = new Set();
         const equipmentStatusOptions = [
             'Disponible', 'Dañado', 'Disposición final', 'Garantía', 'Enviados CAP', 'Despachado a puesto'
@@ -441,6 +442,12 @@ import { apiRequest, invalidateApiCache } from "./services/api.js";
             document.getElementById('app-screen').style.display = 'block';
             document.getElementById('user-email').innerText = "Usuario: " + nombreUsuario;
             window.actualizarPermisosCatalogo();
+            const restoredBatch = restorePendingEquipmentBatch();
+            window.renderizarLoteEquipos();
+            if (restoredBatch) {
+                document.getElementById('equipment-feedback').textContent =
+                    `Se recuperaron ${pendingEquipmentBatch.length} celulares pendientes del lote anterior.`;
+            }
             if (!requestDraft.length) window.agregarLineaSolicitud();
             window.cargarCatalogo();
             window.cargarDashboard();
@@ -2626,9 +2633,61 @@ import { apiRequest, invalidateApiCache } from "./services/api.js";
             updateEquipmentSelectionUi();
         };
 
+        const pendingEquipmentStorageKey = () => {
+            const user = sessionStorage.getItem('g4sLoggedUser');
+            return user ? `${PENDING_EQUIPMENT_BATCH_KEY}:${user}` : null;
+        };
+
+        const savePendingEquipmentBatch = () => {
+            const key = pendingEquipmentStorageKey();
+            if (!key) return;
+            try {
+                if (pendingEquipmentBatch.length) {
+                    localStorage.setItem(key, JSON.stringify(pendingEquipmentBatch));
+                } else {
+                    localStorage.removeItem(key);
+                }
+            } catch (error) {
+                console.error('No se pudo guardar el lote pendiente en el navegador:', error);
+            }
+        };
+
+        const restorePendingEquipmentBatch = () => {
+            const key = pendingEquipmentStorageKey();
+            if (!key) return false;
+            try {
+                const saved = JSON.parse(localStorage.getItem(key) || 'null');
+                if (!Array.isArray(saved)) return false;
+                const validItems = saved.filter(item =>
+                    item && typeof item === 'object' &&
+                    typeof item.imei === 'string' &&
+                    /^\d{15}$/.test(item.imei) &&
+                    typeof item.modelo === 'string' &&
+                    typeof item.fechaRecepcion === 'string' &&
+                    typeof item.danoReparacion === 'string' &&
+                    typeof item.estado === 'string'
+                ).slice(0, 500);
+                pendingEquipmentBatch = validItems.map(item => ({
+                    fechaRecepcion: item.fechaRecepcion,
+                    modelo: item.modelo,
+                    imei: item.imei,
+                    ubicacionSam: typeof item.ubicacionSam === 'string' ? item.ubicacionSam : '',
+                    danoReparacion: item.danoReparacion.toLocaleUpperCase('es-CO'),
+                    estado: item.estado
+                }));
+                if (pendingEquipmentBatch.length !== saved.length) savePendingEquipmentBatch();
+                return pendingEquipmentBatch.length > 0;
+            } catch (error) {
+                console.error('No se pudo restaurar el lote pendiente del navegador:', error);
+                localStorage.removeItem(key);
+                return false;
+            }
+        };
+
         window.renderizarLoteEquipos = function() {
             const body = document.getElementById('equipment-batch-body');
             const count = pendingEquipmentBatch.length;
+            savePendingEquipmentBatch();
             document.getElementById('equipment-batch-count').textContent = `${count.toLocaleString('es-CO')} en el lote`;
             document.getElementById('btn-clear-equipment-batch').disabled = count === 0;
             document.getElementById('btn-export-equipment-batch').disabled = count === 0;
