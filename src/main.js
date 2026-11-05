@@ -2844,9 +2844,10 @@ import { apiRequest, invalidateApiCache } from "./services/api.js";
             updateEquipmentSelectionUi();
         };
 
-        window.cargarEquipos = async function() {
+        window.cargarEquipos = async function(force = false) {
             const body = document.getElementById('equipment-table-body');
             if (!body) return;
+            if (force) loadedSections.delete('equipos');
             if (loadedSections.has('equipos') && Date.now() - loadedSections.get('equipos') < CLIENT_CACHE_MS) return;
             body.innerHTML = '<tr><td colspan="7">Cargando equipos...</td></tr>';
             const dateField = document.getElementById('equipment-date');
@@ -2882,6 +2883,12 @@ import { apiRequest, invalidateApiCache } from "./services/api.js";
                 danoReparacion: document.getElementById('equipment-condition').value.trim().toLocaleUpperCase('es-CO'),
                 estado: document.getElementById('equipment-state').value
             };
+            if (!/^\d{15}$/.test(item.imei)) {
+                feedback.textContent = `El IMEI debe tener exactamente 15 dígitos. El ingresado tiene ${item.imei.length}.`;
+                feedback.classList.add('is-error');
+                document.getElementById('equipment-imei-suffix').focus();
+                return;
+            }
             if (pendingEquipmentBatch.some(row => row.imei === item.imei) || equipmentRows.some(row => row.imei === item.imei)) {
                 feedback.textContent = `El IMEI ${item.imei} ya está en el lote o en el inventario.`;
                 feedback.classList.add('is-error');
@@ -2918,22 +2925,62 @@ import { apiRequest, invalidateApiCache } from "./services/api.js";
             if (!pendingEquipmentBatch.length) return;
             const button = document.getElementById('btn-save-equipment-batch');
             const feedback = document.getElementById('equipment-feedback');
+            const batchBeingRegistered = pendingEquipmentBatch.map(item => ({ ...item }));
+            const invalidItem = batchBeingRegistered.find(item => !/^\d{15}$/.test(item.imei));
+            if (invalidItem) {
+                feedback.textContent = `No se puede registrar el lote: el IMEI ${invalidItem.imei || '(vacío)'} debe tener exactamente 15 dígitos.`;
+                feedback.classList.add('is-error');
+                return;
+            }
             button.disabled = true;
             feedback.classList.remove('is-error');
-            feedback.textContent = `Registrando ${pendingEquipmentBatch.length} celulares...`;
+            feedback.textContent = `Registrando ${batchBeingRegistered.length} celulares...`;
             try {
-                const response = await apiRequest({ action: 'registrar_equipos_lote', items: pendingEquipmentBatch });
+                const response = await apiRequest(
+                    { action: 'registrar_equipos_lote', items: batchBeingRegistered },
+                    { timeoutMs: 60000 }
+                );
                 const result = await response.json();
                 if (result.status !== 'success') throw new Error(result.message || 'No se pudo registrar el lote');
-                const count = result.count || pendingEquipmentBatch.length;
+                const count = result.count || batchBeingRegistered.length;
                 pendingEquipmentBatch = [];
                 window.renderizarLoteEquipos();
                 feedback.textContent = `${count} celulares registrados.`;
                 await Promise.all([window.cargarEquipos(), window.cargarDashboard()]);
                 window.mostrarAlerta(`${count} celulares registrados correctamente.`, 'success');
             } catch (error) {
-                feedback.textContent = error.message;
+                const message = error.name === 'AbortError'
+                    ? 'La operación tardó demasiado y se verificará si el lote alcanzó a registrarse.'
+                    : error.message || 'No se pudo completar el registro del lote.';
+                feedback.textContent = message;
                 feedback.classList.add('is-error');
+                const shouldVerifyRegistration = error.name === 'AbortError' || error.name === 'TypeError';
+                if (!shouldVerifyRegistration) return;
+                try {
+                    await window.cargarEquipos(true);
+                    const registeredImeis = new Set(equipmentRows.map(item => String(item.imei || '').replace(/\D/g, '')));
+                    const remaining = batchBeingRegistered.filter(item => !registeredImeis.has(item.imei));
+                    if (remaining.length < batchBeingRegistered.length) {
+                        pendingEquipmentBatch = remaining;
+                        window.renderizarLoteEquipos();
+                        const registeredCount = batchBeingRegistered.length - remaining.length;
+                        if (!remaining.length) {
+                            feedback.classList.remove('is-error');
+                            feedback.textContent = `${registeredCount} celulares registrados correctamente.`;
+                            window.mostrarAlerta(`${registeredCount} celulares registrados correctamente.`, 'success');
+                        } else {
+                            feedback.textContent = `${registeredCount} celulares registrados. ${remaining.length} quedaron pendientes para reintentar.`;
+                        }
+                    }
+                    if (remaining.length === batchBeingRegistered.length) {
+                        feedback.textContent = message;
+                        feedback.classList.add('is-error');
+                    }
+                } catch (verificationError) {
+                    console.error('No se pudo verificar el resultado del registro:', verificationError);
+                    feedback.textContent = `${message} No fue posible verificar el inventario automáticamente.`;
+                    feedback.classList.add('is-error');
+                }
             } finally {
                 button.disabled = pendingEquipmentBatch.length === 0;
             }

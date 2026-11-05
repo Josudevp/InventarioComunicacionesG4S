@@ -33,7 +33,7 @@ function cacheKey(payload, authenticated) {
   return JSON.stringify([authenticated, payload]);
 }
 
-export function apiRequest(payload, { authenticated = true, cache = true } = {}) {
+export function apiRequest(payload, { authenticated = true, cache = true, timeoutMs = 60000 } = {}) {
   const isRead = authenticated && READ_ACTIONS.has(payload.action);
   if (authenticated && payload.action && !isRead) {
     invalidateApiCache();
@@ -55,10 +55,15 @@ export function apiRequest(payload, { authenticated = true, cache = true } = {})
     }
   }
   const requestGeneration = cacheGeneration;
+  const controller = typeof AbortController === 'function' ? new AbortController() : null;
+  const timeout = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
   const request = fetch(API_URL, {
     method: 'POST',
     body: JSON.stringify(authenticated ? apiPayload(payload) : payload),
-    headers: apiHeaders()
+    headers: apiHeaders(),
+    ...(controller ? { signal: controller.signal } : {})
+  }).finally(() => {
+    if (timeout) clearTimeout(timeout);
   });
   if (!isRead || !cache) return request;
   const pending = request.then(async response => {
