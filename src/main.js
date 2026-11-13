@@ -2691,6 +2691,7 @@ import { apiRequest, invalidateApiCache } from "./services/api.js";
             document.getElementById('equipment-batch-count').textContent = `${count.toLocaleString('es-CO')} en el lote`;
             document.getElementById('btn-clear-equipment-batch').disabled = count === 0;
             document.getElementById('btn-export-equipment-batch').disabled = count === 0;
+            document.getElementById('btn-copy-equipment-email').disabled = count === 0;
             document.getElementById('btn-save-equipment-batch').disabled = count === 0;
             if (!count) {
                 body.innerHTML = '<tr><td colspan="6">Añade celulares al lote.</td></tr>';
@@ -2704,6 +2705,79 @@ import { apiRequest, invalidateApiCache } from "./services/api.js";
                 <td data-label="Estado">${window.escapeHtml(item.estado)}</td>
                 <td><button type="button" class="btn-secondary equipment-batch-remove" data-remove-batch-item="${index}" aria-label="Quitar IMEI ${window.escapeHtml(item.imei)} del lote" title="Quitar del lote"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button></td>
             </tr>`).join('');
+        };
+
+        const plantillaCorreoRecepcion = () => {
+            const count = pendingEquipmentBatch.length;
+            const details = pendingEquipmentBatch.map(item =>
+                `${item.modelo}\t${item.imei}\t${item.danoReparacion}`
+            );
+            return [
+                'Buen día,',
+                '',
+                'Cordial saludo,',
+                '',
+                `Se confirma la recepción de ${count} ${count === 1 ? 'equipo' : 'equipos'} con los siguientes detalles:`,
+                '',
+                'Modelo\tIMEI\tDaño / reparación',
+                ...details,
+                '',
+                'Quedo atento a sus comentarios,',
+                '',
+                'Muchas gracias.'
+            ].join('\n');
+        };
+
+        const plantillaCorreoRecepcionHtml = () => {
+            const count = pendingEquipmentBatch.length;
+            const escapeHtml = value => window.escapeHtml(String(value || ''));
+            const rows = pendingEquipmentBatch.map(item => `
+                <tr>
+                    <td style="border:1px solid #999;padding:6px 8px;">${escapeHtml(item.modelo)}</td>
+                    <td style="border:1px solid #999;padding:6px 8px;">${escapeHtml(item.imei)}</td>
+                    <td style="border:1px solid #999;padding:6px 8px;">${escapeHtml(item.danoReparacion)}</td>
+                </tr>`).join('');
+            return `
+                <p>Buen día,</p>
+                <p>Cordial saludo,</p>
+                <p>Se confirma la recepción de <strong>${count} ${count === 1 ? 'equipo' : 'equipos'}</strong> con los siguientes detalles:</p>
+                <table style="border-collapse:collapse;font-family:Arial,sans-serif;font-size:13px;">
+                    <thead>
+                        <tr>
+                            <th style="border:1px solid #999;background:#d9eaf7;padding:6px 8px;text-align:left;">Modelo</th>
+                            <th style="border:1px solid #999;background:#d9eaf7;padding:6px 8px;text-align:left;">IMEI</th>
+                            <th style="border:1px solid #999;background:#d9eaf7;padding:6px 8px;text-align:left;">Daño / reparación</th>
+                        </tr>
+                    </thead>
+                    <tbody>${rows}</tbody>
+                </table>
+                <p>Quedo atento a sus comentarios,</p>
+                <p>Muchas gracias.</p>`;
+        };
+
+        window.copiarPlantillaCorreoRecepcion = async function() {
+            if (!pendingEquipmentBatch.length) return;
+            const feedback = document.getElementById('equipment-feedback');
+            const emailBody = plantillaCorreoRecepcion();
+            const emailHtml = plantillaCorreoRecepcionHtml();
+            try {
+                if (navigator.clipboard.write && typeof ClipboardItem === 'function') {
+                    await navigator.clipboard.write([
+                        new ClipboardItem({
+                            'text/html': new Blob([emailHtml], { type: 'text/html' }),
+                            'text/plain': new Blob([emailBody], { type: 'text/plain' })
+                        })
+                    ]);
+                } else {
+                    await navigator.clipboard.writeText(emailBody);
+                }
+                feedback.classList.remove('is-error');
+                feedback.textContent = 'Plantilla de correo copiada. Pégala en el mensaje de Gmail.';
+                window.mostrarAlerta('Plantilla de correo copiada correctamente.', 'success');
+            } catch (error) {
+                console.error('No se pudo copiar la plantilla de correo:', error);
+                window.prompt('Copia este texto y pégalo en el correo:', emailBody);
+            }
         };
 
         window.exportarLoteEquipos = async function() {
@@ -3078,6 +3152,7 @@ import { apiRequest, invalidateApiCache } from "./services/api.js";
         });
         document.getElementById('btn-clear-equipment-batch').addEventListener('click', window.vaciarLoteEquipos);
         document.getElementById('btn-export-equipment-batch').addEventListener('click', window.exportarLoteEquipos);
+        document.getElementById('btn-copy-equipment-email').addEventListener('click', window.copiarPlantillaCorreoRecepcion);
         document.getElementById('btn-save-equipment-batch').addEventListener('click', window.registrarLoteEquipos);
         document.getElementById('equipment-batch-body').addEventListener('click', event => {
             const button = event.target.closest('[data-remove-batch-item]');

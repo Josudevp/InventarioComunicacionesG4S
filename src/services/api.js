@@ -33,7 +33,7 @@ function cacheKey(payload, authenticated) {
   return JSON.stringify([authenticated, payload]);
 }
 
-export function apiRequest(payload, { authenticated = true, cache = true, timeoutMs = 60000 } = {}) {
+export function apiRequest(payload, { authenticated = true, cache = true, timeoutMs = 180000 } = {}) {
   const isRead = authenticated && READ_ACTIONS.has(payload.action);
   if (authenticated && payload.action && !isRead) {
     invalidateApiCache();
