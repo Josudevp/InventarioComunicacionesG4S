@@ -2004,3 +2004,279 @@ test('IMEI lookup searches every compatible local master tab', () => {
     ubicacionSam: 'PUESTO NORTE'
   });
 });
+
+test('radio imports keep the master inventory separate from dispatch history and are idempotent', () => {
+  const { context, spreadsheet, sessionEntries } = createRuntime();
+  const token = 'radio-admin-session';
+  sessionEntries.set(context.sessionKey_(token), JSON.stringify({ usuario: 'admin', rol: 'admin' }));
+  const post = payload => response(context.doPost({
+    postData: { contents: JSON.stringify({ ...payload, token }) }
+  }));
+  const inventory = [{
+    serial: 'RADIO-001',
+    modelo: 'DTR 720',
+    estadoInventario: 'Despachado',
+    fechaDespacho: '2026-10-27',
+    cliente: 'Cliente A',
+    regional: 'Bogota',
+    guia: '12345',
+    estadoDespacho: 'Entregado'
+  }];
+  const dispatch = (serialCantidad, extras = {}) => ({
+    fecha: '2026-10-27',
+    serialCantidad,
+    modelo: 'DTR 720',
+    accesorios: 'Dotación completa',
+    cliente: 'Cliente A',
+    regional: 'Bogota',
+    guia: '12345',
+    solicitud: 'RQ-1',
+    trasladoSam: '103',
+    evidencia: '',
+    estado: 'Entregado',
+    fuente: 'Registro de Despachos',
+    ...extras
+  });
+  const dispatches = [dispatch('RADIO-001'), dispatch('20'), dispatch('N/A'), dispatch('RADIO-001')];
+  const accessories = [{
+    accesorio: 'Manos Libres',
+    modelo: 'DTR 720',
+    stockInicial: 116,
+    totalDespachado: 33,
+    stockDisponible: 83,
+    stockMinimo: 12,
+    estadoAlerta: 'OPTIMO'
+  }];
+
+  const firstImport = post({ action: 'importar_radios_excel', inventario: inventory, accesorios: accessories, despachos: dispatches });
+  assert.equal(firstImport.status, 'success');
+  assert.deepEqual(firstImport.data, {
+    radiosCreados: 1,
+    radiosActualizados: 0,
+    accesoriosCreados: 1,
+    accesoriosActualizados: 0,
+    despachosImportados: 3,
+    despachosDuplicados: 1,
+    despachosConDiscrepancias: 1
+  });
+  const radioData = post({ action: 'obtener_radios' });
+  assert.equal(radioData.data.length, 0);
+  assert.equal(radioData.despachos.length, 3);
+  assert.equal(radioData.accesorios.length, 1);
+  assert.equal(radioData.accesorios[0].stockDisponible, 83);
+  assert.equal(radioData.resumen.despachados, 1);
+  assert.equal(spreadsheet.getSheetByName('Radios archivados').getLastRow(), 2);
+  assert.equal(spreadsheet.getSheetByName('Inventario radios').getLastRow(), 1);
+  assert.equal(radioData.despachos.find(row => row.serialCantidad === '20').tipoRegistro, 'Accesorio');
+  assert.equal(radioData.despachos.find(row => row.serialCantidad === '20').cantidad, 20);
+  assert.equal(radioData.despachos.find(row => row.serialCantidad === '20').serialRadio, '');
+  assert.equal(radioData.despachos.find(row => row.serialCantidad === '20').validacion, '');
+  assert.equal(radioData.despachos.find(row => row.serialCantidad === 'RADIO-001').tipoRegistro, 'Radio');
+  assert.match(radioData.despachos.find(row => row.serialCantidad === 'N/A').validacion, /Sin serial/);
+  assert.equal(post({ action: 'obtener_equipos' }).data.length, 0);
+
+  const repeatedImport = post({ action: 'importar_radios_excel', inventario: inventory, accesorios: accessories, despachos: dispatches });
+  assert.equal(repeatedImport.data.radiosActualizados, 1);
+  assert.equal(repeatedImport.data.radiosCreados, 0);
+  assert.equal(repeatedImport.data.accesoriosActualizados, 1);
+  assert.equal(repeatedImport.data.accesoriosCreados, 0);
+  assert.equal(repeatedImport.data.despachosImportados, 0);
+  assert.equal(repeatedImport.data.despachosConDiscrepancias, 0);
+  assert.equal(post({ action: 'obtener_radios' }).data.length, 0);
+  assert.equal(spreadsheet.getSheetByName('Radios archivados').getLastRow(), 2);
+  assert.equal(post({ action: 'obtener_radios' }).despachos.length, 3);
+  assert.equal(spreadsheet.getSheetByName('Inventario radios').getLastRow(), 1);
+  assert.equal(spreadsheet.getSheetByName('Inventario accesorios radios').getLastRow(), 2);
+  assert.equal(spreadsheet.getSheetByName('Historial despachos radios').getLastRow(), 4);
+});
+
+test('only administrators can import radio workbooks', () => {
+  const { context, spreadsheet, sessionEntries } = createRuntime();
+  const token = 'radio-operator-session';
+  sessionEntries.set(context.sessionKey_(token), JSON.stringify({ usuario: 'operador', rol: 'usuario' }));
+  const result = response(context.doPost({
+    postData: { contents: JSON.stringify({ action: 'importar_radios_excel', inventario: [], accesorios: [], despachos: [], token }) }
+  }));
+
+  assert.equal(result.status, 'error');
+  assert.match(result.message, /Solo un administrador/);
+  assert.equal(spreadsheet.getSheetByName('Inventario radios'), null);
+});
+
+test('radio operations track dispatches, stock movements, returns, and idempotent retries', () => {
+  const { context, spreadsheet, sessionEntries } = createRuntime();
+  const token = 'radio-operations-session';
+  sessionEntries.set(context.sessionKey_(token), JSON.stringify({ usuario: 'admin', rol: 'admin' }));
+  const post = payload => response(context.doPost({
+    postData: { contents: JSON.stringify({ ...payload, token }) }
+  }));
+
+  const created = post({
+    action: 'registrar_radio',
+    serial: 'R-100',
+    modelo: 'DTR 720',
+    estado: 'Disponible',
+    fechaRegistro: '2026-01-01'
+  });
+  assert.equal(created.status, 'success');
+  assert.equal(post({
+    action: 'registrar_radio',
+    serial: 'R-100',
+    modelo: 'DTR 720',
+    estado: 'Disponible',
+    fechaRegistro: '2026-01-01'
+  }).status, 'error');
+
+  const imported = post({
+    action: 'importar_radios_excel',
+    inventario: [],
+    accesorios: [{
+      accesorio: 'Batería',
+      modelo: 'DTR 720',
+      stockInicial: 10,
+      totalDespachado: 0,
+      stockDisponible: 10,
+      stockMinimo: 2,
+      estadoAlerta: 'OPTIMO'
+    }],
+    despachos: []
+  });
+  assert.equal(imported.status, 'success');
+  const accessoryId = spreadsheet.getSheetByName('Inventario accesorios radios').getRange(2, 1).getValue();
+  const dispatchPayload = {
+    action: 'despachar_radios',
+    seriales: ['R-100'],
+    accesorios: [{ id: accessoryId, cantidad: 3 }],
+    fecha: '2026-01-02',
+    cliente: 'Cliente A',
+    regional: 'Bogota',
+    guia: 'G-100',
+    estadoDespacho: 'En tránsito',
+    claveIdempotencia: 'radio-dispatch-1'
+  };
+  assert.equal(post(dispatchPayload).status, 'success');
+  assert.equal(spreadsheet.getSheetByName('Inventario radios').getLastRow(), 1);
+  assert.equal(spreadsheet.getSheetByName('Radios archivados').getRange(2, 3).getValue(), 'Despachado');
+  assert.equal(spreadsheet.getSheetByName('Inventario accesorios radios').getRange(2, 6).getValue(), 7);
+  assert.equal(post(dispatchPayload).duplicado, true);
+  assert.equal(spreadsheet.getSheetByName('Inventario accesorios radios').getRange(2, 6).getValue(), 7);
+  assert.equal(post({ action: 'obtener_radios' }).data.length, 0);
+
+  assert.equal(post({
+    action: 'actualizar_estado_radio',
+    seriales: ['R-100'],
+    estado: 'Disponible',
+    fecha: '2026-01-11'
+  }).status, 'success');
+  assert.equal(spreadsheet.getSheetByName('Radios archivados').getLastRow(), 1);
+  assert.equal(spreadsheet.getSheetByName('Inventario radios').getRange(2, 3).getValue(), 'Disponible');
+  const insufficientStock = post({
+    ...dispatchPayload,
+    claveIdempotencia: 'radio-dispatch-insufficient',
+    accesorios: [{ id: accessoryId, cantidad: 8 }]
+  });
+  assert.equal(insufficientStock.status, 'error');
+  assert.match(insufficientStock.message, /Stock insuficiente/);
+  assert.equal(spreadsheet.getSheetByName('Inventario radios').getRange(2, 3).getValue(), 'Disponible');
+
+  const returned = post({ action: 'obtener_radios' });
+  assert.equal(returned.data[0].estadoInventario, 'Disponible');
+  assert.equal(returned.resumen.retornosMedidos, 1);
+  assert.equal(returned.resumen.promedioRetornoDias, 9);
+  assert.equal(returned.resumen.pendientesRetorno, 0);
+  assert.equal(returned.despachos.length, 2);
+
+  assert.equal(post({
+    action: 'despachar_radios',
+    seriales: ['R-100'],
+    accesorios: [],
+    fecha: '2026-01-12',
+    claveIdempotencia: 'radio-dispatch-2'
+  }).status, 'success');
+  assert.equal(post({ action: 'obtener_radios' }).data.length, 0);
+  const reactivated = post({
+    action: 'registrar_radio',
+    serial: 'R-100',
+    modelo: 'DTR 720'
+  });
+  assert.equal(reactivated.status, 'success');
+  assert.equal(reactivated.reactivado, true);
+  assert.equal(post({ action: 'obtener_radios' }).data.length, 1);
+  assert.equal(spreadsheet.getSheetByName('Radios archivados').getLastRow(), 1);
+
+  const receipt = post({
+    action: 'registrar_entrada_accesorio_radio',
+    id: accessoryId,
+    cantidad: 2,
+    referencia: 'Compra',
+    claveIdempotencia: 'radio-receipt-1'
+  });
+  assert.equal(receipt.status, 'success');
+  assert.equal(receipt.stockDisponible, 9);
+  assert.equal(spreadsheet.getSheetByName('Movimientos accesorios radios').getLastRow(), 3);
+  const repeatedReceipt = post({
+    action: 'registrar_entrada_accesorio_radio',
+    id: accessoryId,
+    cantidad: 2,
+    referencia: 'Compra',
+    claveIdempotencia: 'radio-receipt-1'
+  });
+  assert.equal(repeatedReceipt.duplicado, true);
+  assert.equal(repeatedReceipt.stockDisponible, 9);
+  assert.equal(spreadsheet.getSheetByName('Movimientos accesorios radios').getLastRow(), 3);
+  assert.equal(post({ action: 'obtener_radios' }).movimientosAccesorios.length, 2);
+
+  const repeatedImport = post({
+    action: 'importar_radios_excel',
+    inventario: [{
+      serial: 'R-100',
+      modelo: 'DTR 720',
+      estadoInventario: 'Despachado',
+      fechaDespacho: '2026-01-02',
+      cliente: 'Cliente anterior',
+      regional: 'Regional anterior'
+    }],
+    accesorios: [{
+      accesorio: 'Batería',
+      modelo: 'DTR 720',
+      stockInicial: 10,
+      totalDespachado: 0,
+      stockDisponible: 10,
+      stockMinimo: 2,
+      estadoAlerta: 'OPTIMO'
+    }],
+    despachos: []
+  });
+  assert.equal(repeatedImport.status, 'success');
+  assert.equal(spreadsheet.getSheetByName('Inventario radios').getRange(2, 3).getValue(), 'Disponible');
+  assert.equal(spreadsheet.getSheetByName('Inventario accesorios radios').getRange(2, 6).getValue(), 9);
+});
+
+test('radio dispatch history migrates old headers and treats numeric serial values as accessories', () => {
+  const { context, spreadsheet, sessionEntries } = createRuntime();
+  const oldHeaders = [
+    'ID_Despacho', 'Clave_Deduplicacion', 'Fecha', 'Serial_Cantidad', 'Modelo', 'Accesorios',
+    'Cliente', 'Regional', 'Guia_TCC', 'Solicitud_APP', 'ID_Traslado_SAM', 'Evidencia',
+    'Estado', 'Validacion', 'Fuente', 'Registrado_Por', 'Fecha_Importacion'
+  ];
+  spreadsheet.addSheet(new Sheet('Historial despachos radios', [
+    oldHeaders,
+    ['old-1', 'legacy-key', '2026-10-27', '20', 'DTR 720', 'Manos libres',
+      'Cliente A', 'Bogota', '', '', '', '', 'Entregado',
+      'El campo serial contiene una cantidad; verificar el equipo asociado.', 'Registro de Despachos', 'admin', new Date()]
+  ]));
+  const token = 'radio-history-migration-session';
+  sessionEntries.set(context.sessionKey_(token), JSON.stringify({ usuario: 'operador', rol: 'usuario' }));
+
+  const result = response(context.doPost({
+    postData: { contents: JSON.stringify({ action: 'obtener_radios', token }) }
+  }));
+  const accessoryDispatch = result.despachos[0];
+
+  assert.equal(result.status, 'success');
+  assert.equal(accessoryDispatch.tipoRegistro, 'Accesorio');
+  assert.equal(accessoryDispatch.cantidad, 20);
+  assert.equal(accessoryDispatch.serialRadio, '');
+  assert.equal(accessoryDispatch.validacion, '');
+  assert.equal(spreadsheet.getSheetByName('Historial despachos radios').getRange(1, 18).getValue(), 'Tipo_Registro');
+});

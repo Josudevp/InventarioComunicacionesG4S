@@ -59,6 +59,35 @@
         </div>
     </div>
 
+    <div id="module-select-screen" style="display:none;">
+        <div class="module-select-shell">
+            <header class="module-select-header">
+                <img data-login-logo src="assets/g4s-logo-.svg" alt="G4S" class="module-select-logo">
+                <p id="module-select-user" role="status"></p>
+                <h1>Selecciona el inventario</h1>
+                <p>Accede a cada operación por separado; los radios y celulares mantienen inventarios independientes.</p>
+            </header>
+            <div class="module-choice-grid">
+                <button type="button" class="module-choice-card" data-module-choice="celulares">
+                    <i class="fa-solid fa-mobile-screen-button" aria-hidden="true"></i>
+                    <strong>Celulares</strong>
+                    <span>Inventario de celulares, CAPMOVIL y movimientos de accesorios.</span>
+                </button>
+                <button type="button" class="module-choice-card" data-module-choice="radios">
+                    <i class="fa-solid fa-walkie-talkie" aria-hidden="true"></i>
+                    <strong>Radios</strong>
+                    <span>Inventario por serial e historial independiente de despachos.</span>
+                </button>
+            </div>
+            <div class="module-select-actions">
+                <button type="button" class="btn-secondary theme-toggle" data-theme-toggle aria-pressed="false">
+                    <i class="fa-solid fa-moon" aria-hidden="true"></i><span data-theme-label>Modo oscuro</span>
+                </button>
+                <button type="button" class="btn-secondary" onclick="window.cerrarSesion()"><i class="fa-solid fa-right-from-bracket" aria-hidden="true"></i> Salir</button>
+            </div>
+        </div>
+    </div>
+
     <!-- PANTALLA CAMBIO CONTRASEÑA -->
     <div id="change-pass-screen" style="display:none;">
         <div class="login-card">
@@ -85,6 +114,7 @@
                 <div class="user-info" id="user-email">cargando...</div>
             </div>
             <div class="navbar-actions">
+                <button type="button" class="btn-secondary module-switch-button" onclick="window.cambiarModulo()" aria-label="Cambiar al inventario de radios"><i class="fa-solid fa-radio" aria-hidden="true"></i> Ir a Radios</button>
                 <button type="button" class="theme-toggle" data-theme-toggle aria-pressed="false">
                     <i class="fa-solid fa-moon" aria-hidden="true"></i><span data-theme-label>Modo oscuro</span>
                 </button>
@@ -599,17 +629,6 @@
                     </div>
                     <button type="button" class="btn-secondary equipment-refresh-btn" id="btn-capmovil-refresh" aria-label="Actualizar CAPMOVIL" title="Actualizar CAPMOVIL"><i class="fa-solid fa-rotate" aria-hidden="true"></i></button>
                 </div>
-                <details class="dashboard-panel cap-history-import">
-                    <summary>Importar historial anterior de CAPMOVIL desde Excel</summary>
-                    <div>
-                        <p>Solo administradores. Se agregarán los movimientos con fecha válida; las filas incompletas no se usarán para calcular el promedio y las fechas inconsistentes o futuras se omitirán.</p>
-                        <label for="cap-history-file">Archivo Excel del historial CAPMOVIL</label>
-                        <input id="cap-history-file" type="file" accept=".xlsx,.xls">
-                        <label class="cap-history-replace-option"><input id="cap-history-replace" type="checkbox"> Reemplazar importaciones CAPMOVIL anteriores (conserva los movimientos registrados manualmente)</label>
-                        <button type="button" class="btn-secondary" id="btn-import-cap-history" disabled>Importar movimientos</button>
-                        <p id="cap-history-import-status" role="status" aria-live="polite"></p>
-                    </div>
-                </details>
                 <div class="capmovil-summary" aria-live="polite">
                     <div class="capmovil-summary-stat capmovil-summary-stat--active"><span><i class="fa-solid fa-truck-fast" aria-hidden="true"></i> En CAPMOVIL</span><strong id="cap-kpi-pending">—</strong><small>Esperando retorno</small></div>
                     <div class="capmovil-summary-stat"><span><i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i> Retornos medidos</span><strong id="cap-kpi-returned">—</strong><small>Ciclos cerrados</small></div>
@@ -810,6 +829,114 @@
                         <div id="equipment-filter-options" class="history-filter-options"></div>
                         <footer><button type="button" id="equipment-filter-clear">Limpiar columna</button><button type="button" id="equipment-filter-done">Listo</button></footer>
                     </section>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <div id="radio-app-screen" style="display:none;">
+        <a class="skip-link" href="#radio-main-content">Saltar al contenido principal</a>
+        <div class="navbar">
+            <div>
+                <div class="brand"><img data-app-logo src="assets/LOGO_G4S.jpg" alt="G4S" class="brand-logo"><h2>Inventario de Radios</h2></div>
+                <div class="user-info" id="radio-user-email">cargando...</div>
+            </div>
+            <div class="navbar-actions">
+                <button type="button" class="btn-secondary module-switch-button" onclick="window.cambiarModulo()" aria-label="Cambiar al inventario de celulares"><i class="fa-solid fa-mobile-screen-button" aria-hidden="true"></i> Ir a Celulares</button>
+                <button type="button" class="theme-toggle" data-theme-toggle aria-pressed="false">
+                    <i class="fa-solid fa-moon" aria-hidden="true"></i><span data-theme-label>Modo oscuro</span>
+                </button>
+                <button type="button" class="btn-secondary logout-button" onclick="window.cerrarSesion()"><i class="fa-solid fa-right-from-bracket" aria-hidden="true"></i> Salir</button>
+            </div>
+        </div>
+        <main class="container radio-container" id="radio-main-content" tabindex="-1">
+            <div class="equipment-page-heading">
+                <div>
+                    <p class="equipment-eyebrow">COMUNICACIONES · RADIOS</p>
+                    <h1>Inventario de radios</h1>
+                    <p>Gestión separada del inventario de celulares. Los seriales y su historial de despachos se conservan en registros independientes.</p>
+                </div>
+                <button type="button" class="btn-secondary equipment-refresh-btn" id="btn-radio-refresh" aria-label="Actualizar inventario de radios" title="Actualizar inventario de radios"><i class="fa-solid fa-rotate" aria-hidden="true"></i></button>
+            </div>
+            <p id="radio-feedback" class="dashboard-feedback" role="status" aria-live="polite" hidden></p>
+            <div class="radio-summary" aria-live="polite">
+                <article><span>En bodega de comunicaciones</span><strong id="radio-count-warehouse">—</strong></article>
+            </div>
+            <div class="radio-view-tabs" role="tablist" aria-label="Vistas del inventario de radios">
+                <button type="button" class="tab active" role="tab" aria-selected="true" aria-controls="radio-inventory-view" tabindex="0" data-radio-view="inventory">Inventario</button>
+                <button type="button" class="tab" role="tab" aria-selected="false" aria-controls="radio-accessories-view" tabindex="-1" data-radio-view="accessories">Accesorios</button>
+                <button type="button" class="tab" role="tab" aria-selected="false" aria-controls="radio-dispatch-view" tabindex="-1" data-radio-view="dispatches">Historial de despachos</button>
+            </div>
+            <section id="radio-inventory-view" class="radio-view active" role="tabpanel">
+                <div class="radio-operation-grid">
+                    <form id="radio-create-form" class="dashboard-panel radio-operation-panel">
+                        <h2>Ingreso a bodega de comunicaciones</h2>
+                        <label for="radio-new-serial">Serial</label>
+                        <input id="radio-new-serial" required maxlength="100" autocomplete="off">
+                        <label for="radio-new-model">Modelo</label>
+                        <input id="radio-new-model" required maxlength="100" autocomplete="off">
+                        <button class="btn-primary" type="submit">Ingresar radio</button>
+                    </form>
+                </div>
+                <div class="catalog-toolbar">
+                    <input type="search" id="radio-search" placeholder="Buscar radios en bodega por serial o modelo" aria-label="Buscar radios">
+                </div>
+                <div class="catalog-table-wrap">
+                    <table class="catalog-table">
+                        <thead><tr><th><input id="radio-select-visible" type="checkbox" aria-label="Seleccionar radios visibles"></th><th>Serial</th><th>Modelo</th></tr></thead>
+                        <tbody id="radio-inventory-body"><tr><td colspan="3">Selecciona la sección Radios para cargar el inventario.</td></tr></tbody>
+                    </table>
+                </div>
+                <form id="radio-dispatch-form" class="dashboard-panel radio-operation-panel radio-dispatch-form">
+                    <h2>Registrar salida</h2>
+                    <p>Selecciona los radios de bodega y los accesorios que salen con ellos.</p>
+                    <details class="radio-accessory-picks" id="radio-dispatch-accessory-details">
+                        <summary>Accesorios opcionales</summary>
+                        <button type="button" class="btn-secondary radio-select-compatible-accessories" id="radio-select-all-compatible-accessories" disabled>Seleccionar todos los accesorios de los modelos seleccionados</button>
+                        <div id="radio-dispatch-accessories"><p>No hay accesorios compatibles registrados para los radios seleccionados.</p></div>
+                    </details>
+                    <button class="btn-primary" type="submit">Registrar salida y descontar</button>
+                </form>
+            </section>
+            <section id="radio-accessories-view" class="radio-view" role="tabpanel" hidden>
+                <p class="radio-accessories-note">Existencias por accesorio y modelo. Los despachos con cantidad aparecen como accesorios y no requieren serial de radio.</p>
+                <form id="radio-accessory-receive-form" class="dashboard-panel radio-operation-panel">
+                    <h2>Registrar entrada de accesorios</h2>
+                    <label for="radio-receive-accessory">Accesorio</label>
+                    <select id="radio-receive-accessory" required></select>
+                    <label for="radio-receive-quantity">Cantidad recibida</label>
+                    <input id="radio-receive-quantity" type="number" min="1" max="100000" step="1" required>
+                    <label for="radio-receive-reference">Referencia</label>
+                    <input id="radio-receive-reference" maxlength="200">
+                    <button class="btn-secondary" type="submit">Registrar entrada</button>
+                </form>
+                <div class="catalog-table-wrap">
+                    <table class="catalog-table">
+                        <thead><tr><th>Accesorio</th><th>Modelo de radio</th><th>Stock inicial</th><th>Total despachado</th><th>Disponible</th><th>Mínimo</th><th>Estado</th></tr></thead>
+                        <tbody id="radio-accessories-body"><tr><td colspan="7">Aún no hay existencias de accesorios registradas.</td></tr></tbody>
+                    </table>
+                </div>
+                <h2 class="radio-history-title">Movimientos de accesorios</h2>
+                <div class="catalog-table-wrap">
+                    <table class="catalog-table">
+                        <thead><tr><th>Fecha</th><th>Accesorio</th><th>Modelo</th><th>Movimiento</th><th>Cantidad</th><th>Stock después</th><th>Referencia</th><th>Registrado por</th></tr></thead>
+                        <tbody id="radio-accessory-movement-body"><tr><td colspan="8">Aún no hay entradas o salidas registradas.</td></tr></tbody>
+                    </table>
+                </div>
+            </section>
+            <section id="radio-dispatch-view" class="radio-view" role="tabpanel" hidden>
+                <div class="catalog-table-wrap">
+                    <table class="catalog-table">
+                        <thead><tr><th>Fecha</th><th>Tipo</th><th>Cantidad</th><th>Serial radio</th><th>Modelo</th><th>Accesorios que salen</th></tr></thead>
+                        <tbody id="radio-dispatch-body"><tr><td colspan="6">Aún no hay salidas registradas.</td></tr></tbody>
+                    </table>
+                </div>
+                <h2 class="radio-history-title">Bitácora de estados y retornos</h2>
+                <div class="catalog-table-wrap">
+                    <table class="catalog-table">
+                        <thead><tr><th>Fecha</th><th>Serial</th><th>Estado anterior</th><th>Estado nuevo</th><th>Cliente</th><th>Regional</th><th>Tipo de evento</th><th>Registrado por</th></tr></thead>
+                        <tbody id="radio-history-body"><tr><td colspan="8">Aún no hay eventos registrados.</td></tr></tbody>
+                    </table>
                 </div>
             </section>
         </main>

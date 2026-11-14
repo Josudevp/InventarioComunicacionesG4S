@@ -58,9 +58,14 @@ import { apiRequest, invalidateApiCache } from "./services/api.js";
         let html5QrcodeScanner = null;
         let catalogoActual = [];
         let equipmentRows = [];
+        let radioRows = [];
+        let radioAccessoryRows = [];
+        let radioAccessoryMovementRows = [];
+        let radioDispatchRows = [];
+        let radioHistoryRows = [];
+        const selectedRadioSerials = new Set();
         let capPendingRows = [];
         let capPendingPage = 1;
-        let capHistoryImportRecords = [];
         const CAP_PENDING_PAGE_SIZE = 15;
         let equipmentMasterMatches = [];
         let pendingEquipmentBatch = [];
@@ -310,7 +315,11 @@ import { apiRequest, invalidateApiCache } from "./services/api.js";
                     window.mostrarAlerta("La sesión se cerró por una hora de inactividad. Inicia sesión para continuar.", "info");
                     return;
                 }
-                window.mostrarApp(loggedUser);
+                canReconcileInventory = sessionStorage.getItem('g4sCanReconcileInventory') === 'true';
+                const activeModule = sessionStorage.getItem('g4sActiveModule');
+                if (activeModule === 'celulares') window.mostrarApp(loggedUser);
+                else if (activeModule === 'radios') window.mostrarRadios(loggedUser);
+                else window.mostrarSelectorModulo(loggedUser);
             } else {
                 sessionStorage.removeItem("g4sLoggedUser");
                 sessionStorage.removeItem("g4sSessionToken");
@@ -348,7 +357,8 @@ import { apiRequest, invalidateApiCache } from "./services/api.js";
                     if (data.token) sessionStorage.setItem("g4sSessionToken", data.token);
                     canManageCatalog = Boolean(data.permissions && data.permissions.canManageCatalog);
                     canReconcileInventory = Boolean(data.permissions && data.permissions.canReconcileInventory);
-                    window.mostrarApp(data.usuario);
+                    sessionStorage.setItem('g4sCanReconcileInventory', String(canReconcileInventory));
+                    window.mostrarSelectorModulo(data.usuario);
                 } else {
                     window.mostrarAlerta("❌ Usuario o contraseña incorrectos", "error");
                     btn.innerHTML = originalTxt; btn.disabled = false;
@@ -364,6 +374,36 @@ import { apiRequest, invalidateApiCache } from "./services/api.js";
         document.getElementById('login-form').addEventListener('submit', event => {
             event.preventDefault();
             window.iniciarSesion();
+        });
+
+        window.mostrarSelectorModulo = function(nombreUsuario = sessionStorage.getItem('g4sLoggedUser')) {
+            if (!nombreUsuario || !sessionStorage.getItem('g4sSessionToken')) return;
+            resetInactivityTimer();
+            sessionStorage.removeItem('g4sActiveModule');
+            ['login-screen', 'change-pass-screen', 'app-screen', 'radio-app-screen'].forEach(id => {
+                document.getElementById(id).style.display = 'none';
+            });
+            document.getElementById('module-select-user').textContent = `Sesión de ${nombreUsuario}`;
+            document.getElementById('module-select-screen').style.display = 'flex';
+        };
+
+        window.abrirModulo = function(module) {
+            const loggedUser = sessionStorage.getItem('g4sLoggedUser');
+            if (!loggedUser || !sessionStorage.getItem('g4sSessionToken')) return;
+            if (module === 'radios') {
+                window.mostrarRadios(loggedUser);
+            } else if (module === 'celulares') {
+                window.mostrarApp(loggedUser);
+            }
+        };
+
+        window.cambiarModulo = function() {
+            const activeModule = sessionStorage.getItem('g4sActiveModule');
+            window.abrirModulo(activeModule === 'radios' ? 'celulares' : 'radios');
+        };
+
+        document.querySelectorAll('[data-module-choice]').forEach(button => {
+            button.addEventListener('click', () => window.abrirModulo(button.dataset.moduleChoice));
         });
 
         window.cambiarClave = function() {
@@ -400,6 +440,8 @@ import { apiRequest, invalidateApiCache } from "./services/api.js";
             inactivityTimer = null;
             sessionStorage.removeItem("g4sLoggedUser");
             sessionStorage.removeItem("g4sSessionToken");
+            sessionStorage.removeItem("g4sActiveModule");
+            sessionStorage.removeItem("g4sCanReconcileInventory");
             canManageCatalog = false;
             canReconcileInventory = false;
             carrito = [];
@@ -421,6 +463,8 @@ import { apiRequest, invalidateApiCache } from "./services/api.js";
             document.getElementById('items-list').innerHTML = '<li class="empty-cart-state" aria-live="polite">No hay ítems seleccionados</li>';
             document.querySelectorAll('#app-screen input[type="text"], #app-screen input[type="number"]').forEach(input => { input.value = ''; });
             document.getElementById('app-screen').style.display = 'none';
+            document.getElementById('radio-app-screen').style.display = 'none';
+            document.getElementById('module-select-screen').style.display = 'none';
             document.getElementById('login-pass').value = '';
             document.getElementById('request-type').value = 'Cliente';
             document.getElementById('request-regional').value = 'Bogota';
@@ -441,8 +485,11 @@ import { apiRequest, invalidateApiCache } from "./services/api.js";
 
         window.mostrarApp = function(nombreUsuario) {
             resetInactivityTimer();
+            sessionStorage.setItem('g4sActiveModule', 'celulares');
             document.getElementById('login-screen').style.display = 'none';
             document.getElementById('change-pass-screen').style.display = 'none';
+            document.getElementById('module-select-screen').style.display = 'none';
+            document.getElementById('radio-app-screen').style.display = 'none';
             document.getElementById('app-screen').style.display = 'block';
             document.getElementById('user-email').innerText = "Usuario: " + nombreUsuario;
             window.actualizarPermisosCatalogo();
@@ -456,6 +503,312 @@ import { apiRequest, invalidateApiCache } from "./services/api.js";
             window.cargarCatalogo();
             window.cargarDashboard();
         }
+
+        window.mostrarRadios = function(nombreUsuario) {
+            resetInactivityTimer();
+            sessionStorage.setItem('g4sActiveModule', 'radios');
+            document.getElementById('login-screen').style.display = 'none';
+            document.getElementById('change-pass-screen').style.display = 'none';
+            document.getElementById('module-select-screen').style.display = 'none';
+            document.getElementById('app-screen').style.display = 'none';
+            document.getElementById('radio-app-screen').style.display = 'block';
+            document.getElementById('radio-user-email').textContent = `Usuario: ${nombreUsuario}`;
+            window.cargarRadios();
+        }
+
+        function renderRadioInventory() {
+            const query = document.getElementById('radio-search').value.trim().toLowerCase();
+            const rows = radioRows.filter(radio =>
+                [radio.serial, radio.modelo]
+                    .some(value => String(value || '').toLowerCase().includes(query)));
+            document.getElementById('radio-inventory-body').innerHTML = rows.length
+                ? rows.map(radio => `<tr>
+                    <td><input type="checkbox" class="radio-row-select" value="${window.escapeHtml(radio.serial)}" aria-label="Seleccionar radio ${window.escapeHtml(radio.serial)}" ${selectedRadioSerials.has(radio.serial) ? 'checked' : ''}></td>
+                    <td>${window.escapeHtml(radio.serial)}</td>
+                    <td>${window.escapeHtml(radio.modelo || '—')}</td>
+                </tr>`).join('')
+                : `<tr><td colspan="3">${radioRows.length ? 'No hay radios que coincidan con la búsqueda.' : 'No hay radios disponibles en bodega. Registra un ingreso.'}</td></tr>`;
+            const visibleSerials = rows.map(radio => radio.serial);
+            const allVisibleSelected = visibleSerials.length > 0 && visibleSerials.every(serial => selectedRadioSerials.has(serial));
+            const selectVisible = document.getElementById('radio-select-visible');
+            selectVisible.checked = allVisibleSelected;
+            selectVisible.indeterminate = !allVisibleSelected && visibleSerials.some(serial => selectedRadioSerials.has(serial));
+            document.querySelectorAll('.radio-row-select').forEach(checkbox => {
+                checkbox.addEventListener('change', () => {
+                    if (checkbox.checked) selectedRadioSerials.add(checkbox.value);
+                    else selectedRadioSerials.delete(checkbox.value);
+                    renderRadioInventory();
+                });
+            });
+            renderRadioDispatchAccessories();
+        }
+
+        function renderRadioDispatches() {
+            document.getElementById('radio-dispatch-body').innerHTML = radioDispatchRows.length
+                ? radioDispatchRows.map(dispatch => `<tr>
+                    <td>${window.escapeHtml(dispatch.fecha || '—')}</td>
+                    <td>${window.escapeHtml(dispatch.tipoRegistro || '—')}</td>
+                    <td>${Number(dispatch.cantidad || 0).toLocaleString('es-CO')}</td>
+                    <td>${window.escapeHtml(dispatch.serialRadio || '—')}</td>
+                    <td>${window.escapeHtml(dispatch.modelo || '—')}</td>
+                    <td>${window.escapeHtml(dispatch.accesorios || '—')}</td>
+                </tr>`).join('')
+                : '<tr><td colspan="6">Aún no hay salidas registradas.</td></tr>';
+        }
+
+        function renderRadioAccessories() {
+            document.getElementById('radio-accessories-body').innerHTML = radioAccessoryRows.length
+                ? radioAccessoryRows.map(accessory => {
+                    const stock = Number(accessory.stockDisponible) || 0;
+                    const minimum = Number(accessory.stockMinimo) || 0;
+                    const status = accessory.estadoAlerta ||
+                        (stock <= 0 ? 'Agotado' : stock <= minimum ? 'Stock bajo' : 'Disponible');
+                    const statusClass = /agotado/i.test(status) || stock <= 0
+                        ? 'radio-stock-empty'
+                        : /bajo/i.test(status) || stock <= minimum
+                            ? 'radio-stock-low'
+                            : 'radio-stock-ok';
+                    return `<tr>
+                        <td>${window.escapeHtml(accessory.accesorio)}</td>
+                        <td>${window.escapeHtml(accessory.modelo)}</td>
+                        <td>${Number(accessory.stockInicial || 0).toLocaleString('es-CO')}</td>
+                        <td>${Number(accessory.totalDespachado || 0).toLocaleString('es-CO')}</td>
+                        <td>${stock.toLocaleString('es-CO')}</td>
+                        <td>${minimum.toLocaleString('es-CO')}</td>
+                        <td><span class="radio-stock-status ${statusClass}">${window.escapeHtml(status)}</span></td>
+                    </tr>`;
+                }).join('')
+                : '<tr><td colspan="7">No hay existencias de accesorios importadas. Importa el archivo de gestión de radios.</td></tr>';
+            const options = radioAccessoryRows.map(accessory =>
+                `<option value="${window.escapeHtml(accessory.id)}">${window.escapeHtml(accessory.accesorio)} · ${window.escapeHtml(accessory.modelo)} (disponible: ${Number(accessory.stockDisponible || 0).toLocaleString('es-CO')})</option>`
+            ).join('');
+            document.getElementById('radio-receive-accessory').innerHTML = `<option value="">Selecciona un accesorio</option>${options}`;
+            renderRadioDispatchAccessories();
+            document.getElementById('radio-accessory-movement-body').innerHTML = radioAccessoryMovementRows.length
+                ? radioAccessoryMovementRows.map(movement => `<tr>
+                    <td>${window.escapeHtml(movement.fecha || '—')}</td>
+                    <td>${window.escapeHtml(movement.accesorio || '—')}</td>
+                    <td>${window.escapeHtml(movement.modelo || '—')}</td>
+                    <td>${window.escapeHtml(movement.tipo || '—')}</td>
+                    <td>${Number(movement.cantidad || 0).toLocaleString('es-CO')}</td>
+                    <td>${Number(movement.stockDespues || 0).toLocaleString('es-CO')}</td>
+                    <td>${window.escapeHtml(movement.referencia || '—')}</td>
+                    <td>${window.escapeHtml(movement.usuario || '—')}</td>
+                </tr>`).join('')
+                : '<tr><td colspan="8">Aún no hay entradas o salidas registradas.</td></tr>';
+        }
+
+        function renderRadioDispatchAccessories() {
+            const container = document.getElementById('radio-dispatch-accessories');
+            const previousSelections = new Map(
+                [...container.querySelectorAll('[data-radio-accessory-id]:checked')].map(checkbox => {
+                    const quantity = container.querySelector(`[data-radio-accessory-quantity="${CSS.escape(checkbox.dataset.radioAccessoryId)}"]`);
+                    return [checkbox.dataset.radioAccessoryId, quantity?.value || '1'];
+                })
+            );
+            const selectedModels = new Set(radioRows
+                .filter(radio => selectedRadioSerials.has(radio.serial))
+                .map(radio => String(radio.modelo || '').trim().toLocaleLowerCase())
+                .filter(Boolean));
+            const selectAllButton = document.getElementById('radio-select-all-compatible-accessories');
+            selectAllButton.disabled = selectedModels.size === 0;
+            const matching = [];
+            const other = [];
+            radioAccessoryRows.forEach(accessory => {
+                const model = String(accessory.modelo || '').trim().toLocaleLowerCase();
+                (selectedModels.has(model) ? matching : other).push(accessory);
+            });
+            const renderItems = accessories => accessories.map(accessory => {
+                const available = Math.max(0, Number(accessory.stockDisponible) || 0);
+                const id = String(accessory.id);
+                const isChecked = previousSelections.has(id);
+                const quantity = previousSelections.get(id) || '1';
+                return `<label class="radio-accessory-pick">
+                    <input type="checkbox" data-radio-accessory-id="${window.escapeHtml(id)}" ${available ? '' : 'disabled'} ${isChecked && available ? 'checked' : ''}>
+                    <span>${window.escapeHtml(accessory.accesorio)} · ${window.escapeHtml(accessory.modelo)} (${available.toLocaleString('es-CO')} disponibles)</span>
+                    <input type="number" data-radio-accessory-quantity="${window.escapeHtml(id)}" min="1" max="${available}" step="1" value="${window.escapeHtml(quantity)}" aria-label="Cantidad de ${window.escapeHtml(accessory.accesorio)}" ${isChecked && available ? '' : 'disabled'}>
+                </label>`;
+            }).join('');
+            if (!radioAccessoryRows.length) {
+                container.innerHTML = '<p>No hay existencias de accesorios disponibles.</p>';
+            } else {
+                const matchingHeading = selectedModels.size
+                    ? '<h3 class="radio-accessory-group-title">Accesorios para los modelos seleccionados</h3>'
+                    : '<p class="radio-accessory-selection-hint">Selecciona radios para priorizar accesorios de sus modelos.</p>';
+                const otherHeading = '<h3 class="radio-accessory-group-title radio-accessory-extra-title">Accesorios extra · otros modelos</h3>';
+                container.innerHTML = `${matchingHeading}<div class="radio-accessory-match">${renderItems(matching)}</div>${otherHeading}<div class="radio-accessory-extra">${renderItems(other)}</div>`;
+            }
+            container.querySelectorAll('[data-radio-accessory-id]').forEach(checkbox => {
+                checkbox.addEventListener('change', () => {
+                    const quantity = container.querySelector(`[data-radio-accessory-quantity="${CSS.escape(checkbox.dataset.radioAccessoryId)}"]`);
+                    quantity.disabled = !checkbox.checked;
+                });
+            });
+        }
+
+        function renderRadioHistory() {
+            document.getElementById('radio-history-body').innerHTML = radioHistoryRows.length
+                ? radioHistoryRows.map(event => `<tr>
+                    <td>${window.escapeHtml(event.fecha || '—')}</td>
+                    <td>${window.escapeHtml(event.serial || '—')}</td>
+                    <td>${window.escapeHtml(event.estadoAnterior || '—')}</td>
+                    <td>${window.escapeHtml(event.estadoNuevo || '—')}</td>
+                    <td>${window.escapeHtml(event.cliente || '—')}</td>
+                    <td>${window.escapeHtml(event.regional || '—')}</td>
+                    <td>${window.escapeHtml(event.tipo || '—')}</td>
+                    <td>${window.escapeHtml(event.usuario || '—')}</td>
+                </tr>`).join('')
+                : '<tr><td colspan="8">Aún no hay eventos registrados.</td></tr>';
+        }
+
+        function radioIdempotencyKey(form) {
+            form.dataset.idempotencyKey ||= crypto.randomUUID();
+            return form.dataset.idempotencyKey;
+        }
+
+        async function submitRadioAction(payload, successMessage) {
+            const feedback = document.getElementById('radio-feedback');
+            feedback.hidden = true;
+            try {
+                const response = await apiRequest(payload);
+                const result = await response.json();
+                if (result.status !== 'success') throw new Error(result.message || 'No se pudo completar la operación.');
+                selectedRadioSerials.clear();
+                invalidateApiCache();
+                await window.cargarRadios();
+                feedback.textContent = successMessage;
+                feedback.hidden = false;
+                return true;
+            } catch (error) {
+                feedback.textContent = error.message || 'No fue posible completar la operación.';
+                feedback.hidden = false;
+                return false;
+            }
+        }
+
+        window.cargarRadios = async function() {
+            const feedback = document.getElementById('radio-feedback');
+            feedback.hidden = true;
+            try {
+                const response = await apiRequest({ action: 'obtener_radios' });
+                const result = await response.json();
+                if (result.status !== 'success') throw new Error(result.message || 'No se pudo cargar el inventario de radios.');
+                radioRows = result.data || [];
+                radioDispatchRows = result.despachos || [];
+                radioAccessoryRows = result.accesorios || [];
+                radioAccessoryMovementRows = result.movimientosAccesorios || [];
+                radioHistoryRows = result.historialEstados || [];
+                document.getElementById('radio-count-warehouse').textContent = result.resumen?.bodega ?? 0;
+                renderRadioInventory();
+                renderRadioAccessories();
+                renderRadioDispatches();
+                renderRadioHistory();
+            } catch (error) {
+                feedback.textContent = error.message || 'No fue posible consultar el inventario de radios.';
+                feedback.hidden = false;
+            }
+        };
+
+        document.getElementById('radio-search').addEventListener('input', renderRadioInventory);
+        document.getElementById('radio-select-visible').addEventListener('change', event => {
+            const query = document.getElementById('radio-search').value.trim().toLowerCase();
+            radioRows.filter(radio =>
+                [radio.serial, radio.modelo]
+                    .some(value => String(value || '').toLowerCase().includes(query))
+            ).forEach(radio => event.currentTarget.checked
+                ? selectedRadioSerials.add(radio.serial)
+                : selectedRadioSerials.delete(radio.serial));
+            renderRadioInventory();
+        });
+        document.getElementById('btn-radio-refresh').addEventListener('click', () => window.cargarRadios());
+        document.getElementById('radio-create-form').addEventListener('submit', async event => {
+            event.preventDefault();
+            const form = event.currentTarget;
+            const succeeded = await submitRadioAction({
+                action: 'registrar_radio',
+                serial: document.getElementById('radio-new-serial').value.trim(),
+                modelo: document.getElementById('radio-new-model').value.trim()
+            }, 'Radio ingresado a bodega.');
+            if (succeeded) form.reset();
+        });
+        document.getElementById('radio-select-all-compatible-accessories').addEventListener('click', () => {
+            const container = document.getElementById('radio-dispatch-accessories');
+            container.querySelectorAll('.radio-accessory-match [data-radio-accessory-id]:not(:disabled)').forEach(checkbox => {
+                checkbox.checked = true;
+                container.querySelector(`[data-radio-accessory-quantity="${CSS.escape(checkbox.dataset.radioAccessoryId)}"]`).disabled = false;
+            });
+        });
+        document.getElementById('radio-dispatch-form').addEventListener('submit', async event => {
+            event.preventDefault();
+            const form = event.currentTarget;
+            if (!selectedRadioSerials.size) {
+                const feedback = document.getElementById('radio-feedback');
+                feedback.textContent = 'Selecciona radios antes de registrar el despacho.';
+                feedback.hidden = false;
+                return;
+            }
+            const accesorios = [...document.querySelectorAll('[data-radio-accessory-id]:checked')].map(checkbox => ({
+                id: checkbox.dataset.radioAccessoryId,
+                cantidad: Number(document.querySelector(`[data-radio-accessory-quantity="${CSS.escape(checkbox.dataset.radioAccessoryId)}"]`).value)
+            }));
+            const result = await submitRadioAction({
+                action: 'despachar_radios',
+                seriales: [...selectedRadioSerials],
+                accesorios,
+                claveIdempotencia: radioIdempotencyKey(form)
+            }, 'Salida registrada; radios archivados y stock de accesorios descontado.');
+            if (result) {
+                form.reset();
+                document.getElementById('radio-dispatch-accessory-details').open = false;
+                delete form.dataset.idempotencyKey;
+                renderRadioDispatchAccessories();
+            }
+        });
+        document.getElementById('radio-accessory-receive-form').addEventListener('submit', async event => {
+            event.preventDefault();
+            const form = event.currentTarget;
+            const result = await submitRadioAction({
+                action: 'registrar_entrada_accesorio_radio',
+                id: document.getElementById('radio-receive-accessory').value,
+                cantidad: Number(document.getElementById('radio-receive-quantity').value),
+                referencia: document.getElementById('radio-receive-reference').value.trim(),
+                claveIdempotencia: radioIdempotencyKey(form)
+            }, 'Entrada de accesorios registrada y stock actualizado.');
+            if (result) {
+                form.reset();
+                delete form.dataset.idempotencyKey;
+            }
+        });
+        document.querySelectorAll('[data-radio-view]').forEach(button => {
+            button.addEventListener('click', () => {
+                document.querySelectorAll('[data-radio-view]').forEach(tab => {
+                    const active = tab === button;
+                    tab.classList.toggle('active', active);
+                    tab.setAttribute('aria-selected', String(active));
+                    tab.tabIndex = active ? 0 : -1;
+                });
+                document.querySelectorAll('.radio-view').forEach(view => {
+                    const active = view.id === button.getAttribute('aria-controls');
+                    view.classList.toggle('active', active);
+                    view.hidden = !active;
+                });
+            });
+        });
+        document.querySelector('.radio-view-tabs').addEventListener('keydown', event => {
+            const tabKeys = ['ArrowLeft', 'ArrowRight', 'Home', 'End'];
+            if (!tabKeys.includes(event.key)) return;
+            const tabs = [...event.currentTarget.querySelectorAll('[role="tab"]')];
+            const currentIndex = tabs.indexOf(event.target);
+            if (currentIndex < 0) return;
+            event.preventDefault();
+            const nextIndex = event.key === 'Home'
+                ? 0
+                : event.key === 'End'
+                    ? tabs.length - 1
+                    : (currentIndex + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+            tabs[nextIndex].focus();
+            tabs[nextIndex].click();
+        });
 
         window.invalidateLoadingCaches = function() {
             catalogLoadedAt = 0;
@@ -1892,64 +2245,131 @@ import { apiRequest, invalidateApiCache } from "./services/api.js";
             return { records, completeCycles, chronologyIssues, futureRows, partialRows, invalidImeiRows, noDateRows, missingImeiRows };
         }
 
-        document.getElementById('cap-history-file').addEventListener('change', async event => {
-            const file = event.currentTarget.files?.[0];
-            const status = document.getElementById('cap-history-import-status');
-            const importButton = document.getElementById('btn-import-cap-history');
-            capHistoryImportRecords = [];
-            importButton.disabled = true;
-            if (!file) {
-                status.textContent = '';
-                return;
+        async function prepareRadioWorkbookImport(file) {
+            XLSX ||= (await import('xlsx')).default;
+            const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: true });
+            const inventorySheet = workbook.Sheets['Inventario Maestro'];
+            const dispatchSheet = workbook.Sheets['Registro de Despachos'];
+            if (!inventorySheet || !dispatchSheet) {
+                throw new Error('El archivo debe contener las hojas «Inventario Maestro» y «Registro de Despachos».');
             }
-            status.textContent = 'Revisando el archivo...';
-            try {
-                const preview = await prepareCapHistoryImport(file);
-                capHistoryImportRecords = preview.records;
-                importButton.disabled = false;
-                status.textContent = `${preview.records.length} filas con IMEI válido listas; ${preview.completeCycles} ciclos medibles y ${preview.partialRows} movimientos parciales. Se omitirán ${preview.chronologyIssues} fechas inconsistentes, ${preview.futureRows} fechas futuras, ${preview.invalidImeiRows} IMEI inválidos, ${preview.missingImeiRows} filas sin IMEI y ${preview.noDateRows} filas sin fechas.`;
-            } catch (error) {
-                status.textContent = error.message;
+            const inventoryRows = XLSX.utils.sheet_to_json(inventorySheet, { header: 1, defval: '', raw: true });
+            const inventoryHeaderIndex = inventoryRows.findIndex((row, index) => index < 30 &&
+                row.some(value => normalizeCapHistoryHeader(value) === 'serial radio'));
+            if (inventoryHeaderIndex < 0) throw new Error('No encontré la columna «Serial Radio» en «Inventario Maestro».');
+            const inventoryHeaders = inventoryRows[inventoryHeaderIndex].map(normalizeCapHistoryHeader);
+            const inventoryColumns = {
+                serial: inventoryHeaders.indexOf('serial radio'),
+                modelo: inventoryHeaders.indexOf('modelo'),
+                estadoInventario: inventoryHeaders.indexOf('estado inventario'),
+                fechaDespacho: inventoryHeaders.indexOf('fecha despacho'),
+                cliente: inventoryHeaders.indexOf('cliente asignado'),
+                regional: inventoryHeaders.indexOf('regional destino'),
+                guia: inventoryHeaders.indexOf('guia tcc'),
+                estadoDespacho: inventoryHeaders.indexOf('estado despacho')
+            };
+            const inventoryRecords = inventoryRows.slice(inventoryHeaderIndex + 1).map(row => ({
+                serial: String(row[inventoryColumns.serial] ?? '').trim().slice(0, 100),
+                modelo: String(row[inventoryColumns.modelo] ?? '').trim().slice(0, 100),
+                estadoInventario: String(row[inventoryColumns.estadoInventario] ?? '').trim().slice(0, 100),
+                fechaDespacho: capHistoryDateValue(row[inventoryColumns.fechaDespacho]),
+                cliente: String(row[inventoryColumns.cliente] ?? '').trim().slice(0, 200),
+                regional: String(row[inventoryColumns.regional] ?? '').trim().slice(0, 150),
+                guia: String(row[inventoryColumns.guia] ?? '').trim().slice(0, 100),
+                estadoDespacho: String(row[inventoryColumns.estadoDespacho] ?? '').trim().slice(0, 100)
+            })).filter(record => record.serial);
+            if (Object.values(inventoryColumns).some(index => index < 0)) {
+                throw new Error('Faltan columnas de estado, modelo o despacho en «Inventario Maestro».');
             }
-        });
-
-        document.getElementById('btn-import-cap-history').addEventListener('click', async event => {
-            const button = event.currentTarget;
-            const status = document.getElementById('cap-history-import-status');
-            if (!capHistoryImportRecords.length) return;
-            const replacePrevious = document.getElementById('cap-history-replace').checked;
-            if (replacePrevious) {
-                const confirmed = await window.confirmarAccion(
-                    'Se quitarán únicamente los movimientos identificados como importaciones anteriores de CAPMOVIL y se cargarán los datos de este archivo. Los movimientos registrados manualmente se conservarán. ¿Continuar?',
-                    { titulo: 'Reemplazar importación CAPMOVIL', confirmLabel: 'Reemplazar', danger: true }
-                );
-                if (!confirmed) return;
+            const accessoryHeaderIndex = inventoryRows.findIndex((row, index) => index < 30 &&
+                row.some(value => normalizeCapHistoryHeader(value) === 'accesorio estandarizado'));
+            if (accessoryHeaderIndex < 0) throw new Error('No encontré la tabla de accesorios en «Inventario Maestro».');
+            const accessoryHeaders = inventoryRows[accessoryHeaderIndex].map(normalizeCapHistoryHeader);
+            const accessoryColumns = {
+                accesorio: accessoryHeaders.indexOf('accesorio estandarizado'),
+                stockInicial: accessoryHeaders.indexOf('stock inicial'),
+                totalDespachado: accessoryHeaders.indexOf('total despachado'),
+                stockDisponible: accessoryHeaders.indexOf('stock disponible'),
+                stockMinimo: accessoryHeaders.indexOf('stock minimo'),
+                estadoAlerta: accessoryHeaders.indexOf('estado alerta')
+            };
+            accessoryColumns.modelo = accessoryHeaders.findIndex((value, index) =>
+                index > accessoryColumns.accesorio && value === 'modelo');
+            if (Object.values(accessoryColumns).some(index => index < 0)) {
+                throw new Error('Faltan columnas de existencias en la tabla de accesorios del «Inventario Maestro».');
             }
-            button.disabled = true;
-            status.textContent = replacePrevious
-                ? 'Reemplazando la importación anterior y cargando movimientos...'
-                : 'Importando movimientos...';
-            try {
-                const response = await apiRequest({
-                    action: 'importar_historial_cap',
-                    records: capHistoryImportRecords,
-                    reemplazarImportacionAnterior: replacePrevious
+            const accessoryRecords = [];
+            for (const row of inventoryRows.slice(accessoryHeaderIndex + 1)) {
+                const accesorio = String(row[accessoryColumns.accesorio] ?? '').trim().slice(0, 200);
+                const modelo = String(row[accessoryColumns.modelo] ?? '').trim().slice(0, 100);
+                if (!accesorio || !modelo) break;
+                accessoryRecords.push({
+                    accesorio,
+                    modelo,
+                    stockInicial: Number(row[accessoryColumns.stockInicial]) || 0,
+                    totalDespachado: Number(row[accessoryColumns.totalDespachado]) || 0,
+                    stockDisponible: Number(row[accessoryColumns.stockDisponible]) || 0,
+                    stockMinimo: Number(row[accessoryColumns.stockMinimo]) || 0,
+                    estadoAlerta: String(row[accessoryColumns.estadoAlerta] ?? '').trim().slice(0, 100)
                 });
-                const result = await response.json();
-                if (result.status !== 'success') throw new Error(result.message || 'No se pudo importar el historial.');
-                const imported = result.data;
-                status.textContent = `Listo: ${imported.equiposInventarioCreados} celulares agregados al inventario y ${imported.equiposInventarioActualizados} registros importados actualizados. ${imported.equiposInventarioRetirados} registros de una importación anterior retirados. Se reemplazaron ${imported.movimientosAnterioresReemplazados} movimientos anteriores y se agregaron ${imported.movimientosImportados} movimientos; ${imported.movimientosDuplicados} duplicados omitidos, ${imported.ciclosValidos} ciclos medibles. Filas omitidas: ${imported.omitidos.chronology} con fechas inconsistentes, ${imported.omitidos.future} futuras y ${imported.omitidos.invalid} inválidas.`;
-                capHistoryImportRecords = [];
-                document.getElementById('cap-history-file').value = '';
-                document.getElementById('cap-history-replace').checked = false;
-                loadedSections.delete('capmovil');
-                invalidateApiCache();
-                window.cargarCapMovil();
-            } catch (error) {
-                status.textContent = error.message;
-                button.disabled = false;
             }
-        });
+            const dispatchRows = XLSX.utils.sheet_to_json(dispatchSheet, { header: 1, defval: '', raw: true });
+            const dispatchHeaderIndex = dispatchRows.findIndex((row, index) => index < 20 &&
+                row.some(value => normalizeCapHistoryHeader(value) === 'serial') &&
+                row.some(value => normalizeCapHistoryHeader(value) === 'fecha'));
+            if (dispatchHeaderIndex < 0) throw new Error('No encontré las columnas de fecha y serial en «Registro de Despachos».');
+            const dispatchHeaders = dispatchRows[dispatchHeaderIndex].map(normalizeCapHistoryHeader);
+            const dispatchColumns = {
+                fecha: dispatchHeaders.indexOf('fecha'),
+                serialCantidad: dispatchHeaders.indexOf('serial'),
+                modelo: dispatchHeaders.indexOf('modelo'),
+                accesorios: dispatchHeaders.indexOf('accesorios'),
+                cliente: dispatchHeaders.indexOf('cliente'),
+                regional: dispatchHeaders.indexOf('regional'),
+                guia: dispatchHeaders.indexOf('guia tcc'),
+                solicitud: dispatchHeaders.indexOf('solicitud app'),
+                trasladoSam: dispatchHeaders.indexOf('id traslado sam'),
+                evidencia: dispatchHeaders.indexOf('evidencia'),
+                estado: dispatchHeaders.indexOf('estado')
+            };
+            if (Object.values(dispatchColumns).some(index => index < 0)) {
+                throw new Error('Faltan columnas requeridas en «Registro de Despachos».');
+            }
+            const dispatchRecords = dispatchRows.slice(dispatchHeaderIndex + 1).map(row => {
+                const serialCantidad = String(row[dispatchColumns.serialCantidad] ?? '').trim().slice(0, 100);
+                const isAccessory = /^\d+(?:[.,]\d+)?$/.test(serialCantidad);
+                return ({
+                fecha: capHistoryDateValue(row[dispatchColumns.fecha]),
+                serialCantidad,
+                tipoRegistro: isAccessory ? 'Accesorio' : 'Radio',
+                cantidad: isAccessory ? Number(serialCantidad.replace(',', '.')) : 1,
+                serialRadio: isAccessory ? '' : serialCantidad,
+                modelo: String(row[dispatchColumns.modelo] ?? '').trim().slice(0, 100),
+                accesorios: String(row[dispatchColumns.accesorios] ?? '').trim().slice(0, 300),
+                cliente: String(row[dispatchColumns.cliente] ?? '').trim().slice(0, 200),
+                regional: String(row[dispatchColumns.regional] ?? '').trim().slice(0, 150),
+                guia: String(row[dispatchColumns.guia] ?? '').trim().slice(0, 100),
+                solicitud: String(row[dispatchColumns.solicitud] ?? '').trim().slice(0, 100),
+                trasladoSam: String(row[dispatchColumns.trasladoSam] ?? '').trim().slice(0, 100),
+                evidencia: String(row[dispatchColumns.evidencia] ?? '').trim().slice(0, 300),
+                estado: String(row[dispatchColumns.estado] ?? '').trim().slice(0, 100),
+                fuente: 'Registro de Despachos'
+            }); }).filter(record => Object.entries(record).some(([key, value]) => key !== 'fuente' && value));
+            if (!inventoryRecords.length) throw new Error('No encontré radios con serial en «Inventario Maestro».');
+            if (!accessoryRecords.length) throw new Error('No encontré accesorios con existencias en «Inventario Maestro».');
+            if (inventoryRecords.length > 1000 || dispatchRecords.length > 5000 || accessoryRecords.length > 1000) {
+                throw new Error('El archivo supera el límite permitido para importar radios.');
+            }
+            const inventorySerials = new Set(inventoryRecords.map(record => record.serial.toUpperCase()));
+            const flaggedDispatches = dispatchRecords.filter(record =>
+                record.tipoRegistro === 'Radio' && (
+                    !record.serialRadio ||
+                    /^(NA|N\/A|NO APLICA)$/i.test(record.serialRadio) ||
+                    !inventorySerials.has(record.serialRadio.toUpperCase())
+                )).length;
+            const accessoryDispatches = dispatchRecords.filter(record => record.tipoRegistro === 'Accesorio').length;
+            return { inventoryRecords, accessoryRecords, dispatchRecords, flaggedDispatches, accessoryDispatches };
+        }
 
         window.auditarInventario = function() {
             const resultPanel = document.getElementById('inventory-audit-result');

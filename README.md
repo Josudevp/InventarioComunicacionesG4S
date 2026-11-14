@@ -48,6 +48,8 @@ npm run preview
 * Inicio de sesión en bóveda separada, cambio de contraseña y cierre de sesión por inactividad.
 * Búsqueda del catálogo con Choices.js, alta y edición de accesorios y lectura de códigos QR cuando el dispositivo permite el acceso a la cámara.
 * Inventario independiente de celulares devueltos, identificado por serial, con fecha de recepción, modelo, daño/reparación, estado operativo y bitácora de cambios de estado.
+* Selector de sección después del inicio de sesión para ingresar al inventario de celulares o al módulo independiente de radios.
+* Inventario de radios separado por serial, con sección propia de accesorios por modelo. La importación administrativa toma «Inventario Maestro» como estado actual y guarda por separado «Registro de Despachos»; las cantidades del campo Serial se clasifican como despachos de accesorios, sin serial de radio ni asociación ficticia. El historial no modifica existencias automáticamente.
 * Filtros combinables por columna en el inventario de celulares, con selección múltiple como en el historial; la búsqueda y el filtro de estado siguen disponibles.
 * Registro de movimientos con controles de stock y distribución de salidas por cliente, artículo, regional, cantidad y persona destinataria.
 * Solicitudes con varias líneas y clientes para una regional y persona destinataria compartidas. También se admiten solicitudes de Comunicaciones y la preparación de correos dirigidos a `capmovil@gmail.com`.
@@ -57,6 +59,12 @@ npm run preview
 * Historial de movimientos con filtros multiselección por fecha, artículo, tipo, cantidad, cliente/proveedor, regional, estado y usuario. Los filtros se combinan y la fecha permite alternar el orden.
 * Preferencia de tema claro/oscuro persistida en el navegador. El encabezado principal conserva una superficie oscura en ambos temas.
 * PWA instalable en dispositivos compatibles con iOS y Android.
+
+### Inicio del módulo de Radios
+
+Después de publicar frontend y Apps Script, un administrador puede entrar a **Radios**, seleccionar `Gestion de radios.xlsx` e importar el archivo. Se toma **Inventario Maestro** como estado actual por serial y por accesorio/modelo; **Registro de Despachos** se conserva aparte. Las pestañas **Inventario radios**, **Inventario accesorios radios**, **Historial despachos radios**, **Historial estados radios** y **Movimientos accesorios radios** se crean en la hoja principal al consultar/importar. Las importaciones repetidas omiten despachos duplicados y conservan estados/stock que ya fueron modificados desde la aplicación. Las líneas con cantidades se reconocen como accesorios; las filas de radios con serial ausente o que no coincide con el maestro quedan señaladas para revisión, sin modificar existencias.
+
+En Radios, el inventario visible contiene únicamente unidades **Disponibles** en la bodega de Comunicaciones. Cualquier radio con otro estado se mueve a **Radios archivados**; al volver a bodega se puede ingresar de nuevo con el mismo serial para reactivarlo y conservar su bitácora. Para registrar una salida, selecciona los radios y los accesorios: el sistema marca los equipos como despachados, los archiva y descuenta las cantidades de accesorios. La lista de accesorios prioriza los modelos seleccionados y permite seleccionar todos los compatibles en un clic; los demás quedan en el grupo de extras. Las salidas y los movimientos se conservan en sus historiales separados.
 
 ## Indicadores y reportes
 

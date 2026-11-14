@@ -39,11 +39,24 @@ var CONFIG = {
   equipmentSheet: "Inventario de celulares",
   equipmentHistorySheet: "Historial de celulares",
   equipmentArchiveSheet: "Celulares archivados",
+  radiosSheet: "Inventario radios",
+  radioArchiveSheet: "Radios archivados",
+  radioAccessoriesSheet: "Inventario accesorios radios",
+  radioDispatchesSheet: "Historial despachos radios",
+  radioHistorySheet: "Historial estados radios",
+  radioAccessoryMovementsSheet: "Movimientos accesorios radios",
   capDispositionSheet: "Lotes CAP disposición",
   equipmentHeaders: ["ID_Equipo", "Fecha_Recepcion", "Modelo", "Dato legado", "Dano_Reparacion", "Estado", "Registrado_Por", "Fecha_Actualizacion", "Actualizado_Por", "IMEI", "Ubicacion_SAM"],
   equipmentArchiveHeaders: ["ID_Equipo", "Fecha_Recepcion", "Modelo", "Dato legado", "Dano_Reparacion", "Estado", "Registrado_Por", "Fecha_Actualizacion", "Actualizado_Por", "IMEI", "Ubicacion_SAM", "Fecha_Archivado", "Motivo_Archivo", "Archivado_Por"],
   capDispositionHeaders: ["ID_Lote", "Fecha_Creacion", "Fecha_Entrega", "Motivo", "Responsable_Entrega", "Responsable_Recibe", "Evidencia_URL", "Estado_Lote", "ID_Equipo", "IMEI", "Modelo", "Dano_Reparacion", "Ubicacion_SAM", "Registrado_Por"],
   equipmentHistoryHeaders: ["ID_Cambio", "Fecha_Hora", "ID_Equipo", "Dato legado", "Modelo", "Estado_Anterior", "Estado_Nuevo", "Registrado_Por"],
+  radiosHeaders: ["Serial_Radio", "Modelo", "Estado_Inventario", "Fecha_Despacho", "Cliente_Asignado", "Regional_Destino", "Guia_TCC", "Estado_Despacho", "Fuente", "Registrado_Por", "Fecha_Actualizacion"],
+  radioArchiveHeaders: ["Serial_Radio", "Modelo", "Estado_Inventario", "Fecha_Despacho", "Cliente_Asignado", "Regional_Destino", "Guia_TCC", "Estado_Despacho", "Fuente", "Registrado_Por", "Fecha_Actualizacion", "Fecha_Archivado", "Motivo_Archivo", "Archivado_Por"],
+  radioAccessoriesHeaders: ["ID_Accesorio", "Accesorio", "Modelo_Radio", "Stock_Inicial", "Total_Despachado", "Stock_Disponible", "Stock_Minimo", "Estado_Alerta", "Fuente", "Registrado_Por", "Fecha_Actualizacion"],
+  radioDispatchHeaders: ["ID_Despacho", "Clave_Deduplicacion", "Fecha", "Serial_Cantidad", "Modelo", "Accesorios", "Cliente", "Regional", "Guia_TCC", "Solicitud_APP", "ID_Traslado_SAM", "Evidencia", "Estado", "Validacion", "Fuente", "Registrado_Por", "Fecha_Importacion", "Tipo_Registro", "Cantidad", "Serial_Radio"],
+  radioHistoryHeaders: ["ID_Evento", "Clave_Evento", "Fecha_Hora", "Serial_Radio", "Estado_Anterior", "Estado_Nuevo", "Cliente", "Regional", "Guia_TCC", "Tipo_Evento", "Registrado_Por"],
+  radioAccessoryMovementHeaders: ["ID_Movimiento", "Fecha_Hora", "ID_Accesorio", "Accesorio", "Modelo_Radio", "Tipo_Movimiento", "Cantidad", "Stock_Despues", "Referencia", "Registrado_Por", "Clave_Idempotencia"],
+  radioStatuses: ["Disponible", "En tránsito", "Despachado", "En reparación", "Garantía", "Dañado", "Disposición final"],
   equipmentStatuses: ["Disponible", "Dañado", "Disposición final", "Garantía", "Enviados CAP", "Despachado a puesto"],
   requestHeaders: ["ID_Solicitud", "Fecha_Registro", "Registrado_Por", "Cliente", "Regional", "Entregado_A", "ID_Articulo", "Descripcion", "Cantidad", "Estado", "Proveedor", "Fecha_Solicitud_Proveedor", "Fecha_Recepcion", "Fecha_Entrega", "ID_Transaccion_Recepcion", "ID_Transaccion_Entrega", "Observaciones", "Actualizado_Por", "Fecha_Actualizacion", "Costo_Unitario_COP", "Correo_Solicitante", "Gmail_Thread_ID", "Gmail_Thread_URL", "Fecha_Revision_Disponibilidad", "Justificacion_Anulacion", "Tipo_Solicitud"],
   requestStatuses: ["Registrada", "Revisión de disponibilidad", "Solicitada", "Recibida", "Entregada", "Cerrada", "Anulada"],
@@ -248,6 +261,12 @@ function doPost(e) {
     if (action === "obtener_analitica_inventario") return getInventoryInsights_(data, session);
     if (action === "obtener_solicitudes") return getRequests_(data, session);
     if (action === "obtener_equipos") return getEquipment_(session);
+    if (action === "obtener_radios") return getRadios_(session);
+    if (action === "importar_radios_excel") return importRadiosWorkbook_(data, session);
+    if (action === "registrar_radio") return registerRadio_(data, session);
+    if (action === "actualizar_estado_radio") return updateRadioStatuses_(data, session);
+    if (action === "despachar_radios") return dispatchRadios_(data, session);
+    if (action === "registrar_entrada_accesorio_radio") return receiveRadioAccessory_(data, session);
     if (action === "obtener_historial_equipos") return getEquipmentHistory_(data, session);
     if (action === "buscar_equipo_maestro") return searchEquipmentMaster_(data);
     if (action === "registrar_equipo") return registerEquipment_(data, session);
@@ -2587,6 +2606,944 @@ function getEquipment_(session) {
       };
     }).reverse();
   return json_({ status: "success", data: equipment, estados: CONFIG.equipmentStatuses });
+}
+
+function getRadios_(session) {
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  var inventorySheet;
+  var inventoryRows;
+  var archivedRows;
+  try {
+    inventorySheet = radioInventorySheet_();
+    archiveUnavailableRadios_(inventorySheet);
+    inventoryRows = inventorySheet.getDataRange().getValues();
+    archivedRows = radioArchiveSheet_().getDataRange().getValues();
+  } finally {
+    lock.releaseLock();
+  }
+  var accessoryRows = radioAccessorySheet_().getDataRange().getValues();
+  var dispatchRows = radioDispatchSheet_().getDataRange().getValues();
+  var historyRows = radioHistorySheet_().getDataRange().getValues();
+  var movementRows = radioAccessoryMovementSheet_().getDataRange().getValues();
+  var radios = inventoryRows.slice(1).filter(function(row) {
+    return clean_(row[0], 100) && clean_(row[2], 100) === "Disponible";
+  })
+    .map(function(row) {
+      return {
+        serial: clean_(row[0], 100),
+        modelo: clean_(row[1], 100),
+        estadoInventario: clean_(row[2], 100),
+        fechaDespacho: radioDateDisplay_(row[3]),
+        cliente: clean_(row[4], 200),
+        regional: clean_(row[5], 150),
+        guia: clean_(row[6], 100),
+        estadoDespacho: clean_(row[7], 100),
+        fuente: clean_(row[8], 100)
+      };
+    });
+  var openDispatchDates = radioOpenDispatchDates_(historyRows);
+  var now = new Date();
+  radios.forEach(function(radio) {
+    var status = radio.estadoInventario;
+    var dispatchDate = openDispatchDates[radio.serial.toUpperCase()];
+    if (!dispatchDate && ["Despachado", "En tránsito", "En reparación", "Garantía"].indexOf(status) >= 0 && radio.fechaDespacho) {
+      dispatchDate = new Date(radio.fechaDespacho + "T00:00:00");
+    }
+    radio.diasEnSeguimiento = dispatchDate && !isNaN(dispatchDate.getTime())
+      ? Math.max(0, Math.floor((now.getTime() - dispatchDate.getTime()) / 86400000))
+      : null;
+  });
+  var dispatches = dispatchRows.slice(1).filter(function(row) {
+    return clean_(row[0], 100) && clean_(row[17], 50) !== "Control";
+  })
+    .map(function(row) {
+      var serialOrQuantity = clean_(row[3], 100);
+      var type = clean_(row[17], 50) ||
+        (/^\d+(?:[.,]\d+)?$/.test(serialOrQuantity) ? "Accesorio" : "Radio");
+      var quantity = row[18] !== "" && row[18] != null
+        ? number_(row[18])
+        : type === "Accesorio" ? Number(serialOrQuantity.replace(",", ".")) || 0 : 1;
+      return {
+        id: clean_(row[0], 100),
+        fecha: radioDateDisplay_(row[2]),
+        serialCantidad: serialOrQuantity,
+        modelo: clean_(row[4], 100),
+        accesorios: clean_(row[5], 300),
+        cliente: clean_(row[6], 200),
+        regional: clean_(row[7], 150),
+        guia: clean_(row[8], 100),
+        solicitud: clean_(row[9], 100),
+        trasladoSam: clean_(row[10], 100),
+        estado: clean_(row[12], 100),
+        validacion: type === "Accesorio" ? "" : clean_(row[13], 300),
+        tipoRegistro: type,
+        cantidad: quantity,
+        serialRadio: type === "Accesorio" ? "" : clean_(row[19], 100) || serialOrQuantity
+      };
+    }).reverse();
+  var accessories = accessoryRows.slice(1).filter(function(row) { return clean_(row[0], 100); })
+    .map(function(row) {
+      return {
+        id: clean_(row[0], 100),
+        accesorio: clean_(row[1], 200),
+        modelo: clean_(row[2], 100),
+        stockInicial: number_(row[3]),
+        totalDespachado: number_(row[4]),
+        stockDisponible: number_(row[5]),
+        stockMinimo: number_(row[6]),
+        estadoAlerta: clean_(row[7], 100)
+      };
+    });
+  var stateHistory = historyRows.slice(1).filter(function(row) { return clean_(row[0], 100); })
+    .map(function(row) {
+      return {
+        id: clean_(row[0], 100),
+        fecha: radioDateDisplay_(row[2]),
+        serial: clean_(row[3], 100),
+        estadoAnterior: clean_(row[4], 100),
+        estadoNuevo: clean_(row[5], 100),
+        cliente: clean_(row[6], 200),
+        regional: clean_(row[7], 150),
+        tipo: clean_(row[9], 100),
+        usuario: clean_(row[10], 100)
+      };
+    }).reverse();
+  var accessoryMovements = movementRows.slice(1).filter(function(row) { return clean_(row[0], 100); })
+    .map(function(row) {
+      return {
+        id: clean_(row[0], 100),
+        fecha: radioDateDisplay_(row[1]),
+        accesorio: clean_(row[3], 200),
+        modelo: clean_(row[4], 100),
+        tipo: clean_(row[5], 50),
+        cantidad: number_(row[6]),
+        stockDespues: number_(row[7]),
+        referencia: clean_(row[8], 200),
+        usuario: clean_(row[9], 100)
+      };
+    }).reverse().slice(0, 500);
+  return json_({
+    status: "success",
+    usuario: session.usuario,
+    data: radios,
+    despachos: dispatches,
+    accesorios: accessories,
+    movimientosAccesorios: accessoryMovements,
+    historialEstados: stateHistory,
+    resumen: radioMetrics_(radios, archivedRows, historyRows),
+    estados: CONFIG.radioStatuses
+  });
+}
+
+function radioOpenDispatchDates_(historyRows) {
+  var eventsBySerial = Object.create(null);
+  historyRows.slice(1).forEach(function(row, index) {
+    var serial = clean_(row[3], 100).toUpperCase();
+    var date = row[2] instanceof Date ? row[2] : new Date(row[2]);
+    if (!serial || isNaN(date.getTime())) return;
+    if (!eventsBySerial[serial]) eventsBySerial[serial] = [];
+    eventsBySerial[serial].push({ date: date, status: clean_(row[5], 100), index: index });
+  });
+  var openDates = Object.create(null);
+  Object.keys(eventsBySerial).forEach(function(serial) {
+    var events = eventsBySerial[serial].sort(function(a, b) {
+      return a.date.getTime() - b.date.getTime() || a.index - b.index;
+    });
+    events.forEach(function(event) {
+      if (event.status === "Despachado" || event.status === "En tránsito") {
+        openDates[serial] = event.date;
+      } else if (event.status === "Disponible" || event.status === "Disposición final") {
+        delete openDates[serial];
+      }
+    });
+  });
+  return openDates;
+}
+
+function radioMetrics_(availableRadios, archivedRows, historyRows) {
+  var eventsBySerial = Object.create(null);
+  historyRows.slice(1).forEach(function(row, index) {
+    var serial = clean_(row[3], 100).toUpperCase();
+    var date = row[2] instanceof Date ? row[2] : new Date(row[2]);
+    if (!serial || isNaN(date.getTime())) return;
+    if (!eventsBySerial[serial]) eventsBySerial[serial] = [];
+    eventsBySerial[serial].push({ date: date, status: clean_(row[5], 100), index: index });
+  });
+  var measured = [];
+  Object.keys(eventsBySerial).forEach(function(serial) {
+    var events = eventsBySerial[serial].sort(function(a, b) {
+      return a.date.getTime() - b.date.getTime() || a.index - b.index;
+    });
+    var dispatchDate = null;
+    events.forEach(function(event) {
+      if (event.status === "Despachado" || event.status === "En tránsito") {
+        dispatchDate = event.date;
+      } else if (event.status === "Disponible" && dispatchDate && event.date >= dispatchDate) {
+        measured.push((event.date.getTime() - dispatchDate.getTime()) / 86400000);
+        dispatchDate = null;
+      } else if (event.status === "Disposición final") {
+        dispatchDate = null;
+      }
+    });
+  });
+  var archivedRadios = archivedRows.slice(1).filter(function(row) { return clean_(row[0], 100); });
+  var pendingStatuses = ["Despachado", "En tránsito", "En reparación", "Garantía"];
+  return {
+    total: availableRadios.length,
+    bodega: availableRadios.length,
+    despachados: archivedRadios.filter(function(row) { return row[2] === "Despachado"; }).length,
+    transito: archivedRadios.filter(function(row) { return row[2] === "En tránsito"; }).length,
+    pendientesRetorno: archivedRadios.filter(function(row) { return pendingStatuses.indexOf(row[2]) >= 0; }).length,
+    retornosMedidos: measured.length,
+    promedioRetornoDias: measured.length
+      ? Math.round(measured.reduce(function(total, value) { return total + value; }, 0) / measured.length * 10) / 10
+      : null
+  };
+}
+
+function importRadiosWorkbook_(data, session) {
+  if (!isAdmin_(session)) throw new Error("Solo un administrador puede importar el inventario de radios");
+  var inventory = data.inventario;
+  var dispatches = data.despachos;
+  var accessories = data.accesorios;
+  if (!Array.isArray(inventory) || !Array.isArray(dispatches) || !Array.isArray(accessories)) {
+    throw new Error("El archivo debe incluir el inventario maestro, los accesorios y el historial de despachos");
+  }
+  if (inventory.length > 1000 || dispatches.length > 5000 || accessories.length > 1000) {
+    throw new Error("El archivo supera el límite permitido para importar radios");
+  }
+
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    var inventorySheet = radioInventorySheet_();
+    var archiveSheet = radioArchiveSheet_();
+    var accessorySheet = radioAccessorySheet_();
+    var dispatchSheet = radioDispatchSheet_();
+    var inventoryValues = inventorySheet.getDataRange().getValues();
+    var inventoryRowBySerial = Object.create(null);
+    inventoryValues.slice(1).forEach(function(row, index) {
+      var serial = clean_(row[0], 100).toUpperCase();
+      if (serial) inventoryRowBySerial[serial] = index + 2;
+    });
+    var archiveValues = archiveSheet.getDataRange().getValues();
+    var archiveRowBySerial = Object.create(null);
+    archiveValues.slice(1).forEach(function(row, index) {
+      var serial = clean_(row[0], 100).toUpperCase();
+      if (serial) archiveRowBySerial[serial] = index + 2;
+    });
+    var importSerials = Object.create(null);
+    var inventoryImported = 0;
+    var inventoryUpdated = 0;
+    var now = new Date();
+    var inventoryRowsToAppend = [];
+    var inventoryRowsToUpdate = [];
+    var archiveRowsToUpdate = [];
+    var archiveRowsToRemove = [];
+    inventory.forEach(function(item) {
+      var serial = clean_(item && item.serial, 100);
+      if (!serial) return;
+      var serialKey = serial.toUpperCase();
+      if (importSerials[serialKey]) throw new Error("El archivo contiene el serial repetido " + serial);
+      importSerials[serialKey] = true;
+      var row = [
+        serial,
+        clean_(item.modelo, 100),
+        clean_(item.estadoInventario, 100),
+        clean_(item.fechaDespacho, 30),
+        clean_(item.cliente, 200),
+        clean_(item.regional, 150),
+        clean_(item.guia, 100),
+        clean_(item.estadoDespacho, 100),
+        "Inventario Maestro",
+        session.usuario,
+        now
+      ];
+      if (inventoryRowBySerial[serialKey]) {
+        var existingInventory = inventoryValues[inventoryRowBySerial[serialKey] - 1];
+        if (clean_(existingInventory[8], 100) === "Aplicación") {
+          row = [
+            serial, row[1], clean_(existingInventory[2], 100), existingInventory[3],
+            existingInventory[4], existingInventory[5], existingInventory[6],
+            existingInventory[7], "Aplicación", clean_(existingInventory[9], 100) || session.usuario, now
+          ];
+        }
+        inventoryRowsToUpdate.push({ row: inventoryRowBySerial[serialKey], values: row });
+        inventoryUpdated++;
+      } else if (archiveRowBySerial[serialKey]) {
+        var archived = archiveValues[archiveRowBySerial[serialKey] - 1];
+        if (clean_(archived[8], 100) === "Aplicación") return;
+        if (clean_(row[2], 100) === "Disponible") {
+          inventoryRowsToAppend.push(row);
+          archiveRowsToRemove.push(archiveRowBySerial[serialKey]);
+        } else {
+          var archivedRow = row.slice(0, CONFIG.radiosHeaders.length);
+          archivedRow.push(archived[11], archived[12], archived[13]);
+          archiveRowsToUpdate.push({ row: archiveRowBySerial[serialKey], values: archivedRow });
+        }
+        inventoryUpdated++;
+      } else {
+        inventoryRowsToAppend.push(row);
+        inventoryImported++;
+      }
+    });
+    archiveRowsToUpdate.forEach(function(item) {
+      archiveSheet.getRange(item.row, 1, 1, CONFIG.radioArchiveHeaders.length).setValues([item.values]);
+    });
+    archiveRowsToRemove.sort(function(a, b) { return b - a; }).forEach(function(rowNumber) {
+      archiveSheet.deleteRow(rowNumber);
+    });
+    inventoryRowsToUpdate.forEach(function(item) {
+      inventorySheet.getRange(item.row, 1, 1, CONFIG.radiosHeaders.length).setValues([item.values]);
+    });
+    if (inventoryRowsToAppend.length) {
+      inventorySheet.getRange(inventorySheet.getLastRow() + 1, 1, inventoryRowsToAppend.length, CONFIG.radiosHeaders.length)
+        .setValues(inventoryRowsToAppend);
+    }
+    archiveUnavailableRadios_(inventorySheet);
+    seedImportedRadioHistory_(inventory, session);
+
+    var accessoryValues = accessorySheet.getDataRange().getValues();
+    var accessoryRowByKey = Object.create(null);
+    accessoryValues.slice(1).forEach(function(row, index) {
+      var key = radioAccessoryKey_(row[1], row[2]);
+      if (key) accessoryRowByKey[key] = index + 2;
+    });
+    var importedAccessoryKeys = Object.create(null);
+    var accessoriesImported = 0;
+    var accessoriesUpdated = 0;
+    var accessoryRowsToAppend = [];
+    var accessoryRowsToUpdate = [];
+    accessories.forEach(function(item) {
+      if (!item || typeof item !== "object") return;
+      var accessoryName = clean_(item.accesorio, 200);
+      var model = clean_(item.modelo, 100);
+      if (!accessoryName || !model) return;
+      var key = radioAccessoryKey_(accessoryName, model);
+      if (importedAccessoryKeys[key]) throw new Error("El archivo repite el accesorio " + accessoryName + " para el modelo " + model);
+      importedAccessoryKeys[key] = true;
+      var current = accessoryRowByKey[key]
+        ? accessoryValues[accessoryRowByKey[key] - 1]
+        : null;
+      var row = [
+        current ? clean_(current[0], 100) : Utilities.getUuid(),
+        accessoryName,
+        model,
+        number_(item.stockInicial),
+        number_(item.totalDespachado),
+        number_(item.stockDisponible),
+        number_(item.stockMinimo),
+        clean_(item.estadoAlerta, 100),
+        "Inventario Maestro",
+        session.usuario,
+        now
+      ];
+      if (accessoryRowByKey[key]) {
+        if (current && clean_(current[8], 100) === "Aplicación") {
+          var appStock = number_(current[5]);
+          var minimum = number_(item.stockMinimo);
+          row = [
+            clean_(current[0], 100), accessoryName, model, number_(current[3]), number_(current[4]),
+            appStock, minimum, appStock <= 0 ? "AGOTADO" : appStock <= minimum ? "STOCK BAJO" : "OPTIMO",
+            "Aplicación", clean_(current[9], 100) || session.usuario, now
+          ];
+        }
+        accessoryRowsToUpdate.push({ row: accessoryRowByKey[key], values: row });
+        accessoriesUpdated++;
+      } else {
+        accessoryRowsToAppend.push(row);
+        accessoriesImported++;
+      }
+    });
+    accessoryRowsToUpdate.forEach(function(item) {
+      accessorySheet.getRange(item.row, 1, 1, CONFIG.radioAccessoriesHeaders.length).setValues([item.values]);
+    });
+    if (accessoryRowsToAppend.length) {
+      accessorySheet.getRange(accessorySheet.getLastRow() + 1, 1, accessoryRowsToAppend.length, CONFIG.radioAccessoriesHeaders.length)
+        .setValues(accessoryRowsToAppend);
+    }
+
+    var existingDispatches = dispatchSheet.getDataRange().getValues();
+    var dispatchKeys = Object.create(null);
+    existingDispatches.slice(1).forEach(function(row) {
+      var key = clean_(row[1], 5000);
+      if (key) dispatchKeys[key] = true;
+    });
+    var inventorySerials = Object.create(null);
+    Object.keys(inventoryRowBySerial).forEach(function(serial) { inventorySerials[serial] = true; });
+    Object.keys(importSerials).forEach(function(serial) { inventorySerials[serial] = true; });
+    var newDispatchRows = [];
+    var duplicateDispatches = 0;
+    var discrepantDispatches = 0;
+    dispatches.forEach(function(item) {
+      if (!item || typeof item !== "object") return;
+      var fields = [
+        clean_(item.fecha, 30),
+        clean_(item.serialCantidad, 100),
+        clean_(item.modelo, 100),
+        clean_(item.accesorios, 300),
+        clean_(item.cliente, 200),
+        clean_(item.regional, 150),
+        clean_(item.guia, 100),
+        clean_(item.solicitud, 100),
+        clean_(item.trasladoSam, 100),
+        clean_(item.evidencia, 300),
+        clean_(item.estado, 100)
+      ];
+      if (!fields.some(Boolean)) return;
+      var key = JSON.stringify(fields);
+      var serial = fields[1];
+      var serialKey = serial.toUpperCase();
+      var validation = "";
+      var isAccessoryDispatch = /^\d+(?:[.,]\d+)?$/.test(serial);
+      var quantity = isAccessoryDispatch ? Number(serial.replace(",", ".")) : 1;
+      var recordType = isAccessoryDispatch ? "Accesorio" : "Radio";
+      if (!isAccessoryDispatch && (!serial || /^(NA|N\/A|NO APLICA)$/i.test(serial))) {
+        validation = "Sin serial identificable; validar antes de asociar al inventario.";
+      } else if (!isAccessoryDispatch && !inventorySerials[serialKey]) {
+        validation = "Serial ausente del Inventario Maestro; verificar posible desfase.";
+      }
+      if (dispatchKeys[key]) {
+        duplicateDispatches++;
+        return;
+      }
+      dispatchKeys[key] = true;
+      if (validation) discrepantDispatches++;
+      newDispatchRows.push([
+        Utilities.getUuid(),
+        key,
+        fields[0],
+        fields[1],
+        fields[2],
+        fields[3],
+        fields[4],
+        fields[5],
+        fields[6],
+        fields[7],
+        fields[8],
+        fields[9],
+        fields[10],
+        validation,
+        clean_(item.fuente, 100) || "Registro de Despachos",
+        session.usuario,
+        now,
+        recordType,
+        quantity,
+        isAccessoryDispatch ? "" : serial
+      ]);
+    });
+    if (newDispatchRows.length) {
+      dispatchSheet.getRange(dispatchSheet.getLastRow() + 1, 1, newDispatchRows.length, CONFIG.radioDispatchHeaders.length)
+        .setValues(newDispatchRows);
+    }
+    return json_({
+      status: "success",
+      data: {
+        radiosCreados: inventoryImported,
+        radiosActualizados: inventoryUpdated,
+        accesoriosCreados: accessoriesImported,
+        accesoriosActualizados: accessoriesUpdated,
+        despachosImportados: newDispatchRows.length,
+        despachosDuplicados: duplicateDispatches,
+        despachosConDiscrepancias: discrepantDispatches
+      }
+    });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function radioDateDisplay_(value) {
+  if (!value) return "";
+  if (value instanceof Date && !isNaN(value.getTime())) {
+    return Utilities.formatDate(value, Session.getScriptTimeZone(), "yyyy-MM-dd");
+  }
+  return clean_(value, 30);
+}
+
+function radioInventorySheet_() {
+  return ensureRadioSheet_(CONFIG.radiosSheet, CONFIG.radiosHeaders);
+}
+
+function radioArchiveSheet_() {
+  return ensureRadioSheet_(CONFIG.radioArchiveSheet, CONFIG.radioArchiveHeaders);
+}
+
+function archiveUnavailableRadios_(inventorySheet) {
+  var rows = inventorySheet.getDataRange().getValues();
+  var archive = radioArchiveSheet_();
+  var archivedRows = archive.getDataRange().getValues();
+  var archivedBySerial = Object.create(null);
+  archivedRows.slice(1).forEach(function(row, index) {
+    var serial = clean_(row[0], 100).toUpperCase();
+    if (serial) archivedBySerial[serial] = index + 2;
+  });
+  var now = new Date();
+  for (var i = rows.length - 1; i >= 1; i--) {
+    var row = rows[i];
+    var serial = clean_(row[0], 100);
+    if (!serial || clean_(row[2], 100) === "Disponible") continue;
+    var key = serial.toUpperCase();
+    var existingRow = archivedBySerial[key];
+    var archiveValues = row.slice(0, CONFIG.radiosHeaders.length);
+    while (archiveValues.length < CONFIG.radiosHeaders.length) archiveValues.push("");
+    archiveValues.push(now, "Estado distinto de Disponible", clean_(row[9], 100) || "Sistema");
+    if (existingRow) {
+      archive.getRange(existingRow, 1, 1, CONFIG.radioArchiveHeaders.length).setValues([archiveValues]);
+    } else {
+      archive.getRange(archive.getLastRow() + 1, 1, 1, CONFIG.radioArchiveHeaders.length).setValues([archiveValues]);
+    }
+    inventorySheet.deleteRow(i + 1);
+  }
+}
+
+function reactivateArchivedRadio_(archiveSheet, rowNumber, row, session, date, oldStatus) {
+  var inventorySheet = radioInventorySheet_();
+  var now = new Date();
+  var activeRow = [
+    clean_(row[0], 100), clean_(row[1], 100), "Disponible", "", "", "", "", "",
+    "Aplicación", session.usuario, now
+  ];
+  inventorySheet.getRange(inventorySheet.getLastRow() + 1, 1, 1, CONFIG.radiosHeaders.length).setValues([activeRow]);
+  appendRadioHistory_(clean_(row[0], 100), oldStatus, "Disponible", date, {}, session, "Retorno a bodega");
+  archiveSheet.deleteRow(rowNumber);
+  return activeRow;
+}
+
+function radioAccessorySheet_() {
+  return ensureRadioSheet_(CONFIG.radioAccessoriesSheet, CONFIG.radioAccessoriesHeaders);
+}
+
+function radioDispatchSheet_() {
+  return ensureRadioSheet_(CONFIG.radioDispatchesSheet, CONFIG.radioDispatchHeaders);
+}
+
+function radioAccessoryKey_(accessory, model) {
+  var accessoryName = clean_(accessory, 200).toUpperCase();
+  var radioModel = clean_(model, 100).toUpperCase();
+  return accessoryName && radioModel ? radioModel + "|" + accessoryName : "";
+}
+
+function radioHistorySheet_() {
+  return ensureRadioSheet_(CONFIG.radioHistorySheet, CONFIG.radioHistoryHeaders);
+}
+
+function radioAccessoryMovementSheet_() {
+  return ensureRadioSheet_(CONFIG.radioAccessoryMovementsSheet, CONFIG.radioAccessoryMovementHeaders);
+}
+
+function seedImportedRadioHistory_(inventory, session) {
+  var history = radioHistorySheet_();
+  var currentInventory = radioInventorySheet_().getDataRange().getValues();
+  var archivedInventory = radioArchiveSheet_().getDataRange().getValues();
+  var appManaged = Object.create(null);
+  currentInventory.slice(1).concat(archivedInventory.slice(1)).forEach(function(row) {
+    var serial = clean_(row[0], 100).toUpperCase();
+    if (serial && clean_(row[8], 100) === "Aplicación") appManaged[serial] = true;
+  });
+  var existing = history.getDataRange().getValues();
+  var eventKeys = Object.create(null);
+  existing.slice(1).forEach(function(row) {
+    var key = clean_(row[1], 500);
+    if (key) eventKeys[key] = true;
+  });
+  var events = [];
+  inventory.forEach(function(item) {
+    var serial = clean_(item && item.serial, 100);
+    var dateText = clean_(item && item.fechaDespacho, 30);
+    var status = clean_(item && item.estadoInventario, 100);
+    if (!serial || !dateText || !status || appManaged[serial.toUpperCase()]) return;
+    var key = ["import", serial.toUpperCase(), dateText, status].join("|");
+    if (eventKeys[key]) return;
+    eventKeys[key] = true;
+    var date = new Date(dateText + "T00:00:00");
+    if (isNaN(date.getTime())) return;
+    events.push([
+      Utilities.getUuid(), key, date, serial, "", status,
+      clean_(item.cliente, 200), clean_(item.regional, 150), clean_(item.guia, 100),
+      "Importación del estado maestro", session.usuario
+    ]);
+  });
+  if (events.length) {
+    history.getRange(history.getLastRow() + 1, 1, events.length, CONFIG.radioHistoryHeaders.length).setValues(events);
+  }
+}
+
+function radioDate_(value) {
+  var text = clean_(value, 20);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) throw new Error("La fecha no es válida");
+  var date = new Date(text + "T00:00:00");
+  if (isNaN(date.getTime()) || radioDateDisplay_(date) !== text) throw new Error("La fecha no es válida");
+  return date;
+}
+
+function radioHistoryEvent_(serial, oldStatus, newStatus, date, details, session, type) {
+  return [
+    Utilities.getUuid(),
+    [clean_(type, 50), clean_(serial, 100).toUpperCase(), date.getTime(), clean_(newStatus, 100)].join("|"),
+    date,
+    clean_(serial, 100),
+    clean_(oldStatus, 100),
+    clean_(newStatus, 100),
+    clean_(details.cliente, 200),
+    clean_(details.regional, 150),
+    clean_(details.guia, 100),
+    clean_(type, 100),
+    session.usuario
+  ];
+}
+
+function appendRadioHistory_(serial, oldStatus, newStatus, date, details, session, type) {
+  var sheet = radioHistorySheet_();
+  sheet.getRange(sheet.getLastRow() + 1, 1, 1, CONFIG.radioHistoryHeaders.length)
+    .setValues([radioHistoryEvent_(serial, oldStatus, newStatus, date, details, session, type)]);
+}
+
+function registerRadio_(data, session) {
+  var serial = clean_(data.serial, 100);
+  var model = clean_(data.modelo, 100);
+  var date = data.fechaRegistro ? radioDate_(data.fechaRegistro) : new Date();
+  var status = "Disponible";
+  if (!serial || !model) throw new Error("Completa serial y modelo");
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    var sheet = radioInventorySheet_();
+    var rows = sheet.getDataRange().getValues();
+    if (rows.slice(1).some(function(row) { return clean_(row[0], 100).toUpperCase() === serial.toUpperCase(); })) {
+      throw new Error("Ya existe un radio con ese serial");
+    }
+    var archivedSheet = radioArchiveSheet_();
+    var archivedRows = archivedSheet.getDataRange().getValues();
+    for (var i = 1; i < archivedRows.length; i++) {
+      if (clean_(archivedRows[i][0], 100).toUpperCase() !== serial.toUpperCase()) continue;
+      var restored = reactivateArchivedRadio_(archivedSheet, i + 1, archivedRows[i], session, date, clean_(archivedRows[i][2], 100));
+      return json_({ status: "success", reactivado: true, data: {
+        serial: restored[0], modelo: restored[1], estadoInventario: restored[2]
+      } });
+    }
+    var now = new Date();
+    var newRow = [
+      serial, model, status, "", "", "", "", "", "Aplicación", session.usuario, now
+    ];
+    sheet.getRange(sheet.getLastRow() + 1, 1, 1, CONFIG.radiosHeaders.length).setValues([newRow]);
+    radioHistorySheet_().getRange(radioHistorySheet_().getLastRow() + 1, 1, 1, CONFIG.radioHistoryHeaders.length)
+      .setValues([radioHistoryEvent_(serial, "", status, date, {}, session, "Registro")]);
+    archiveUnavailableRadios_(sheet);
+    return json_({ status: "success", data: { serial: serial, modelo: model, estadoInventario: status } });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function updateRadioStatuses_(data, session) {
+  var serials = Array.isArray(data.seriales)
+    ? data.seriales.map(function(value) { return clean_(value, 100); }).filter(Boolean)
+    : [clean_(data.serial, 100)].filter(Boolean);
+  var status = clean_(data.estado, 100);
+  if (!serials.length || serials.length > 500 || CONFIG.radioStatuses.indexOf(status) < 0) {
+    throw new Error("Selecciona entre 1 y 500 radios y un estado válido");
+  }
+  var unique = Object.create(null);
+  serials = serials.filter(function(serial) {
+    var key = serial.toUpperCase();
+    if (unique[key]) return false;
+    unique[key] = true;
+    return true;
+  });
+  var date = radioDate_(data.fecha || radioDateDisplay_(new Date()));
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    var sheet = radioInventorySheet_();
+    var archiveSheet = radioArchiveSheet_();
+    var history = radioHistorySheet_();
+    var rows = sheet.getDataRange().getValues();
+    var archiveRows = archiveSheet.getDataRange().getValues();
+    var rowBySerial = Object.create(null);
+    rows.slice(1).forEach(function(row, index) {
+      var serial = clean_(row[0], 100).toUpperCase();
+      if (serial) rowBySerial[serial] = { rowNumber: index + 2, values: row };
+    });
+    archiveRows.slice(1).forEach(function(row, index) {
+      var serial = clean_(row[0], 100).toUpperCase();
+      if (serial && !rowBySerial[serial]) {
+        rowBySerial[serial] = { rowNumber: index + 2, values: row, archived: true };
+      }
+    });
+    serials.forEach(function(serial) {
+      if (!rowBySerial[serial.toUpperCase()]) throw new Error("No se encontró el radio " + serial);
+    });
+    var now = new Date();
+    var events = [];
+    var updatedCount = 0;
+    serials.forEach(function(serial) {
+      var match = rowBySerial[serial.toUpperCase()];
+      var previous = clean_(match.values[2], 100);
+      if (previous === status) return;
+      updatedCount++;
+      if (match.archived && status === "Disponible") {
+        reactivateArchivedRadio_(archiveSheet, match.rowNumber, match.values, session, date, previous);
+        events.push(null);
+        return;
+      }
+      if (match.archived) {
+        archiveSheet.getRange(match.rowNumber, 3).setValue(status);
+        archiveSheet.getRange(match.rowNumber, 11).setValue(now);
+        archiveSheet.getRange(match.rowNumber, 14).setValue(session.usuario);
+        events.push(radioHistoryEvent_(serial, previous, status, date, {
+          cliente: match.values[4], regional: match.values[5], guia: match.values[6]
+        }, session, "Cambio de estado"));
+        return;
+      }
+      if (status === "Disponible") {
+        sheet.getRange(match.rowNumber, 3, 1, 6).setValues([[status, "", "", "", "", ""]]);
+      } else {
+        sheet.getRange(match.rowNumber, 3).setValue(status);
+      }
+      sheet.getRange(match.rowNumber, 9, 1, 2).setValues([["Aplicación", session.usuario]]);
+      sheet.getRange(match.rowNumber, 11).setValue(now);
+      events.push(radioHistoryEvent_(serial, previous, status, date, {
+        cliente: match.values[4], regional: match.values[5], guia: match.values[6]
+      }, session, "Cambio de estado"));
+    });
+    var historyEvents = events.filter(Boolean);
+    if (historyEvents.length) history.getRange(history.getLastRow() + 1, 1, historyEvents.length, CONFIG.radioHistoryHeaders.length).setValues(historyEvents);
+    archiveUnavailableRadios_(sheet);
+    return json_({ status: "success", actualizados: updatedCount });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function dispatchRadios_(data, session) {
+  var serials = Array.isArray(data.seriales) ? data.seriales.map(function(value) {
+    return clean_(value, 100);
+  }).filter(Boolean) : [];
+  var accessories = Array.isArray(data.accesorios) ? data.accesorios : [];
+  var date = data.fecha ? radioDate_(data.fecha) : new Date();
+  if (!serials.length || serials.length > 100) throw new Error("Selecciona entre 1 y 100 radios para registrar su salida");
+  var idempotencyKey = clean_(data.claveIdempotencia, 100);
+  if (!idempotencyKey) throw new Error("No se recibió la clave de seguridad del despacho; vuelve a intentarlo");
+  var uniqueSerials = Object.create(null);
+  serials = serials.filter(function(serial) {
+    var key = serial.toUpperCase();
+    if (uniqueSerials[key]) return false;
+    uniqueSerials[key] = true;
+    return true;
+  });
+  accessories = accessories.map(function(item) {
+    return { id: clean_(item && item.id, 100), cantidad: number_(item && item.cantidad) };
+  }).filter(function(item) { return item.id && item.cantidad > 0; });
+  if (accessories.some(function(item) { return !Number.isInteger(item.cantidad); })) {
+    throw new Error("Las cantidades de accesorios deben ser números enteros");
+  }
+  if (accessories.length > 100) throw new Error("El despacho supera el límite de accesorios");
+
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    var inventory = radioInventorySheet_();
+    var accessorySheet = radioAccessorySheet_();
+    var dispatchSheet = radioDispatchSheet_();
+    var historySheet = radioHistorySheet_();
+    var movementSheet = radioAccessoryMovementSheet_();
+    var inventoryRows = inventory.getDataRange().getValues();
+    var accessoryRows = accessorySheet.getDataRange().getValues();
+    var dispatchRows = dispatchSheet.getDataRange().getValues();
+    var existingKeys = Object.create(null);
+    dispatchRows.slice(1).forEach(function(row) {
+      var key = clean_(row[1], 5000);
+      if (key) existingKeys[key] = true;
+    });
+    if (existingKeys["APP|" + idempotencyKey + "|batch"]) {
+      return json_({ status: "success", duplicado: true });
+    }
+    var radioBySerial = Object.create(null);
+    inventoryRows.slice(1).forEach(function(row, index) {
+      var serial = clean_(row[0], 100).toUpperCase();
+      if (serial) radioBySerial[serial] = { rowNumber: index + 2, row: row };
+    });
+    serials.forEach(function(serial) {
+      var radio = radioBySerial[serial.toUpperCase()];
+      if (!radio) throw new Error("No se encontró el radio " + serial);
+      if (clean_(radio.row[2], 100) !== "Disponible") {
+        throw new Error("El radio " + serial + " no está disponible para despacho");
+      }
+    });
+    var accessoryById = Object.create(null);
+    accessoryRows.slice(1).forEach(function(row, index) {
+      var id = clean_(row[0], 100);
+      if (id) accessoryById[id] = { rowNumber: index + 2, row: row };
+    });
+    var requestedAccessoryTotals = Object.create(null);
+    accessories.forEach(function(item) {
+      var match = accessoryById[item.id];
+      if (!match) throw new Error("No se encontró el accesorio " + item.id);
+      requestedAccessoryTotals[item.id] = (requestedAccessoryTotals[item.id] || 0) + item.cantidad;
+    });
+    Object.keys(requestedAccessoryTotals).forEach(function(id) {
+      var match = accessoryById[id];
+      if (number_(match.row[5]) < requestedAccessoryTotals[id]) {
+        throw new Error("Stock insuficiente de " + clean_(match.row[1], 200) + " (" + clean_(match.row[2], 100) + ")");
+      }
+    });
+
+    var now = new Date();
+    var newDispatchRows = [];
+    var events = [];
+    serials.forEach(function(serial) {
+      var match = radioBySerial[serial.toUpperCase()];
+      var old = clean_(match.row[2], 100);
+      inventory.getRange(match.rowNumber, 3, 1, 6).setValues([[
+        "Despachado",
+        radioDateDisplay_(date),
+        "",
+        "",
+        "",
+        "Salida"
+      ]]);
+      inventory.getRange(match.rowNumber, 9, 1, 2).setValues([["Aplicación", session.usuario]]);
+      inventory.getRange(match.rowNumber, 11).setValue(now);
+      events.push(radioHistoryEvent_(serial, old, "Despachado", date, {}, session, "Salida"));
+      newDispatchRows.push(radioDispatchRecord_({
+        key: "APP|" + idempotencyKey + "|radio|" + serial.toUpperCase(),
+        date: date,
+        serial: serial,
+        model: clean_(match.row[1], 100),
+        accessories: accessories.map(function(item) {
+          var accessory = accessoryById[item.id].row;
+          return clean_(accessory[1], 200) + " x" + item.cantidad;
+        }).join(", "),
+        client: "", regional: "", guide: "", request: "",
+        sam: "", evidence: "", state: "Salida", type: "Radio",
+        quantity: 1, serialRadio: serial, session: session, now: now
+      }));
+    });
+
+    var accessoryMovementRows = [];
+    accessories.forEach(function(item) {
+      var match = accessoryById[item.id];
+      var totalForItem = requestedAccessoryTotals[item.id];
+      if (accessories.findIndex(function(candidate) { return candidate.id === item.id; }) !== accessories.indexOf(item)) return;
+      var balance = number_(match.row[5]) - totalForItem;
+      var totalDispatched = number_(match.row[4]) + totalForItem;
+      var status = balance <= 0 ? "AGOTADO" : balance <= number_(match.row[6]) ? "STOCK BAJO" : "OPTIMO";
+      accessorySheet.getRange(match.rowNumber, 5, 1, 4).setValues([[totalDispatched, balance, number_(match.row[6]), status]]);
+      accessorySheet.getRange(match.rowNumber, 9, 1, 2).setValues([["Aplicación", session.usuario]]);
+      accessorySheet.getRange(match.rowNumber, 11).setValue(now);
+      accessoryMovementRows.push([
+        Utilities.getUuid(), now, item.id, clean_(match.row[1], 200), clean_(match.row[2], 100),
+        "Salida", totalForItem, balance, "Despacho " + idempotencyKey, session.usuario,
+        "APP|" + idempotencyKey + "|accessory|" + item.id
+      ]);
+      newDispatchRows.push(radioDispatchRecord_({
+        key: "APP|" + idempotencyKey + "|accessory|" + item.id,
+        date: date, serial: String(totalForItem), model: clean_(match.row[2], 100),
+        accessories: clean_(match.row[1], 200), client: "", regional: "",
+        guide: "", request: "", sam: "", evidence: "",
+        state: "Salida", type: "Accesorio", quantity: totalForItem, serialRadio: "",
+        session: session, now: now
+      }));
+    });
+    dispatchSheet.getRange(dispatchSheet.getLastRow() + 1, 1, 1, CONFIG.radioDispatchHeaders.length)
+      .setValues([[
+        Utilities.getUuid(), "APP|" + idempotencyKey + "|batch", date, "", "", "", "", "",
+        "", "", "", "", "Salida", "", "Aplicación",
+        session.usuario, now, "Control", 0, ""
+      ]]);
+    dispatchSheet.getRange(dispatchSheet.getLastRow() + 1, 1, newDispatchRows.length, CONFIG.radioDispatchHeaders.length)
+      .setValues(newDispatchRows);
+    historySheet.getRange(historySheet.getLastRow() + 1, 1, events.length, CONFIG.radioHistoryHeaders.length).setValues(events);
+    if (accessoryMovementRows.length) {
+      movementSheet.getRange(movementSheet.getLastRow() + 1, 1, accessoryMovementRows.length, CONFIG.radioAccessoryMovementHeaders.length)
+        .setValues(accessoryMovementRows);
+    }
+    archiveUnavailableRadios_(inventory);
+    return json_({ status: "success", radiosDespachados: serials.length, accesoriosDespachados: accessoryMovementRows.length });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function radioDispatchRecord_(data) {
+  var fields = [radioDateDisplay_(data.date), clean_(data.serial, 100), clean_(data.model, 100),
+    clean_(data.accessories, 300), clean_(data.client, 200), clean_(data.regional, 150),
+    clean_(data.guide, 100), clean_(data.request, 100), clean_(data.sam, 100),
+    clean_(data.evidence, 300), clean_(data.state, 100)];
+  return [
+    Utilities.getUuid(), clean_(data.key, 5000), fields[0], fields[1], fields[2], fields[3],
+    fields[4], fields[5], fields[6], fields[7], fields[8], fields[9], fields[10], "",
+    "Aplicación", data.session.usuario, data.now, clean_(data.type, 50), number_(data.quantity),
+    clean_(data.serialRadio, 100)
+  ];
+}
+
+function receiveRadioAccessory_(data, session) {
+  var id = clean_(data.id, 100);
+  var quantity = number_(data.cantidad);
+  var reference = clean_(data.referencia, 200);
+  var idempotencyKey = clean_(data.claveIdempotencia, 100);
+  if (!id || !Number.isInteger(quantity) || quantity <= 0 || quantity > 100000 || !idempotencyKey) {
+    throw new Error("Indica un accesorio, una cantidad entera válida y la clave de la operación");
+  }
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    var sheet = radioAccessorySheet_();
+    var rows = sheet.getDataRange().getValues();
+    for (var i = 1; i < rows.length; i++) {
+      if (clean_(rows[i][0], 100) !== id) continue;
+      var movementSheet = radioAccessoryMovementSheet_();
+      var movementRows = movementSheet.getDataRange().getValues();
+      if (movementRows.slice(1).some(function(row) {
+        return clean_(row[10], 150) === "APP|" + idempotencyKey;
+      })) {
+        return json_({ status: "success", duplicado: true, stockDisponible: number_(rows[i][5]) });
+      }
+      var balance = number_(rows[i][5]) + quantity;
+      var status = balance <= 0 ? "AGOTADO" : balance <= number_(rows[i][6]) ? "STOCK BAJO" : "OPTIMO";
+      var now = new Date();
+      sheet.getRange(i + 1, 6).setValue(balance);
+      sheet.getRange(i + 1, 8).setValue(status);
+      sheet.getRange(i + 1, 9, 1, 2).setValues([["Aplicación", session.usuario]]);
+      sheet.getRange(i + 1, 11).setValue(now);
+      movementSheet.getRange(movementSheet.getLastRow() + 1, 1, 1, CONFIG.radioAccessoryMovementHeaders.length)
+        .setValues([[
+          Utilities.getUuid(), now, id, clean_(rows[i][1], 200), clean_(rows[i][2], 100),
+          "Entrada", quantity, balance, reference, session.usuario, "APP|" + idempotencyKey
+        ]]);
+      return json_({ status: "success", stockDisponible: balance });
+    }
+    throw new Error("No se encontró el accesorio");
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function ensureRadioSheet_(name, headers) {
+  var spreadsheet = mainSpreadsheet_();
+  var sheet = spreadsheet.getSheetByName(name);
+  if (!sheet) sheet = spreadsheet.insertSheet(name);
+  if (sheet.getLastRow() === 0) {
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    return sheet;
+  }
+  var current = sheet.getRange(1, 1, 1, headers.length).getValues()[0];
+  for (var i = 0; i < headers.length; i++) {
+    if (String(current[i] || "").trim() !== headers[i]) {
+      var noExistingTrailingHeaders = current.slice(i).every(function(value) {
+        return !String(value || "").trim();
+      });
+      if (noExistingTrailingHeaders) {
+        sheet.getRange(1, i + 1, 1, headers.length - i).setValues([headers.slice(i)]);
+        break;
+      }
+      throw new Error("La hoja " + name + " existe con encabezados incompatibles");
+    }
+  }
+  return sheet;
 }
 
 function deleteEquipment_(data, session) {
