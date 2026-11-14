@@ -14,6 +14,9 @@ import { apiRequest, invalidateApiCache } from "./services/api.js";
             document.documentElement.dataset.theme = isDark ? 'dark' : 'light';
             document.documentElement.style.colorScheme = isDark ? 'dark' : 'light';
             localStorage.setItem(THEME_STORAGE_KEY, isDark ? 'dark' : 'light');
+            document.querySelectorAll('[data-login-logo]').forEach(image => {
+                image.src = isDark ? 'assets/LOGO_G4S.png' : 'assets/g4s-logo-.svg';
+            });
             themeToggleButtons.forEach(button => {
                 const icon = button.querySelector('i');
                 const label = button.querySelector('[data-theme-label]');

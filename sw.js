@@ -1,5 +1,5 @@
 
-const CACHE_NAME = 'inventario-v31';
+const CACHE_NAME = 'inventario-v32';
 const BUILD_ASSETS = [];
 const urlsToCache = [
     './',
@@ -7,6 +7,7 @@ const urlsToCache = [
     './manifest.json',
     './assets/favicon.ico',
     './assets/g4s-logo-.svg',
+    './assets/LOGO_G4S.png',
     './assets/LOGO_G4S.jpg',
     ...BUILD_ASSETS
 ];

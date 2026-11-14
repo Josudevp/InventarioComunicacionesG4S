@@ -2855,7 +2855,8 @@
   :root[data-theme="dark"] #app-screen .dashboard-insight-grid h3,
   :root[data-theme="dark"] #app-screen .dashboard-panel:not(.dashboard-chart-panel) h2,
   :root[data-theme="dark"] #app-screen .dashboard-panel:not(.dashboard-chart-panel) h3,
-  :root[data-theme="dark"] #app-screen .dashboard-panel:not(.dashboard-chart-panel) h4 {
+  :root[data-theme="dark"] #app-screen .dashboard-panel:not(.dashboard-chart-panel) h4,
+  :root[data-theme="dark"] #app-screen .dashboard-chart-panel h2 {
     color: #f1f5f9;
   }
 
@@ -3021,6 +3022,18 @@
   :root[data-theme="dark"] #app-screen .request-item-line b,
   :root[data-theme="dark"] #app-screen .request-communications-label strong {
     @apply text-slate-100;
+  }
+
+  :root[data-theme="dark"] #app-screen .stock-ok {
+    @apply bg-emerald-950 text-emerald-200;
+  }
+
+  :root[data-theme="dark"] #app-screen .stock-low {
+    @apply bg-amber-950 text-amber-200;
+  }
+
+  :root[data-theme="dark"] #app-screen .stock-empty {
+    @apply bg-red-950 text-red-200;
   }
 
   :root[data-theme="dark"] #app-screen .dashboard-eyebrow {
