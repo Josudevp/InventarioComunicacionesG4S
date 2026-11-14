@@ -87,7 +87,8 @@ function getEquipmentHistory_(data, session) {
     if (!row[0]) continue;
     var date = row[1] instanceof Date ? row[1] : new Date(row[1]);
     var dateKey = isNaN(date.getTime()) ? "" : Utilities.formatDate(date, Session.getScriptTimeZone(), "yyyy-MM-dd");
-    var imei = imeiById[clean_(row[2], 100)] || "";
+    var historyImei = clean_(row[3], 20);
+    var imei = imeiById[clean_(row[2], 100)] || (/^\d{15}$/.test(historyImei) ? historyImei : "");
     var text = (row.join(" ") + " " + imei).toLowerCase();
     if (from && dateKey < from) continue;
     if (to && dateKey > to) continue;
@@ -103,13 +104,24 @@ function getEquipmentHistory_(data, session) {
       registradoPor: clean_(row[7], 100)
     });
   }
-  result.reverse();
+  result.sort(function(a, b) { return b.fechaHora.getTime() - a.fechaHora.getTime(); });
   var page = pagination_(data, 500);
   return json_({
     status: "success",
     usuario: session.usuario,
     data: result.slice(page.offset, page.offset + page.limit),
     pagination: { offset: page.offset, limit: page.limit, total: result.length, hasMore: page.offset + page.limit < result.length }
+  });
+}
+
+function chronologicalEquipmentHistory_(rows) {
+  return rows.slice(1).map(function(row, index) {
+    var date = row[1] instanceof Date ? row[1] : new Date(row[1]);
+    return { row: row, date: date, index: index };
+  }).filter(function(event) {
+    return !isNaN(event.date.getTime());
+  }).sort(function(first, second) {
+    return first.date.getTime() - second.date.getTime() || first.index - second.index;
   });
 }
 
@@ -232,6 +244,7 @@ function doPost(e) {
     if (action === "reparar_formulas_inventario") return rebuildInventoryFormulas_(session);
     if (action === "obtener_dashboard") return getDashboard_(session);
     if (action === "obtener_capmovil") return getCapMovil_(session);
+    if (action === "importar_historial_cap") return importCapHistory_(data, session);
     if (action === "obtener_analitica_inventario") return getInventoryInsights_(data, session);
     if (action === "obtener_solicitudes") return getRequests_(data, session);
     if (action === "obtener_equipos") return getEquipment_(session);
@@ -518,10 +531,11 @@ function getCapMovil_(session) {
   var historyRows = equipmentHistorySheet_().getDataRange().getValues();
   var open = Object.create(null);
   var cycles = [];
-  for (var h = 1; h < historyRows.length; h++) {
-    var history = historyRows[h];
+  var historyEvents = chronologicalEquipmentHistory_(historyRows);
+  for (var h = 0; h < historyEvents.length; h++) {
+    var history = historyEvents[h].row;
     var id = clean_(history[2], 100);
-    var date = history[1] instanceof Date ? history[1] : new Date(history[1]);
+    var date = historyEvents[h].date;
     var next = canonicalEquipmentStatus_(history[6]);
     if (!id || isNaN(date.getTime())) continue;
     if (next === "Enviados CAP") {
@@ -531,12 +545,13 @@ function getCapMovil_(session) {
     if (!open[id]) continue;
     if (["Disponible", "Dañado", "Despachado a puesto"].indexOf(next) >= 0) {
       var cycle = open[id];
+      var elapsedDays = (date.getTime() - cycle.sentAt.getTime()) / 86400000;
       cycles.push({
         id: id,
         modelo: cycle.model,
         fechaEnvio: cycle.sentAt,
         fechaRetorno: date,
-        dias: Math.round((date.getTime() - cycle.sentAt.getTime()) / 864000) / 10,
+        dias: Math.round(elapsedDays * 10) / 10,
         estadoRetorno: next
       });
       delete open[id];
@@ -574,7 +589,9 @@ function getCapMovil_(session) {
   accessoryRequests.forEach(function(request) {
     requestStates[request.estado] = (requestStates[request.estado] || 0) + 1;
   });
-  var totalDays = cycles.reduce(function(sum, cycle) { return sum + cycle.dias; }, 0);
+  var totalDays = cycles.reduce(function(sum, cycle) {
+    return sum + (cycle.fechaRetorno.getTime() - cycle.fechaEnvio.getTime()) / 86400000;
+  }, 0);
   var averageDays = cycles.length ? Math.round(totalDays / cycles.length * 10) / 10 : null;
   var maxDays = cycles.length ? Math.max.apply(null, cycles.map(function(cycle) { return cycle.dias; })) : null;
   var lotRows = capDispositionSheet_().getDataRange().getValues();
@@ -619,6 +636,253 @@ function getCapMovil_(session) {
       fechaActualizacion: now
     }
   });
+}
+
+function importCapHistory_(data, session) {
+  if (!isAdmin_(session)) throw new Error("Solo un administrador puede importar el historial de CAPMOVIL");
+  if (!Array.isArray(data.records) || !data.records.length || data.records.length > 1000) {
+    throw new Error("El archivo debe contener entre 1 y 1000 filas de historial");
+  }
+  var replacePrevious = data.reemplazarImportacionAnterior === true;
+
+  var now = new Date();
+  var todayKey = Utilities.formatDate(now, Session.getScriptTimeZone(), "yyyy-MM-dd");
+  var equipmentSheet = equipmentSheet_();
+  var equipmentRows = equipmentSheet.getDataRange().getValues();
+  var archivedRows = equipmentArchiveSheet_().getDataRange().getValues();
+  var idByImei = Object.create(null);
+  var activeEquipmentByImei = Object.create(null);
+  var archivedEquipmentByImei = Object.create(null);
+  equipmentRows.slice(1).forEach(function(row, index) {
+    var imei = clean_(row[9], 20).replace(/\D/g, "");
+    var id = clean_(row[0], 100);
+    if (imei && id) {
+      idByImei[imei] = id;
+      activeEquipmentByImei[imei] = { rowNumber: index + 2, row: row };
+    }
+  });
+  archivedRows.slice(1).forEach(function(row) {
+    var imei = clean_(row[9], 20).replace(/\D/g, "");
+    var id = clean_(row[0], 100);
+    if (imei && id) {
+      archivedEquipmentByImei[imei] = row;
+      if (!idByImei[imei]) idByImei[imei] = id;
+    }
+  });
+
+  var history = equipmentHistorySheet_();
+  var historyRows = history.getDataRange().getValues();
+  var rowsToReplace = [];
+  if (replacePrevious) {
+    for (var oldIndex = 1; oldIndex < historyRows.length; oldIndex++) {
+      if (isImportedCapHistoryEvent_(historyRows[oldIndex])) rowsToReplace.push(oldIndex + 1);
+    }
+  }
+  var imeiById = Object.create(null);
+  Object.keys(idByImei).forEach(function(imei) { imeiById[idByImei[imei]] = imei; });
+  var knownEvents = Object.create(null);
+  var knownEventIds = Object.create(null);
+  chronologicalEquipmentHistory_(historyRows).forEach(function(event) {
+    var row = event.row;
+    if (replacePrevious && isImportedCapHistoryEvent_(row)) return;
+    var historyImei = clean_(row[3], 20);
+    var imei = imeiById[clean_(row[2], 100)] || (/^\d{15}$/.test(historyImei) ? historyImei : "");
+    var state = canonicalEquipmentStatus_(row[6]);
+    if (imei && state) {
+      var dateKey = Utilities.formatDate(event.date, Session.getScriptTimeZone(), "yyyy-MM-dd");
+      var eventKey = imei + "|" + dateKey + "|" + state;
+      knownEvents[eventKey] = true;
+      knownEventIds[eventKey] = clean_(row[2], 100);
+    }
+  });
+
+  var additions = [];
+  var addedEventIds = Object.create(null);
+  var addedEventCycleIds = Object.create(null);
+  var duplicateEvents = 0;
+  var skipped = { invalid: 0, future: 0, chronology: 0 };
+  var validCycles = 0;
+  var validRecords = 0;
+  var latestByImei = Object.create(null);
+  data.records.forEach(function(record) {
+    record = record || {};
+    var imei = clean_(record && record.imei, 20).replace(/\D/g, "");
+    if (!/^\d{15}$/.test(imei)) {
+      skipped.invalid++;
+      return;
+    }
+    var sentText = clean_(record.fechaEnvio, 10);
+    var returnedText = clean_(record.fechaRetorno, 10);
+    var sentAt = capHistoryDate_(sentText);
+    var returnedAt = capHistoryDate_(returnedText);
+    if ((!sentText && !returnedText) || (sentText && !sentAt) || (returnedText && !returnedAt)) {
+      skipped.invalid++;
+      return;
+    }
+    if ((sentText && sentText > todayKey) || (returnedText && returnedText > todayKey)) {
+      skipped.future++;
+      return;
+    }
+    if (sentAt && returnedAt && returnedAt < sentAt) {
+      skipped.chronology++;
+      return;
+    }
+    validRecords++;
+    if (sentAt && returnedAt) validCycles++;
+
+    var model = clean_(record.modelo, 100);
+    var cycleKey = imei + "|" + sentText + "|" + returnedText;
+    var sourceEvents = [];
+    if (sentAt) sourceEvents.push({ date: sentAt, state: "Enviados CAP", previous: "Disponible" });
+    if (returnedAt) sourceEvents.push({ date: returnedAt, state: "Disponible", previous: "Enviados CAP" });
+    sourceEvents.forEach(function(event) {
+      var previousLatest = latestByImei[imei];
+      if (!previousLatest || event.date.getTime() > previousLatest.date.getTime() ||
+          (event.date.getTime() === previousLatest.date.getTime() && event.state === "Disponible")) {
+        latestByImei[imei] = { date: event.date, state: event.state, model: model, cycleKey: cycleKey };
+      }
+    });
+    var equipmentId = "CAP-HIST-" + sha256_(cycleKey).slice(0, 40);
+    sourceEvents.some(function(event) {
+      var dateKey = Utilities.formatDate(event.date, Session.getScriptTimeZone(), "yyyy-MM-dd");
+      var eventKey = imei + "|" + dateKey + "|" + event.state;
+      var existingId = knownEventIds[eventKey] || addedEventIds[eventKey];
+      if (!existingId) return false;
+      equipmentId = existingId;
+      return true;
+    });
+    sourceEvents.forEach(function(event) {
+      var dateKey = Utilities.formatDate(event.date, Session.getScriptTimeZone(), "yyyy-MM-dd");
+      var eventKey = imei + "|" + dateKey + "|" + event.state;
+      if (knownEvents[eventKey] || addedEventIds[eventKey]) {
+        duplicateEvents++;
+        if (addedEventIds[eventKey]) equipmentId = addedEventIds[eventKey];
+        return;
+      }
+      addedEventIds[eventKey] = equipmentId;
+      addedEventCycleIds[eventKey] = cycleKey;
+      additions.push([
+        "CAP-" + sha256_(eventKey).slice(0, 40),
+        event.date,
+        equipmentId,
+        imei,
+        model,
+        event.previous,
+        event.state,
+        clean_(session.usuario, 100)
+      ]);
+    });
+  });
+
+  if (replacePrevious && !validRecords) {
+    throw new Error("No hay movimientos válidos en el archivo; no se reemplazó el historial anterior");
+  }
+  var inventoryCreated = 0;
+  var inventoryUpdated = 0;
+  var inventoryRemoved = 0;
+  var equipmentIdByImei = Object.create(null);
+  var equipmentRowsToRemove = [];
+  if (replacePrevious) {
+    Object.keys(activeEquipmentByImei).forEach(function(imei) {
+      var match = activeEquipmentByImei[imei];
+      if (clean_(match.row[6], 100) === "CAPMOVIL (Importación histórica)" &&
+          clean_(match.row[8], 100) === "CAPMOVIL (Importación histórica)" && !latestByImei[imei]) {
+        equipmentRowsToRemove.push(match.rowNumber);
+      }
+    });
+  }
+  Object.keys(latestByImei).forEach(function(imei) {
+    var latest = latestByImei[imei];
+    var active = activeEquipmentByImei[imei];
+    var archived = archivedEquipmentByImei[imei];
+    var equipmentId = active ? clean_(active.row[0], 100) : archived ? clean_(archived[0], 100) : Utilities.getUuid();
+    equipmentIdByImei[imei] = equipmentId;
+    var eventDateKey = Utilities.formatDate(latest.date, Session.getScriptTimeZone(), "yyyy-MM-dd");
+    var latestEventKey = imei + "|" + eventDateKey + "|" + latest.state;
+    if (addedEventIds[latestEventKey]) addedEventIds[latestEventKey] = equipmentId;
+    for (var additionIndex = 0; additionIndex < additions.length; additionIndex++) {
+      var addition = additions[additionIndex];
+      var additionDateKey = Utilities.formatDate(addition[1], Session.getScriptTimeZone(), "yyyy-MM-dd");
+      var additionEventKey = addition[3] + "|" + additionDateKey + "|" + addition[6];
+      if (addition[3] === imei && addedEventCycleIds[additionEventKey] === latest.cycleKey) {
+        addition[2] = equipmentId;
+      }
+    }
+
+    if (active) {
+      var managed = clean_(active.row[6], 100) === "CAPMOVIL (Importación histórica)";
+      var updated = active.row.slice(0, CONFIG.equipmentHeaders.length);
+      updated[2] = latest.model || clean_(updated[2], 100);
+      updated[4] = latest.state === "Disponible" ? "BUEN ESTADO" : "HISTORIAL CAPMOVIL IMPORTADO";
+      updated[5] = latest.state;
+      updated[7] = now;
+      if (managed && (!replacePrevious || clean_(active.row[8], 100) === "CAPMOVIL (Importación histórica)")) {
+        updated[8] = "CAPMOVIL (Importación histórica)";
+        equipmentSheet.getRange(active.rowNumber, 1, 1, CONFIG.equipmentHeaders.length).setValues([updated]);
+        inventoryUpdated++;
+      }
+    } else if (!archived) {
+      var condition = latest.state === "Disponible" ? "BUEN ESTADO" : "HISTORIAL CAPMOVIL IMPORTADO";
+      equipmentSheet.getRange(equipmentSheet.getLastRow() + 1, 1, 1, CONFIG.equipmentHeaders.length).setValues([[
+        equipmentId,
+        "",
+        latest.model,
+        "",
+        condition,
+        latest.state,
+        "CAPMOVIL (Importación histórica)",
+        now,
+        "CAPMOVIL (Importación histórica)",
+        imei,
+        "CAPMOVIL"
+      ]]);
+      inventoryCreated++;
+    }
+  });
+  equipmentRowsToRemove.sort(function(first, second) { return second - first; });
+  equipmentRowsToRemove.forEach(function(rowNumber) {
+    equipmentSheet.deleteRow(rowNumber);
+    inventoryRemoved++;
+  });
+  rowsToReplace.sort(function(first, second) { return second - first; });
+  rowsToReplace.forEach(function(rowNumber) { history.deleteRow(rowNumber); });
+  additions.sort(function(first, second) {
+    return first[1].getTime() - second[1].getTime();
+  });
+  if (additions.length) {
+    history.getRange(history.getLastRow() + 1, 1, additions.length, CONFIG.equipmentHistoryHeaders.length)
+      .setValues(additions);
+  }
+  return json_({
+    status: "success",
+    data: {
+      filasAnalizadas: data.records.length,
+      ciclosValidos: validCycles,
+      movimientosImportados: additions.length,
+      movimientosDuplicados: duplicateEvents,
+      movimientosAnterioresReemplazados: rowsToReplace.length,
+      equiposInventarioCreados: inventoryCreated,
+      equiposInventarioActualizados: inventoryUpdated,
+      equiposInventarioRetirados: inventoryRemoved,
+      omitidos: skipped
+    }
+  });
+}
+
+function isImportedCapHistoryEvent_(row) {
+  var id = clean_(row[0], 100);
+  var imei = clean_(row[3], 20).replace(/\D/g, "");
+  var state = canonicalEquipmentStatus_(row[6]);
+  return /^CAP-[a-f0-9]{40}$/i.test(id) && /^\d{15}$/.test(imei) &&
+    ["Enviados CAP", "Disponible"].indexOf(state) >= 0;
+}
+
+function capHistoryDate_(value) {
+  if (!value) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  var date = new Date(value + "T12:00:00Z");
+  if (isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== value) return null;
+  return date;
 }
 
 function getDashboard_(session) {
@@ -858,12 +1122,13 @@ function getEquipmentDashboardMetrics_(now) {
     }
   }
 
-  for (var i = 1; i < historyRows.length; i++) {
-    var history = historyRows[i];
+  var historyEvents = chronologicalEquipmentHistory_(historyRows);
+  for (var i = 0; i < historyEvents.length; i++) {
+    var history = historyEvents[i].row;
     var equipmentId = clean_(history[2], 100);
     var previousStatus = clean_(history[5], 100);
     var nextStatus = clean_(history[6], 100);
-    var eventDate = history[1] instanceof Date ? history[1] : new Date(history[1]);
+    var eventDate = historyEvents[i].date;
     if (!equipmentId || isNaN(eventDate.getTime())) continue;
     if (serviceStates.indexOf(nextStatus) >= 0) {
       if (!openCycles[equipmentId]) openCycles[equipmentId] = { fechaEnvio: eventDate, estado: nextStatus };

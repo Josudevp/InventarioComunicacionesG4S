@@ -232,12 +232,21 @@ function createRuntime() {
       getUuid: () => `test-id-${++uuid}`,
       DigestAlgorithm: { SHA_256: 'SHA_256' },
       Charset: { UTF_8: 'UTF-8' },
-      computeDigest: (_algorithm, value) => Array.from(value).map(character => character.charCodeAt(0)),
+      computeDigest: (_algorithm, value) => {
+        let hash = 2166136261;
+        Array.from(value).forEach(character => { hash = Math.imul(hash ^ character.charCodeAt(0), 16777619); });
+        return Array.from({ length: 32 }, (_, index) => {
+          hash = Math.imul(hash ^ index, 16777619);
+          return hash >>> 24 & 255;
+        });
+      },
       base64EncodeWebSafe: bytes => bytes.join(''),
       sleep() {},
       formatDate: (date, _timezone, pattern) => pattern === 'dd/MM/yyyy'
         ? `${String(date.getDate()).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')}/${date.getFullYear()}`
-        : date.toISOString().slice(0, 7)
+        : pattern === 'yyyy-MM-dd'
+          ? date.toISOString().slice(0, 10)
+          : date.toISOString().slice(0, 7)
     },
     Session: {
       getScriptTimeZone: () => 'UTC',
@@ -1695,6 +1704,137 @@ test('cellphone dashboard measures CAPMOVIL and warranty return durations separa
   assert.equal(dashboard.data.celulares.total, 2);
   assert.equal(dashboard.data.celulares.promedioRetornoDias, 4);
   assert.equal(dashboard.data.unidades, 0);
+});
+
+test('CAPMOVIL average return KPI converts elapsed milliseconds to days correctly', () => {
+  const { context } = createRuntime();
+  const history = context.equipmentHistorySheet_();
+  const sent14DaysAgo = new Date('2026-10-30T12:00:00Z');
+  const returned14DaysLater = new Date('2026-11-13T12:00:00Z');
+  const sent6DaysAgo = new Date('2026-11-07T12:00:00Z');
+  const returned6DaysLater = new Date('2026-11-13T12:00:00Z');
+  history.getRange(2, 1, 4, context.CONFIG.equipmentHistoryHeaders.length).setValues([
+    ['cap-send-1', sent14DaysAgo, 'phone-1', '', 'MOTO G23', 'Disponible', 'Enviados CAP', 'op'],
+    ['cap-return-1', returned14DaysLater, 'phone-1', '', 'MOTO G23', 'Enviados CAP', 'Disponible', 'op'],
+    ['cap-send-2', sent6DaysAgo, 'phone-2', '', 'MOTO G24', 'Disponible', 'Enviados CAP', 'op'],
+    ['cap-return-2', returned6DaysLater, 'phone-2', '', 'MOTO G24', 'Enviados CAP', 'Disponible', 'op']
+  ]);
+  context.getEquipmentDashboardMetrics_ = () => ({ pendientes: [] });
+
+  const result = response(context.getCapMovil_({ usuario: 'operador' }));
+
+  assert.equal(result.data.equiposRetornados, 2);
+  assert.equal(result.data.retornoPromedioDias, 10);
+  assert.deepEqual(result.data.ciclos.map(cycle => cycle.dias), [14, 6]);
+});
+
+test('CAP history import records dated movements, skips invalid dates, and is idempotent', () => {
+  const { context, spreadsheet } = createRuntime();
+  const admin = { usuario: 'administrador', rol: 'admin' };
+  const records = [
+    { imei: '356348784234372', modelo: 'MOTO G20', fechaEnvio: '2026-01-01', fechaRetorno: '2026-01-04' },
+    { imei: '357674247187942', modelo: 'MOTO G24', fechaEnvio: '2026-02-01', fechaRetorno: '' },
+    { imei: '354696572346899', modelo: 'MOTO G23', fechaEnvio: '', fechaRetorno: '2026-03-01' },
+    { imei: '359099107544479', modelo: 'MOTO G22', fechaEnvio: '2026-04-04', fechaRetorno: '2026-04-01' },
+    { imei: '352000538025911', modelo: 'MOTO G14', fechaEnvio: '2099-12-01', fechaRetorno: '' },
+    { imei: 'no-es-imei', modelo: 'MOTO G24', fechaEnvio: '2026-01-01', fechaRetorno: '' }
+  ];
+
+  const first = response(context.importCapHistory_({ records }, admin));
+  const history = spreadsheet.getSheetByName(context.CONFIG.equipmentHistorySheet);
+  const second = response(context.importCapHistory_({ records }, admin));
+  const equipment = spreadsheet.getSheetByName(context.CONFIG.equipmentSheet);
+
+  assert.equal(first.data.ciclosValidos, 1);
+  assert.equal(first.data.movimientosImportados, 4);
+  assert.equal(first.data.equiposInventarioCreados, 3);
+  assert.equal(equipment.getLastRow(), 4);
+  assert.equal(equipment.rows.find(row => row[9] === '357674247187942')[5], 'Enviados CAP');
+  assert.equal(equipment.rows.find(row => row[9] === '354696572346899')[5], 'Disponible');
+  const listedEquipment = response(context.getEquipment_({ usuario: 'administrador' })).data;
+  assert.equal(listedEquipment.length, 3);
+  assert.ok(listedEquipment.some(item => item.imei === '357674247187942' && item.estado === 'Enviados CAP'));
+  assert.equal(first.data.omitidos.chronology, 1);
+  assert.equal(first.data.omitidos.future, 1);
+  assert.equal(first.data.omitidos.invalid, 1);
+  assert.equal(history.getLastRow(), 5);
+  assert.equal(second.data.movimientosImportados, 0);
+  assert.equal(second.data.movimientosDuplicados, 4);
+  assert.equal(history.getLastRow(), 5);
+
+  const equipmentHistory = response(context.getEquipmentHistory_({
+    filtro: '356348784234372',
+    limite: 10,
+    offset: 0
+  }, admin));
+  assert.equal(equipmentHistory.pagination.total, 2);
+  assert.deepEqual(equipmentHistory.data.map(event => event.estadoNuevo), ['Disponible', 'Enviados CAP']);
+  assert.ok(equipmentHistory.data.every(event => event.imei === '356348784234372'));
+  assert.throws(() => context.importCapHistory_({ records }, { usuario: 'operador', rol: 'usuario' }), /Solo un administrador/);
+});
+
+test('CAP history replacement removes prior imports, preserves manual events, and validates before deleting', () => {
+  const { context } = createRuntime();
+  const admin = { usuario: 'administrador', rol: 'admin' };
+  const history = context.equipmentHistorySheet_();
+  const previousRecords = [
+    { imei: '356348784234372', modelo: 'MOTO G20', fechaEnvio: '2026-01-01', fechaRetorno: '2026-01-04' }
+  ];
+  context.importCapHistory_({ records: previousRecords }, admin);
+  context.appendEquipmentHistory_(
+    'manual-phone',
+    '359099107544479',
+    'MOTO G22',
+    'Disponible',
+    'Enviados CAP',
+    'administrador',
+    new Date('2026-02-01T12:00:00Z')
+  );
+  const replacementRecords = [
+    { imei: '357674247187942', modelo: 'MOTO G24', fechaEnvio: '2026-03-01', fechaRetorno: '2026-03-05' }
+  ];
+
+  const replacement = response(context.importCapHistory_({
+    records: replacementRecords,
+    reemplazarImportacionAnterior: true
+  }, admin));
+
+  assert.equal(replacement.data.movimientosAnterioresReemplazados, 2);
+  assert.equal(replacement.data.movimientosImportados, 2);
+  assert.equal(replacement.data.equiposInventarioCreados, 1);
+  assert.equal(replacement.data.equiposInventarioRetirados, 1);
+  assert.equal(history.getLastRow(), 4);
+  assert.equal(history.rows.some(row => row[3] === '356348784234372'), false);
+  assert.equal(history.rows.some(row => row[2] === 'manual-phone'), true);
+  const equipment = context.equipmentSheet_();
+  assert.equal(equipment.rows.some(row => row[9] === '356348784234372'), false);
+  assert.equal(equipment.rows.some(row => row[9] === '357674247187942'), true);
+
+  assert.throws(() => context.importCapHistory_({
+    records: [{ imei: '352000538025911', modelo: 'MOTO G14', fechaEnvio: '2099-12-01', fechaRetorno: '' }],
+    reemplazarImportacionAnterior: true
+  }, admin), /No hay movimientos válidos/);
+  assert.equal(history.getLastRow(), 4);
+});
+
+test('CAP history import keeps overlapping cycles for a repeated IMEI independent', () => {
+  const { context } = createRuntime();
+  const records = [
+    { imei: '356348784234372', modelo: 'MOTO G20', fechaEnvio: '2026-04-01', fechaRetorno: '2026-04-10' },
+    { imei: '356348784234372', modelo: 'MOTO G20', fechaEnvio: '2026-04-05', fechaRetorno: '2026-04-12' }
+  ];
+  const imported = response(context.importCapHistory_({ records }, { usuario: 'administrador', rol: 'admin' }));
+  const history = context.equipmentHistorySheet_().getDataRange().getValues().slice(1);
+  context.getEquipmentDashboardMetrics_ = () => ({ pendientes: [] });
+
+  const capMovil = response(context.getCapMovil_({ usuario: 'administrador', rol: 'admin' }));
+
+  assert.equal(imported.data.movimientosImportados, 4);
+  assert.equal(imported.data.equiposInventarioCreados, 1);
+  assert.equal(new Set(history.map(row => row[2])).size, 2);
+  assert.equal(capMovil.data.equiposRetornados, 2);
+  assert.equal(capMovil.data.retornoPromedioDias, 8);
+  assert.deepEqual(capMovil.data.ciclos.map(cycle => cycle.dias), [7, 9]);
 });
 
 test('CAP equipment beyond 20 days is flagged while disposition remains outside provider KPIs', () => {

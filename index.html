@@ -372,6 +372,7 @@
                 </div>
                 <section id="history-filter-popover" class="history-filter-popover" role="dialog" aria-modal="false" aria-labelledby="history-filter-title" hidden>
                     <header><div><strong id="history-filter-title">Filtrar</strong><small id="history-filter-count"></small></div><button type="button" id="history-filter-close" aria-label="Cerrar filtros"><i class="fa-solid fa-xmark"></i></button></header>
+                    <button type="button" class="history-filter-select-all" id="history-filter-select-all">Seleccionar todas</button>
                     <div id="history-filter-options" class="history-filter-options"></div>
                     <footer><button type="button" id="history-filter-clear">Limpiar columna</button><button type="button" id="history-filter-done">Listo</button></footer>
                 </section>
@@ -598,6 +599,17 @@
                     </div>
                     <button type="button" class="btn-secondary equipment-refresh-btn" id="btn-capmovil-refresh" aria-label="Actualizar CAPMOVIL" title="Actualizar CAPMOVIL"><i class="fa-solid fa-rotate" aria-hidden="true"></i></button>
                 </div>
+                <details class="dashboard-panel cap-history-import">
+                    <summary>Importar historial anterior de CAPMOVIL desde Excel</summary>
+                    <div>
+                        <p>Solo administradores. Se agregarán los movimientos con fecha válida; las filas incompletas no se usarán para calcular el promedio y las fechas inconsistentes o futuras se omitirán.</p>
+                        <label for="cap-history-file">Archivo Excel del historial CAPMOVIL</label>
+                        <input id="cap-history-file" type="file" accept=".xlsx,.xls">
+                        <label class="cap-history-replace-option"><input id="cap-history-replace" type="checkbox"> Reemplazar importaciones CAPMOVIL anteriores (conserva los movimientos registrados manualmente)</label>
+                        <button type="button" class="btn-secondary" id="btn-import-cap-history" disabled>Importar movimientos</button>
+                        <p id="cap-history-import-status" role="status" aria-live="polite"></p>
+                    </div>
+                </details>
                 <div class="capmovil-summary" aria-live="polite">
                     <div class="capmovil-summary-stat capmovil-summary-stat--active"><span><i class="fa-solid fa-truck-fast" aria-hidden="true"></i> En CAPMOVIL</span><strong id="cap-kpi-pending">—</strong><small>Esperando retorno</small></div>
                     <div class="capmovil-summary-stat"><span><i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i> Retornos medidos</span><strong id="cap-kpi-returned">—</strong><small>Ciclos cerrados</small></div>
@@ -794,6 +806,7 @@
                     </div>
                     <section id="equipment-filter-popover" class="history-filter-popover" role="dialog" aria-modal="false" aria-labelledby="equipment-filter-title" hidden>
                         <header><div><strong id="equipment-filter-title">Filtrar</strong><small id="equipment-filter-count"></small></div><button type="button" id="equipment-filter-close" aria-label="Cerrar filtros"><i class="fa-solid fa-xmark"></i></button></header>
+                        <button type="button" class="history-filter-select-all" id="equipment-filter-select-all">Seleccionar todas</button>
                         <div id="equipment-filter-options" class="history-filter-options"></div>
                         <footer><button type="button" id="equipment-filter-clear">Limpiar columna</button><button type="button" id="equipment-filter-done">Listo</button></footer>
                     </section>

@@ -57,6 +57,7 @@ import { apiRequest, invalidateApiCache } from "./services/api.js";
         let equipmentRows = [];
         let capPendingRows = [];
         let capPendingPage = 1;
+        let capHistoryImportRecords = [];
         const CAP_PENDING_PAGE_SIZE = 15;
         let equipmentMasterMatches = [];
         let pendingEquipmentBatch = [];
@@ -1821,6 +1822,132 @@ import { apiRequest, invalidateApiCache } from "./services/api.js";
                 });
         };
 
+        function normalizeCapHistoryHeader(value) {
+            return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+                .toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+        }
+
+        function capHistoryDateValue(value) {
+            if (value == null || value === '') return '';
+            if (value instanceof Date && Number.isFinite(value.getTime())) {
+                return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`;
+            }
+            if (typeof value === 'number') {
+                const parts = XLSX.SSF.parse_date_code(value);
+                if (!parts) return '';
+                return `${parts.y}-${String(parts.m).padStart(2, '0')}-${String(parts.d).padStart(2, '0')}`;
+            }
+            const text = String(value).trim();
+            const isoDate = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
+            if (isoDate) return `${isoDate[1]}-${isoDate[2]}-${isoDate[3]}`;
+            const parsed = new Date(text);
+            if (!Number.isFinite(parsed.getTime())) return '';
+            return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, '0')}-${String(parsed.getDate()).padStart(2, '0')}`;
+        }
+
+        async function prepareCapHistoryImport(file) {
+            XLSX ||= (await import('xlsx')).default;
+            const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: true });
+            const sheet = workbook.Sheets['Matriz CAP'];
+            if (!sheet) throw new Error('El archivo no contiene la hoja «Matriz CAP».');
+            const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: true });
+            const headerIndex = rows.findIndex((row, index) => index < 20 &&
+                row.some(value => normalizeCapHistoryHeader(value) === 'imei con novedad'));
+            if (headerIndex < 0) throw new Error('No encontré la columna «IMEI con novedad».');
+            const headers = rows[headerIndex].map(normalizeCapHistoryHeader);
+            const columns = {
+                imei: headers.findIndex(value => value === 'imei con novedad'),
+                modelo: headers.findIndex(value => value === 'modelo equipo'),
+                fechaEnvio: headers.findIndex(value => value === 'fecha envio al cap'),
+                fechaRetorno: headers.findIndex(value => value === 'fecha retorno a g4s')
+            };
+            if (Object.values(columns).some(index => index < 0)) {
+                throw new Error('Faltan columnas requeridas: IMEI, modelo, fecha de envío o fecha de retorno.');
+            }
+            const dataRows = rows.slice(headerIndex + 1).filter(row => row.some(value => value !== '' && value != null));
+            const parsedRecords = dataRows.map(row => ({
+                imei: String(row[columns.imei] ?? '').replace(/\D/g, ''),
+                modelo: String(row[columns.modelo] ?? '').trim().slice(0, 100),
+                fechaEnvio: capHistoryDateValue(row[columns.fechaEnvio]),
+                fechaRetorno: capHistoryDateValue(row[columns.fechaRetorno])
+            })).filter(record => record.imei);
+            const missingImeiRows = dataRows.length - parsedRecords.length;
+            const invalidImeiRows = parsedRecords.filter(record => !/^\d{15}$/.test(record.imei)).length;
+            const records = parsedRecords.filter(record => /^\d{15}$/.test(record.imei));
+            if (!records.length) throw new Error('No encontré filas con un IMEI para importar.');
+            if (records.length > 1000) throw new Error('El archivo supera el límite de 1000 filas por importación.');
+
+            const today = new Date();
+            const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+            const completeCycles = records.filter(record => record.fechaEnvio && record.fechaRetorno &&
+                record.fechaRetorno >= record.fechaEnvio && record.fechaEnvio <= todayKey && record.fechaRetorno <= todayKey).length;
+            const chronologyIssues = records.filter(record => record.fechaEnvio && record.fechaRetorno &&
+                record.fechaRetorno < record.fechaEnvio).length;
+            const futureRows = records.filter(record => record.fechaEnvio > todayKey || record.fechaRetorno > todayKey).length;
+            const partialRows = records.filter(record => Boolean(record.fechaEnvio) !== Boolean(record.fechaRetorno)).length;
+            const noDateRows = records.filter(record => !record.fechaEnvio && !record.fechaRetorno).length;
+            return { records, completeCycles, chronologyIssues, futureRows, partialRows, invalidImeiRows, noDateRows, missingImeiRows };
+        }
+
+        document.getElementById('cap-history-file').addEventListener('change', async event => {
+            const file = event.currentTarget.files?.[0];
+            const status = document.getElementById('cap-history-import-status');
+            const importButton = document.getElementById('btn-import-cap-history');
+            capHistoryImportRecords = [];
+            importButton.disabled = true;
+            if (!file) {
+                status.textContent = '';
+                return;
+            }
+            status.textContent = 'Revisando el archivo...';
+            try {
+                const preview = await prepareCapHistoryImport(file);
+                capHistoryImportRecords = preview.records;
+                importButton.disabled = false;
+                status.textContent = `${preview.records.length} filas con IMEI válido listas; ${preview.completeCycles} ciclos medibles y ${preview.partialRows} movimientos parciales. Se omitirán ${preview.chronologyIssues} fechas inconsistentes, ${preview.futureRows} fechas futuras, ${preview.invalidImeiRows} IMEI inválidos, ${preview.missingImeiRows} filas sin IMEI y ${preview.noDateRows} filas sin fechas.`;
+            } catch (error) {
+                status.textContent = error.message;
+            }
+        });
+
+        document.getElementById('btn-import-cap-history').addEventListener('click', async event => {
+            const button = event.currentTarget;
+            const status = document.getElementById('cap-history-import-status');
+            if (!capHistoryImportRecords.length) return;
+            const replacePrevious = document.getElementById('cap-history-replace').checked;
+            if (replacePrevious) {
+                const confirmed = await window.confirmarAccion(
+                    'Se quitarán únicamente los movimientos identificados como importaciones anteriores de CAPMOVIL y se cargarán los datos de este archivo. Los movimientos registrados manualmente se conservarán. ¿Continuar?',
+                    { titulo: 'Reemplazar importación CAPMOVIL', confirmLabel: 'Reemplazar', danger: true }
+                );
+                if (!confirmed) return;
+            }
+            button.disabled = true;
+            status.textContent = replacePrevious
+                ? 'Reemplazando la importación anterior y cargando movimientos...'
+                : 'Importando movimientos...';
+            try {
+                const response = await apiRequest({
+                    action: 'importar_historial_cap',
+                    records: capHistoryImportRecords,
+                    reemplazarImportacionAnterior: replacePrevious
+                });
+                const result = await response.json();
+                if (result.status !== 'success') throw new Error(result.message || 'No se pudo importar el historial.');
+                const imported = result.data;
+                status.textContent = `Listo: ${imported.equiposInventarioCreados} celulares agregados al inventario y ${imported.equiposInventarioActualizados} registros importados actualizados. ${imported.equiposInventarioRetirados} registros de una importación anterior retirados. Se reemplazaron ${imported.movimientosAnterioresReemplazados} movimientos anteriores y se agregaron ${imported.movimientosImportados} movimientos; ${imported.movimientosDuplicados} duplicados omitidos, ${imported.ciclosValidos} ciclos medibles. Filas omitidas: ${imported.omitidos.chronology} con fechas inconsistentes, ${imported.omitidos.future} futuras y ${imported.omitidos.invalid} inválidas.`;
+                capHistoryImportRecords = [];
+                document.getElementById('cap-history-file').value = '';
+                document.getElementById('cap-history-replace').checked = false;
+                loadedSections.delete('capmovil');
+                invalidateApiCache();
+                window.cargarCapMovil();
+            } catch (error) {
+                status.textContent = error.message;
+                button.disabled = false;
+            }
+        });
+
         window.auditarInventario = function() {
             const resultPanel = document.getElementById('inventory-audit-result');
             resultPanel.hidden = false;
@@ -3394,6 +3521,8 @@ import { apiRequest, invalidateApiCache } from "./services/api.js";
             document.getElementById('equipment-filter-title').textContent = `Filtrar por ${column.label}`;
             document.getElementById('equipment-filter-count').textContent =
                 selectedValues.length ? `${selectedValues.length} seleccionada${selectedValues.length === 1 ? '' : 's'}` : `${options.length} opciones`;
+            document.getElementById('equipment-filter-select-all').disabled =
+                !options.length || options.every(value => selectedValues.includes(value));
             container.innerHTML = options.length
                 ? options.map((value, index) => {
                     const id = `equipment-filter-${column.key}-${index}`;
@@ -3467,6 +3596,8 @@ import { apiRequest, invalidateApiCache } from "./services/api.js";
             document.getElementById('history-filter-title').textContent = `Filtrar por ${column.label.toLocaleLowerCase('es')}`;
             document.getElementById('history-filter-count').textContent =
                 selectedValues.length ? `${selectedValues.length} seleccionada${selectedValues.length === 1 ? '' : 's'}` : `${options.length} opciones`;
+            document.getElementById('history-filter-select-all').disabled =
+                !options.length || options.every(([value]) => selectedValues.includes(value));
             container.innerHTML = options.length
                 ? options.map(([value, label], index) => {
                     const id = `history-filter-${column.key}-${index}`;
@@ -3739,6 +3870,12 @@ import { apiRequest, invalidateApiCache } from "./services/api.js";
             pruneEquipmentFilters(0);
             window.renderizarEquipos();
         });
+        document.getElementById('equipment-filter-select-all').addEventListener('click', () => {
+            if (!activeEquipmentFilter) return;
+            equipmentFilters[activeEquipmentFilter] = getEquipmentFilterOptions(activeEquipmentFilter);
+            pruneEquipmentFilters(0);
+            window.renderizarEquipos();
+        });
         document.getElementById('equipment-clear-column-filters').addEventListener('click', () => {
             equipmentFilterColumns.forEach(column => { equipmentFilters[column.key] = []; });
             closeEquipmentFilterPopover();
@@ -3790,6 +3927,12 @@ import { apiRequest, invalidateApiCache } from "./services/api.js";
             } else {
                 historyFilters[activeHistoryFilter] = selectedValues.filter(value => value !== event.target.value);
             }
+            pruneHistoryFilters(0);
+            window.renderizarHistorial();
+        });
+        document.getElementById('history-filter-select-all').addEventListener('click', () => {
+            if (!activeHistoryFilter) return;
+            historyFilters[activeHistoryFilter] = getHistoryFilterOptions(activeHistoryFilter).map(([value]) => value);
             pruneHistoryFilters(0);
             window.renderizarHistorial();
         });

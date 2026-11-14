@@ -216,6 +216,31 @@
     @apply mb-7 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4;
   }
 
+  .cap-history-import {
+    @apply mb-5;
+  }
+
+  .cap-history-import summary {
+    @apply cursor-pointer font-bold text-slate-700;
+  }
+
+  .cap-history-import > div {
+    @apply mt-3;
+  }
+
+  .cap-history-import > div > p:first-child,
+  #cap-history-import-status {
+    @apply text-sm text-slate-600;
+  }
+
+  .cap-history-replace-option {
+    @apply flex items-center gap-2;
+  }
+
+  .cap-history-replace-option input {
+    @apply h-4 w-4 accent-red-600;
+  }
+
   .capmovil-summary-stat {
     @apply flex min-h-24 flex-col justify-center rounded-xl border border-slate-200 border-l-4 border-sky-500 bg-white px-5 py-4 shadow-sm;
   }
@@ -2241,7 +2266,7 @@
     position: fixed;
     z-index: 1000;
     display: grid;
-    grid-template-rows: auto minmax(0, 1fr) auto;
+    grid-template-rows: auto auto minmax(0, 1fr) auto;
     max-height: min(420px, calc(100vh - 24px));
     overflow: hidden;
     border: 1px solid rgb(203 213 225);
@@ -2318,6 +2343,10 @@
     @apply grid content-start gap-1 overflow-y-auto p-2;
   }
 
+  .history-filter-select-all {
+    @apply mx-2 mt-2 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-left text-xs font-bold text-blue-800 transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
   .history-filter-option {
     @apply flex min-h-10 cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-sm text-slate-700 transition hover:bg-blue-50;
   }
@@ -2344,6 +2373,10 @@
 
   .history-filter-popover > footer button {
     @apply rounded-md border-0 px-3 py-2 text-xs font-bold transition;
+  }
+
+  :root[data-theme="dark"] .history-filter-select-all {
+    @apply border-cyan-800 bg-cyan-950 text-cyan-200 hover:bg-cyan-900;
   }
 
   #history-filter-clear {
@@ -2791,6 +2824,12 @@
   }
 
   :root[data-theme="dark"] #app-screen label {
+    @apply text-slate-300;
+  }
+
+  :root[data-theme="dark"] #app-screen .cap-history-import summary,
+  :root[data-theme="dark"] #app-screen .cap-history-import > div > p:first-child,
+  :root[data-theme="dark"] #app-screen #cap-history-import-status {
     @apply text-slate-300;
   }
 
