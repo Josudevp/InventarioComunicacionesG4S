@@ -51,6 +51,7 @@ import { apiRequest, invalidateApiCache } from "./services/api.js";
 
             let choicesInstance = null;
             let editChoicesInstance = null;
+            let equipmentDamageChoiceInstance = null;
             let requestChoiceInstances = [];
             let distributionChoiceInstances = [];
         let Html5QrcodeScanner = null;
@@ -73,6 +74,11 @@ import { apiRequest, invalidateApiCache } from "./services/api.js";
         const selectedEquipmentIds = new Set();
         const equipmentStatusOptions = [
             'Disponible', 'Dañado', 'Disposición final', 'Garantía', 'Enviados CAP', 'Despachado a puesto'
+        ];
+        const equipmentRegistrationStatuses = ['Disponible', 'Dañado', 'Disposición final'];
+        const equipmentDamageOptions = [
+            'DISPLAY', 'BATERIA', 'CAMARA', 'DAÑO FISICO',
+            'BANDEJA SIM', 'BOTONES', 'AUDIO', 'CUENTA BLOQUEADA', 'PIN DE CARGA'
         ];
         let distributionRows = [];
         let distributionConfirmed = false;
@@ -3504,9 +3510,17 @@ import { apiRequest, invalidateApiCache } from "./services/api.js";
                 modelo: document.getElementById('equipment-model').value.trim(),
                 imei: document.getElementById('equipment-imei').value.trim(),
                 ubicacionSam: document.getElementById('equipment-location').value.trim(),
-                danoReparacion: document.getElementById('equipment-condition').value.trim().toLocaleUpperCase('es-CO'),
+                danoReparacion: document.getElementById('equipment-condition').value,
                 estado: document.getElementById('equipment-state').value
             };
+            if (item.estado === 'Disponible') item.danoReparacion = 'BUEN ESTADO';
+            if (!equipmentRegistrationStatuses.includes(item.estado) ||
+                (item.estado !== 'Disponible' && item.danoReparacion === 'BUEN ESTADO') ||
+                (item.estado !== 'Disponible' && !equipmentDamageOptions.includes(item.danoReparacion))) {
+                feedback.textContent = 'Selecciona un estado y un daño o reparación válidos.';
+                feedback.classList.add('is-error');
+                return;
+            }
             if (!/^\d{15}$/.test(item.imei)) {
                 feedback.textContent = `El IMEI debe tener exactamente 15 dígitos. El ingresado tiene ${item.imei.length}.`;
                 feedback.classList.add('is-error');
@@ -3526,11 +3540,12 @@ import { apiRequest, invalidateApiCache } from "./services/api.js";
             pendingEquipmentBatch.push(item);
             const date = item.fechaRecepcion;
             const state = item.estado;
-            const condition = item.danoReparacion;
+            const condition = item.estado === 'Disponible' ? 'BUEN ESTADO' : item.danoReparacion;
             form.reset();
             document.getElementById('equipment-date').value = date;
             document.getElementById('equipment-state').value = state;
             document.getElementById('equipment-condition').value = condition;
+            syncEquipmentCondition();
             document.getElementById('equipment-imei-suffix').value = '';
             document.getElementById('equipment-imei-results').textContent = '';
             feedback.classList.remove('is-error');
@@ -3688,18 +3703,35 @@ import { apiRequest, invalidateApiCache } from "./services/api.js";
         };
 
         document.getElementById('equipment-form').addEventListener('submit', window.agregarEquipoLote);
-        document.getElementById('equipment-condition').addEventListener('keydown', event => {
-            if (event.key === 'Enter' && !event.shiftKey) {
-                event.preventDefault();
-                document.getElementById('equipment-form').requestSubmit();
-            }
+        const syncEquipmentCondition = () => {
+            const state = document.getElementById('equipment-state').value;
+            const condition = document.getElementById('equipment-condition');
+            const options = state === 'Disponible' ? ['BUEN ESTADO'] : equipmentDamageOptions;
+            const selectedValue = state === 'Disponible' ? 'BUEN ESTADO' :
+                (equipmentDamageOptions.includes(condition.value) ? condition.value : '');
+            equipmentDamageChoiceInstance.clearChoices();
+            equipmentDamageChoiceInstance.setChoices(
+                options.map(value => ({ value, label: value })),
+                'value',
+                'label',
+                true
+            );
+            equipmentDamageChoiceInstance.setChoiceByValue(selectedValue || options[0]);
+            if (state === 'Disponible') equipmentDamageChoiceInstance.disable();
+            else equipmentDamageChoiceInstance.enable();
+        };
+        const equipmentCondition = document.getElementById('equipment-condition');
+        equipmentDamageChoiceInstance = new Choices(equipmentCondition, {
+            searchEnabled: true,
+            searchPlaceholderValue: 'Buscar daño o reparación...',
+            itemSelectText: '',
+            shouldSort: false,
+            allowHTML: false,
+            fuseOptions: { threshold: 0.3, ignoreLocation: true }
         });
-        document.getElementById('equipment-condition').addEventListener('input', event => {
-            const start = event.target.selectionStart;
-            const value = event.target.value.toLocaleUpperCase('es-CO');
-            event.target.value = value;
-            event.target.setSelectionRange(start, start);
-        });
+        equipmentCondition.setAttribute('aria-labelledby', 'equipment-condition-label');
+        document.getElementById('equipment-state').addEventListener('change', syncEquipmentCondition);
+        syncEquipmentCondition();
         document.getElementById('btn-clear-equipment-batch').addEventListener('click', window.vaciarLoteEquipos);
         document.getElementById('btn-export-equipment-batch').addEventListener('click', window.exportarLoteEquipos);
         document.getElementById('btn-copy-equipment-email').addEventListener('click', window.copiarPlantillaCorreoRecepcion);

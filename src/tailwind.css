@@ -396,6 +396,14 @@
     @apply m-0 flex flex-col gap-1.5;
   }
 
+    .equipment-form .equipment-condition-field {
+      @apply m-0 flex flex-col gap-1.5;
+    }
+
+    .equipment-field-label {
+      @apply text-sm font-semibold;
+    }
+
   .equipment-form textarea {
     @apply min-h-24 resize-y;
   }

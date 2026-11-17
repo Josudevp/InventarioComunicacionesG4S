@@ -58,6 +58,7 @@ var CONFIG = {
   radioAccessoryMovementHeaders: ["ID_Movimiento", "Fecha_Hora", "ID_Accesorio", "Accesorio", "Modelo_Radio", "Tipo_Movimiento", "Cantidad", "Stock_Despues", "Referencia", "Registrado_Por", "Clave_Idempotencia"],
   radioStatuses: ["Disponible", "En tránsito", "Despachado", "En reparación", "Garantía", "Dañado", "Disposición final"],
   equipmentStatuses: ["Disponible", "Dañado", "Disposición final", "Garantía", "Enviados CAP", "Despachado a puesto"],
+  equipmentRegistrationStatuses: ["Disponible", "Dañado", "Disposición final"],
   requestHeaders: ["ID_Solicitud", "Fecha_Registro", "Registrado_Por", "Cliente", "Regional", "Entregado_A", "ID_Articulo", "Descripcion", "Cantidad", "Estado", "Proveedor", "Fecha_Solicitud_Proveedor", "Fecha_Recepcion", "Fecha_Entrega", "ID_Transaccion_Recepcion", "ID_Transaccion_Entrega", "Observaciones", "Actualizado_Por", "Fecha_Actualizacion", "Costo_Unitario_COP", "Correo_Solicitante", "Gmail_Thread_ID", "Gmail_Thread_URL", "Fecha_Revision_Disponibilidad", "Justificacion_Anulacion", "Tipo_Solicitud"],
   requestStatuses: ["Registrada", "Revisión de disponibilidad", "Solicitada", "Recibida", "Entregada", "Cerrada", "Anulada"],
   movementHeaders: ["ID_Transaccion", "Fecha_Hora", "ID_Articulo", "Tipo_Movimiento", "Cantidad", "Registrado_Por", "Entregado_A_Usuario", "Cliente_Proveedor", "Regional", "Estado", "ID_Transaccion_Relacionada", "Motivo", "Regional_Origen", "Regional_Destino", "Clave_Idempotencia", "Huella_Solicitud", "Justificacion_Anulacion"],
@@ -3870,8 +3871,7 @@ function registerEquipment_(data, session) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || isNaN(new Date(date + "T00:00:00").getTime())) {
     throw new Error("La fecha de recepción no es válida");
   }
-  if (!model || !/^\d{15}$/.test(imei) || !condition) throw new Error("Completa modelo, IMEI completo y daño o reparación");
-  if (CONFIG.equipmentStatuses.indexOf(status) < 0) throw new Error("Estado de equipo no permitido");
+  validateEquipmentRegistration_(model, imei, condition, status);
 
   var sheet = equipmentSheet_();
   var lock = LockService.getScriptLock();
@@ -3908,8 +3908,7 @@ function registerEquipmentBatch_(data, session) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || isNaN(new Date(date + "T00:00:00").getTime())) {
       throw new Error("Hay una fecha de recepción no válida en el lote");
     }
-    if (!model || !/^\d{15}$/.test(imei) || !condition) throw new Error("Cada celular requiere modelo, IMEI completo y daño/reparación");
-    if (CONFIG.equipmentStatuses.indexOf(status) < 0) throw new Error("Hay un estado no permitido en el lote");
+    validateEquipmentRegistration_(model, imei, condition, status);
     return {
       date: date,
       model: model,
@@ -3936,6 +3935,7 @@ function registerEquipmentBatch_(data, session) {
       var existingImei = String(existingRows[i][9] || "").replace(/\D/g, "");
       if (existingImei) existingImeis[existingImei] = true;
     }
+
     prepared.forEach(function(item) {
       if (existingImeis[item.imei]) throw new Error("Ya existe un equipo registrado con el IMEI " + item.imei);
     });
@@ -3955,6 +3955,18 @@ function registerEquipmentBatch_(data, session) {
     return json_({ status: "success", count: records.length, ids: records.map(function(record) { return record[0]; }) });
   } finally {
     lock.releaseLock();
+  }
+}
+
+function validateEquipmentRegistration_(model, imei, condition, status) {
+  if (!model || !/^\d{15}$/.test(imei) || !condition) {
+    throw new Error("Completa modelo, IMEI completo y daño o reparación");
+  }
+  if (CONFIG.equipmentRegistrationStatuses.indexOf(status) < 0) {
+    throw new Error("Al registrar un equipo solo se permite Disponible, Dañado o Disposición final");
+  }
+  if (status !== "Disponible" && condition === "BUEN ESTADO") {
+    throw new Error("Dañado o Disposición final no puede tener BUEN ESTADO");
   }
 }
 

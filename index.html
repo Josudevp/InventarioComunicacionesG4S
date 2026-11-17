@@ -723,17 +723,15 @@
                         <label for="equipment-location">Ubicación SAM
                             <input id="equipment-location" name="ubicacionSam" type="text" maxlength="200" readonly>
                         </label>
-                        <label for="equipment-condition" class="equipment-condition-field">Daño / reparación
-                            <textarea id="equipment-condition" name="danoReparacion" rows="2" maxlength="500" placeholder="BUEN ESTADO o detalle del daño / reparación" required></textarea>
-                        </label>
+                        <div class="equipment-condition-field">
+                            <span class="equipment-field-label" id="equipment-condition-label">Daño / reparación</span>
+                            <select id="equipment-condition" name="danoReparacion" required></select>
+                        </div>
                         <label for="equipment-state">Estado
                             <select id="equipment-state" name="estado">
                                 <option>Disponible</option>
                                 <option>Dañado</option>
                                 <option>Disposición final</option>
-                                <option>Garantía</option>
-                                <option>Enviados CAP</option>
-                                <option>Despachado a puesto</option>
                             </select>
                         </label>
                         <button class="btn-secondary equipment-submit-btn" type="submit" id="btn-save-equipment"><i class="fa-solid fa-plus" aria-hidden="true"></i> Añadir al lote</button>
