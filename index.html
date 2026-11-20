@@ -654,12 +654,12 @@
                         <div class="capmovil-panel-heading"><div><h3>Días que tardaron en regresar</h3><p>Días entre el envío a CAPMOVIL y el retorno.</p></div><i class="fa-solid fa-chart-column capmovil-panel-icon" aria-hidden="true"></i></div>
                         <div id="cap-cycle-chart" class="regional-chart" role="img" aria-label="Tiempo de retorno de equipos CAPMOVIL"></div>
                     </section>
-                    <section class="dashboard-panel capmovil-analysis-panel">
-                        <div class="capmovil-panel-heading"><div><h3>Solicitudes por estado</h3><p>Accesorios asociados a CAPMOVIL.</p></div><i class="fa-solid fa-boxes-stacked capmovil-panel-icon" aria-hidden="true"></i></div>
-                        <div id="cap-request-chart" class="regional-chart" role="img" aria-label="Solicitudes de accesorios CAPMOVIL por estado"></div>
-                    </section>
                 </div>
                 <div class="dashboard-insight-grid">
+                    <section class="dashboard-panel capmovil-table-panel">
+                        <div class="capmovil-panel-heading"><div><h3>Lotes de salida a reparación</h3><p>Equipos enviados temporalmente a CAPMOVIL para reparación.</p></div></div>
+                        <div class="catalog-table-wrap"><table class="catalog-table insight-table"><thead><tr><th>Lote</th><th>Entrega</th><th>Equipos</th><th>Responsables</th><th>Evidencia</th></tr></thead><tbody id="cap-repair-lots-body"><tr><td colspan="5">Cargando...</td></tr></tbody></table></div>
+                    </section>
                     <section class="dashboard-panel capmovil-table-panel">
                         <div class="capmovil-panel-heading"><div><h3>Lotes vendidos a CAP</h3><p>Equipos retirados definitivamente del inventario por repuestos.</p></div></div>
                         <div class="catalog-table-wrap"><table class="catalog-table insight-table"><thead><tr><th>Lote</th><th>Entrega</th><th>Equipos</th><th>Responsables</th><th>Evidencia</th></tr></thead><tbody id="cap-lots-body"><tr><td colspan="5">Cargando...</td></tr></tbody></table></div>
@@ -787,6 +787,7 @@
                             </select>
                         </label>
                         <button type="button" class="btn-secondary" id="btn-apply-equipment-status" disabled><i class="fa-solid fa-check-double" aria-hidden="true"></i> Aplicar estado</button>
+                        <button type="button" class="btn-secondary" id="btn-create-repair-lot" disabled><i class="fa-solid fa-screwdriver-wrench" aria-hidden="true"></i> Crear lote salida a reparación</button>
                         <button type="button" class="btn-primary" id="btn-create-cap-lot" disabled><i class="fa-solid fa-boxes-packing" aria-hidden="true"></i> Crear salida definitiva a CAP</button>
                     </div>
                     <p id="equipment-bulk-feedback" class="helper-text" role="status" aria-live="polite"></p>
@@ -801,6 +802,19 @@
                         <div class="cap-lot-actions">
                             <button type="button" class="btn-secondary" id="btn-cancel-cap-lot">Cancelar</button>
                             <button type="button" class="btn-primary" id="btn-save-cap-lot">Confirmar venta a CAP</button>
+                        </div>
+                    </div>
+                    <div id="repair-lot-form" class="cap-lot-form" hidden>
+                        <div class="equipment-list-heading"><div><h3>Registrar lote de salida a reparación</h3><p>Incluye celulares seleccionados que serán enviados temporalmente a CAPMOVIL.</p></div></div>
+                        <div class="cap-lot-fields">
+                            <label for="repair-lot-delivery-date">Fecha de salida<input id="repair-lot-delivery-date" type="date" required></label>
+                            <label for="repair-lot-delivered-by">Responsable que entrega<input id="repair-lot-delivered-by" type="text" maxlength="150" required></label>
+                            <label for="repair-lot-received-by">Responsable que recibe<input id="repair-lot-received-by" type="text" maxlength="150" required></label>
+                            <label for="repair-lot-evidence">Evidencia (enlace opcional)<input id="repair-lot-evidence" type="url" maxlength="500" placeholder="Acta, guía o correo"></label>
+                        </div>
+                        <div class="cap-lot-actions">
+                            <button type="button" class="btn-secondary" id="btn-cancel-repair-lot">Cancelar</button>
+                            <button type="button" class="btn-primary" id="btn-save-repair-lot">Confirmar salida a reparación</button>
                         </div>
                     </div>
                     <div class="history-filter-toolbar">

@@ -46,9 +46,11 @@ var CONFIG = {
   radioHistorySheet: "Historial estados radios",
   radioAccessoryMovementsSheet: "Movimientos accesorios radios",
   capDispositionSheet: "Lotes CAP disposición",
+  capRepairSheet: "Lotes CAP reparación",
   equipmentHeaders: ["ID_Equipo", "Fecha_Recepcion", "Modelo", "Dato legado", "Dano_Reparacion", "Estado", "Registrado_Por", "Fecha_Actualizacion", "Actualizado_Por", "IMEI", "Ubicacion_SAM"],
   equipmentArchiveHeaders: ["ID_Equipo", "Fecha_Recepcion", "Modelo", "Dato legado", "Dano_Reparacion", "Estado", "Registrado_Por", "Fecha_Actualizacion", "Actualizado_Por", "IMEI", "Ubicacion_SAM", "Fecha_Archivado", "Motivo_Archivo", "Archivado_Por"],
   capDispositionHeaders: ["ID_Lote", "Fecha_Creacion", "Fecha_Entrega", "Motivo", "Responsable_Entrega", "Responsable_Recibe", "Evidencia_URL", "Estado_Lote", "ID_Equipo", "IMEI", "Modelo", "Dano_Reparacion", "Ubicacion_SAM", "Registrado_Por"],
+  capRepairHeaders: ["ID_Lote", "Fecha_Creacion", "Fecha_Entrega", "Motivo", "Responsable_Entrega", "Responsable_Recibe", "Evidencia_URL", "Estado_Lote", "ID_Equipo", "IMEI", "Modelo", "Dano_Reparacion", "Ubicacion_SAM", "Registrado_Por"],
   equipmentHistoryHeaders: ["ID_Cambio", "Fecha_Hora", "ID_Equipo", "Dato legado", "Modelo", "Estado_Anterior", "Estado_Nuevo", "Registrado_Por"],
   radiosHeaders: ["Serial_Radio", "Modelo", "Estado_Inventario", "Fecha_Despacho", "Cliente_Asignado", "Regional_Destino", "Guia_TCC", "Estado_Despacho", "Fuente", "Registrado_Por", "Fecha_Actualizacion"],
   radioArchiveHeaders: ["Serial_Radio", "Modelo", "Estado_Inventario", "Fecha_Despacho", "Cliente_Asignado", "Regional_Destino", "Guia_TCC", "Estado_Despacho", "Fuente", "Registrado_Por", "Fecha_Actualizacion", "Fecha_Archivado", "Motivo_Archivo", "Archivado_Por"],
@@ -275,6 +277,7 @@ function doPost(e) {
     if (action === "actualizar_estado_equipo") return updateEquipmentStatus_(data, session);
     if (action === "actualizar_estados_equipos") return updateEquipmentStatuses_(data, session);
     if (action === "registrar_lote_salida_cap") return registerCapDispositionLot_(data, session);
+    if (action === "registrar_lote_salida_reparacion") return registerCapRepairLot_(data, session);
     if (action === "eliminar_equipo") return deleteEquipment_(data, session);
     if (action === "crear_solicitud") return createRequest_(data, session);
     if (action === "revisar_disponibilidad_solicitud") return checkRequestAvailability_(data, session);
@@ -638,6 +641,31 @@ function getCapMovil_(session) {
       modelo: clean_(lotRow[10], 100)
     });
   }
+  var repairLotRows = capRepairSheet_().getDataRange().getValues();
+  var lotesReparacion = Object.create(null);
+  for (var lr = 1; lr < repairLotRows.length; lr++) {
+    var repairRow = repairLotRows[lr];
+    var repairLotId = clean_(repairRow[0], 100);
+    if (!repairLotId) continue;
+    if (!lotesReparacion[repairLotId]) {
+      lotesReparacion[repairLotId] = {
+        idLote: repairLotId,
+        fechaCreacion: repairRow[1],
+        fechaEntrega: repairRow[2],
+        motivo: clean_(repairRow[3], 100),
+        responsableEntrega: clean_(repairRow[4], 150),
+        responsableRecibe: clean_(repairRow[5], 150),
+        evidencia: clean_(repairRow[6], 500),
+        estado: clean_(repairRow[7], 50),
+        equipos: []
+      };
+    }
+    lotesReparacion[repairLotId].equipos.push({
+      imei: clean_(repairRow[9], 20),
+      modelo: clean_(repairRow[10], 100),
+      danoReparacion: clean_(repairRow[11], 500)
+    });
+  }
   return json_({
     status: "success",
     data: {
@@ -653,6 +681,7 @@ function getCapMovil_(session) {
       solicitudesTotal: accessoryRequests.length,
       unidadesSolicitadas: accessoryRequests.reduce(function(sum, request) { return sum + request.unidades; }, 0),
       lotesSalidaCAP: Object.keys(lotes).map(function(id) { return lotes[id]; }).reverse().slice(0, 30),
+      lotesSalidaReparacion: Object.keys(lotesReparacion).map(function(id) { return lotesReparacion[id]; }).reverse().slice(0, 30),
       fechaActualizacion: now
     }
   });
@@ -3663,6 +3692,60 @@ function registerCapDispositionLot_(data, session) {
       clean_(item.row[5], 100), "Vendido a CAP", session.usuario, now);
     archiveEquipmentRow_(sheet, item.rowNumber, item.row, "Vendido a CAP; lote " + lotId, session.usuario);
   });
+  return json_({ status: "success", idLote: lotId, equipos: selected.length });
+}
+
+function capRepairSheet_() {
+  return ensureEquipmentSheet_(CONFIG.capRepairSheet, CONFIG.capRepairHeaders, 0);
+}
+
+function registerCapRepairLot_(data, session) {
+  var ids = Array.isArray(data.ids) ? data.ids.map(function(id) { return clean_(id, 100); }).filter(Boolean) : [];
+  var deliveryDate = clean_(data.fechaEntrega, 10);
+  var deliveredBy = clean_(data.responsableEntrega, 150);
+  var receivedBy = clean_(data.responsableRecibe, 150);
+  var evidence = clean_(data.evidencia, 500);
+  if (!ids.length) throw new Error("Selecciona al menos un equipo para enviar a reparación");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(deliveryDate)) throw new Error("Indica la fecha de salida a reparación");
+  if (!deliveredBy || !receivedBy) throw new Error("Indica quién entrega y quién recibe");
+  if (evidence && !/^https?:\/\//i.test(evidence)) throw new Error("La evidencia debe ser un enlace http o https");
+
+  var sheet = equipmentSheet_();
+  var rows = sheet.getDataRange().getValues();
+  var selected = [];
+  var requested = Object.create(null);
+  ids.forEach(function(id) { requested[id] = true; });
+  for (var i = 1; i < rows.length; i++) {
+    var id = clean_(rows[i][0], 100);
+    if (!requested[id]) continue;
+    var status = canonicalEquipmentStatus_(rows[i][5]);
+    if (status === "Disposición final") throw new Error("Los equipos en Disposición final deben salir por el lote definitivo");
+    selected.push({ rowNumber: i + 1, row: rows[i] });
+  }
+  if (selected.length !== ids.length) throw new Error("Uno o más equipos seleccionados ya no están activos");
+
+  var lotId = "CAP-REP-" + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyyMMdd-HHmmss");
+  var now = new Date();
+  var output = selected.map(function(item) {
+    var row = item.row;
+    return [lotId, now, deliveryDate, "Reparación", deliveredBy, receivedBy, evidence,
+      "Salida a reparación", clean_(row[0], 100), clean_(row[9], 20), clean_(row[2], 100),
+      clean_(row[4], 500), clean_(row[10], 200), session.usuario];
+  });
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    var lotSheet = capRepairSheet_();
+    lotSheet.getRange(lotSheet.getLastRow() + 1, 1, output.length, CONFIG.capRepairHeaders.length).setValues(output);
+    selected.forEach(function(item) {
+      sheet.getRange(item.rowNumber, 6).setValue("Enviados CAP");
+      sheet.getRange(item.rowNumber, 8, 1, 2).setValues([[now, session.usuario]]);
+      appendEquipmentHistory_(clean_(item.row[0], 100), "", clean_(item.row[2], 100),
+        canonicalEquipmentStatus_(item.row[5]), "Enviados CAP", session.usuario, now);
+    });
+  } finally {
+    lock.releaseLock();
+  }
   return json_({ status: "success", idLote: lotId, equipos: selected.length });
 }
 
