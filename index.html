@@ -787,6 +787,7 @@
                             </select>
                         </label>
                         <button type="button" class="btn-secondary" id="btn-apply-equipment-status" disabled><i class="fa-solid fa-check-double" aria-hidden="true"></i> Aplicar estado</button>
+                        <button type="button" class="btn-secondary" id="btn-export-selected-equipment" disabled><i class="fa-solid fa-file-excel" aria-hidden="true"></i> Exportar equipos seleccionados</button>
                         <button type="button" class="btn-secondary" id="btn-create-repair-lot" disabled><i class="fa-solid fa-screwdriver-wrench" aria-hidden="true"></i> Crear lote salida a reparación</button>
                         <button type="button" class="btn-primary" id="btn-create-cap-lot" disabled><i class="fa-solid fa-boxes-packing" aria-hidden="true"></i> Crear salida definitiva a CAP</button>
                     </div>
@@ -824,7 +825,7 @@
                     <div class="catalog-table-wrap">
                         <table class="catalog-table equipment-table">
                             <thead><tr>
-                                <th><input id="equipment-select-all-visible" type="checkbox" aria-label="Seleccionar equipos visibles"></th>
+                                <th></th>
                                 <th><div class="history-heading">Fecha<button type="button" class="history-filter-trigger" data-equipment-filter-trigger="fecha" aria-label="Filtrar por fecha" aria-haspopup="dialog"><i class="fa-solid fa-filter" aria-hidden="true"></i></button></div></th>
                                 <th><div class="history-heading">Modelo<button type="button" class="history-filter-trigger" data-equipment-filter-trigger="modelo" aria-label="Filtrar por modelo" aria-haspopup="dialog"><i class="fa-solid fa-filter" aria-hidden="true"></i></button></div></th>
                                 <th><div class="history-heading">IMEI<button type="button" class="history-filter-trigger" data-equipment-filter-trigger="imei" aria-label="Filtrar por IMEI" aria-haspopup="dialog"><i class="fa-solid fa-filter" aria-hidden="true"></i></button></div></th>

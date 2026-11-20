@@ -67,6 +67,8 @@ import { apiRequest, invalidateApiCache } from "./services/api.js";
         const selectedRadioSerials = new Set();
         let capPendingRows = [];
         let capPendingPage = 1;
+        let capRepairLotsForExport = [];
+        let capDispositionLotsForExport = [];
         const CAP_PENDING_PAGE_SIZE = 15;
         let equipmentMasterMatches = [];
         let pendingEquipmentBatch = [];
@@ -2147,13 +2149,15 @@ import { apiRequest, invalidateApiCache } from "./services/api.js";
                     const requests = Array.isArray(data.solicitudes) ? data.solicitudes : [];
                     const lots = Array.isArray(data.lotesSalidaCAP) ? data.lotesSalidaCAP : [];
                     const repairLots = Array.isArray(data.lotesSalidaReparacion) ? data.lotesSalidaReparacion : [];
+                    capDispositionLotsForExport = lots;
+                    capRepairLotsForExport = repairLots;
                     document.getElementById('cap-repair-lots-body').innerHTML = repairLots.length
                         ? repairLots.map(lot => `<tr>
                             <td data-label="Lote"><strong>${window.escapeHtml(lot.idLote)}</strong></td>
                             <td data-label="Entrega">${formatCapDate(lot.fechaEntrega)}</td>
                             <td data-label="Equipos">${Number(lot.equipos.length).toLocaleString('es-CO')}</td>
                             <td data-label="Responsables">${window.escapeHtml(lot.responsableEntrega)} → ${window.escapeHtml(lot.responsableRecibe)}</td>
-                            <td data-label="Evidencia">${lot.evidencia ? `<a href="${window.escapeHtml(lot.evidencia)}" target="_blank" rel="noopener">Abrir</a>` : 'Pendiente'}</td>
+                            <td data-label="Evidencia"><button type="button" class="btn-secondary" data-download-cap-lot="reparacion" data-lot-id="${window.escapeHtml(lot.idLote)}"><i class="fa-solid fa-file-excel"></i> Excel enviado</button>${lot.evidencia ? ` <a href="${window.escapeHtml(lot.evidencia)}" target="_blank" rel="noopener">Abrir evidencia</a>` : ''}</td>
                         </tr>`).join('')
                         : '<tr><td colspan="5">Aún no hay lotes de salida a reparación.</td></tr>';
                     document.getElementById('cap-lots-body').innerHTML = lots.length
@@ -2162,7 +2166,7 @@ import { apiRequest, invalidateApiCache } from "./services/api.js";
                             <td data-label="Entrega">${formatCapDate(lot.fechaEntrega)}</td>
                             <td data-label="Equipos">${Number(lot.equipos.length).toLocaleString('es-CO')}</td>
                             <td data-label="Responsables">${window.escapeHtml(lot.responsableEntrega)} → ${window.escapeHtml(lot.responsableRecibe)}</td>
-                            <td data-label="Evidencia">${lot.evidencia ? `<a href="${window.escapeHtml(lot.evidencia)}" target="_blank" rel="noopener">Abrir</a>` : 'Pendiente'}</td>
+                            <td data-label="Evidencia"><button type="button" class="btn-secondary" data-download-cap-lot="disposicion_final" data-lot-id="${window.escapeHtml(lot.idLote)}"><i class="fa-solid fa-file-excel"></i> Excel enviado</button>${lot.evidencia ? ` <a href="${window.escapeHtml(lot.evidencia)}" target="_blank" rel="noopener">Abrir evidencia</a>` : ''}</td>
                         </tr>`).join('')
                         : '<tr><td colspan="5">Aún no hay lotes vendidos a CAP.</td></tr>';
                     document.getElementById('cap-request-summary').textContent =
@@ -2480,6 +2484,13 @@ import { apiRequest, invalidateApiCache } from "./services/api.js";
         document.getElementById('cap-pagination-next').addEventListener('click', () => {
             capPendingPage++;
             window.renderizarPaginaCapMovil();
+        });
+        ['cap-repair-lots-body', 'cap-lots-body'].forEach(id => {
+            document.getElementById(id).addEventListener('click', event => {
+                const button = event.target.closest('[data-download-cap-lot]');
+                if (!button) return;
+                window.descargarExcelLoteCap(button.dataset.lotId, button.dataset.downloadCapLot);
+            });
         });
         document.querySelectorAll('[data-dashboard-months]').forEach(button => {
             button.addEventListener('click', () => {
@@ -3168,7 +3179,7 @@ import { apiRequest, invalidateApiCache } from "./services/api.js";
             return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
         };
 
-        window.exportarSalidaCelularesCap = async function(items, tipo = 'reparacion') {
+        window.exportarSalidaCelularesCap = async function(items, tipo = 'reparacion', fechaSalida = null) {
             if (!items.length) return;
             const XLSXModule = await import('xlsx');
             const XLSX = XLSXModule.default || XLSXModule;
@@ -3176,7 +3187,7 @@ import { apiRequest, invalidateApiCache } from "./services/api.js";
             const worksheet = XLSX.utils.aoa_to_sheet([
                 ['Fecha', 'Modelo', 'IMEI', 'Daño / reparación'],
                 ...items.map(item => [
-                    localDateValue(),
+                    fechaSalida || localDateValue(),
                     item.modelo || '',
                     item.imei || '',
                     item.danoReparacion || ''
@@ -3188,18 +3199,47 @@ import { apiRequest, invalidateApiCache } from "./services/api.js";
             XLSX.writeFile(workbook, `Salida_CAPMOVIL_${tipo}_${reportFileDate()}.xlsx`, { compression: true });
         };
 
+        window.descargarExcelLoteCap = async function(lotId, lotType) {
+            const lot = lotType === 'reparacion'
+                ? capRepairLotsForExport.find(item => item.idLote === lotId)
+                : capDispositionLotsForExport.find(item => item.idLote === lotId);
+            if (!lot) return;
+            await window.exportarSalidaCelularesCap(lot.equipos.map(equipment => ({
+                modelo: equipment.modelo,
+                imei: equipment.imei,
+                danoReparacion: equipment.danoReparacion || ''
+            })), lotType, lot.fechaEntrega);
+        };
+
+        window.exportarEquiposSeleccionados = async function() {
+            const selected = equipmentRows.filter(item => selectedEquipmentIds.has(item.id));
+            if (!selected.length) return;
+            const XLSXModule = await import('xlsx');
+            const XLSX = XLSXModule.default || XLSXModule;
+            const workbook = XLSX.utils.book_new();
+            const worksheet = XLSX.utils.aoa_to_sheet([
+                ['Modelo', 'IMEI', 'Daño / reparación'],
+                ...selected.map(item => [item.modelo || '', item.imei || '', item.danoReparacion || ''])
+            ]);
+            worksheet['!cols'] = [{ wch: 24 }, { wch: 18 }, { wch: 34 }];
+            worksheet['!autofilter'] = { ref: worksheet['!ref'] };
+            XLSX.utils.book_append_sheet(workbook, worksheet, 'Equipos seleccionados');
+            XLSX.writeFile(workbook, `Equipos_seleccionados_${reportFileDate()}.xlsx`, { compression: true });
+        };
+
         const updateEquipmentSelectionUi = () => {
             const visible = [...document.querySelectorAll('#equipment-table-body [data-equipment-select]')];
             const selectedVisible = visible.filter(input => selectedEquipmentIds.has(input.value)).length;
             const selectedCount = selectedEquipmentIds.size;
             document.getElementById('equipment-selection-count').textContent = `${selectedCount.toLocaleString('es-CO')} seleccionados`;
             document.getElementById('btn-apply-equipment-status').disabled = selectedCount === 0;
+            document.getElementById('btn-export-selected-equipment').disabled = selectedCount === 0;
             const selectedEquipment = equipmentRows.filter(item => selectedEquipmentIds.has(item.id));
             const capLotButton = document.getElementById('btn-create-cap-lot');
             capLotButton.disabled = selectedCount === 0 || selectedEquipment.some(item => item.estado !== 'Disposición final');
             const repairLotButton = document.getElementById('btn-create-repair-lot');
             repairLotButton.disabled = selectedCount === 0 || selectedEquipment.some(item => item.estado === 'Disposición final');
-            ['equipment-select-visible', 'equipment-select-all-visible'].forEach(id => {
+            ['equipment-select-visible'].forEach(id => {
                 const checkbox = document.getElementById(id);
                 checkbox.checked = visible.length > 0 && selectedVisible === visible.length;
                 checkbox.indeterminate = selectedVisible > 0 && selectedVisible < visible.length;
@@ -3682,7 +3722,6 @@ import { apiRequest, invalidateApiCache } from "./services/api.js";
                 if (result.status !== 'success') throw new Error(result.message || 'No se pudieron cambiar los estados');
                 selectedEquipmentIds.clear();
                 document.getElementById('equipment-select-visible').checked = false;
-                document.getElementById('equipment-select-all-visible').checked = false;
                 feedback.textContent = `${result.updated} estados actualizados${startsCycle ? '; inició el KPI de retorno' : closesCycle ? '; se cerraron los KPI de retorno' : ''}.`;
                 await Promise.all([window.cargarEquipos(), window.cargarDashboard()]);
             } catch (error) {
@@ -3718,7 +3757,7 @@ import { apiRequest, invalidateApiCache } from "./services/api.js";
                 });
                 const result = await response.json();
                 if (result.status !== 'success') throw new Error(result.message || 'No se pudo registrar el lote');
-                await window.exportarSalidaCelularesCap(selected, 'disposicion_final');
+                await window.exportarSalidaCelularesCap(selected, 'disposicion_final', date);
                 selectedEquipmentIds.clear();
                 document.getElementById('cap-lot-form').hidden = true;
                 feedback.classList.remove('is-error');
@@ -3759,7 +3798,7 @@ import { apiRequest, invalidateApiCache } from "./services/api.js";
                 });
                 const result = await response.json();
                 if (result.status !== 'success') throw new Error(result.message || 'No se pudo registrar el lote');
-                await window.exportarSalidaCelularesCap(selected, 'reparacion');
+                await window.exportarSalidaCelularesCap(selected, 'reparacion', date);
                 selectedEquipmentIds.clear();
                 document.getElementById('repair-lot-form').hidden = true;
                 feedback.classList.remove('is-error');
@@ -3828,7 +3867,6 @@ import { apiRequest, invalidateApiCache } from "./services/api.js";
             updateEquipmentSelectionUi();
         });
         document.getElementById('equipment-select-visible').addEventListener('change', event => selectVisibleEquipmentRows(event.currentTarget.checked));
-        document.getElementById('equipment-select-all-visible').addEventListener('change', event => selectVisibleEquipmentRows(event.currentTarget.checked));
         document.getElementById('btn-apply-equipment-status').addEventListener('click', window.aplicarEstadoMasivoEquipos);
         document.getElementById('btn-create-cap-lot').addEventListener('click', () => {
             document.getElementById('cap-lot-form').hidden = false;
@@ -3848,6 +3886,7 @@ import { apiRequest, invalidateApiCache } from "./services/api.js";
         });
         document.getElementById('btn-save-cap-lot').addEventListener('click', window.registrarLoteSalidaCap);
         document.getElementById('btn-save-repair-lot').addEventListener('click', window.registrarLoteSalidaReparacion);
+        document.getElementById('btn-export-selected-equipment').addEventListener('click', window.exportarEquiposSeleccionados);
 
         window.actualizarEstadoEquipo = async function(id, status, button) {
             const currentEquipment = equipmentRows.find(item => item.id === id);

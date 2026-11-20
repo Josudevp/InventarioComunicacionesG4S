@@ -638,7 +638,8 @@ function getCapMovil_(session) {
     }
     lotes[lotId].equipos.push({
       imei: clean_(lotRow[9], 20),
-      modelo: clean_(lotRow[10], 100)
+      modelo: clean_(lotRow[10], 100),
+      danoReparacion: clean_(lotRow[11], 500)
     });
   }
   var repairLotRows = capRepairSheet_().getDataRange().getValues();
